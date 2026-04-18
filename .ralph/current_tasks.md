@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 11:31:11 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md`
-
-```
-## Task: Track reconciled watermarks and repeatable sync state <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 18 11:52:44 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-08-multi-db-orchestration/01-task-run-multiple-db-mappings-from-one-destination-container.md`
 

@@ -466,6 +466,87 @@ fn run_preserves_existing_table_sync_progress_on_restart() {
 }
 
 #[test]
+fn run_preserves_existing_stream_and_table_tracking_progress_on_restart() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(
+        &config_path,
+        bind_port,
+        &["public.customers", "public.orders"],
+    );
+
+    {
+        let mut runner = RunnerProcess::start(&config_path);
+        runner.assert_healthy(
+            &format!("https://localhost:{bind_port}/healthz"),
+            &https_client(),
+        );
+    }
+
+    postgres.exec(
+        "app_a",
+        "UPDATE _cockroach_migration_tool.stream_state
+         SET latest_received_resolved_watermark = '1776526353000000000.0000000001',
+             latest_reconciled_resolved_watermark = '1776526353000000000.0000000000'
+         WHERE mapping_id = 'app-a';
+         UPDATE _cockroach_migration_tool.table_sync_state
+         SET last_successful_sync_watermark = '1776526353000000000.0000000000',
+             last_error = 'kept on restart'
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+    );
+
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(
+        &format!("https://localhost:{bind_port}/healthz"),
+        &https_client(),
+    );
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT COALESCE(latest_received_resolved_watermark, '<null>') || ':' || \
+                    COALESCE(latest_reconciled_resolved_watermark, '<null>')
+             FROM _cockroach_migration_tool.stream_state
+             WHERE mapping_id = 'app-a';",
+        ),
+        "1776526353000000000.0000000001:1776526353000000000.0000000000"
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT string_agg(
+                source_table_name || ':' || helper_table_name || ':' ||
+                COALESCE(last_successful_sync_watermark, '<null>') || ':' ||
+                COALESCE(last_error, '<null>'),
+                ',' ORDER BY source_table_name
+             )
+             FROM _cockroach_migration_tool.table_sync_state
+             WHERE mapping_id = 'app-a';",
+        ),
+        "public.customers:app-a__public__customers:1776526353000000000.0000000000:kept on restart,public.orders:app-a__public__orders:<null>:<null>"
+    );
+}
+
+#[test]
 fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
     let postgres = TestPostgres::start();
     postgres.exec(

@@ -1,6 +1,5 @@
 mod persistence;
 mod routing;
-pub(crate) mod tracking;
 mod payload;
 
 use std::{fs, sync::Arc};
@@ -27,10 +26,10 @@ use crate::{
         RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError,
     },
     runtime_plan::RunnerRuntimePlan,
+    tracking_state::persist_resolved_watermark,
 };
 use persistence::persist_row_batch;
 use payload::parse_webhook_request;
-use tracking::persist_resolved_watermark;
 
 pub(crate) async fn serve(
     runtime: Arc<RunnerRuntimePlan>,

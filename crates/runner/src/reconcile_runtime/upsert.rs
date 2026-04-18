@@ -1,35 +1,31 @@
 use sqlx::{Postgres, Transaction};
 
 use crate::{
-    error::RunnerReconcileRuntimeError,
     helper_plan::HelperShadowTablePlan,
     runtime_plan::MappingRuntimePlan,
     sql_name::SqlIdentifier,
 };
 
+use super::ReconcileApplyFailure;
+
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(super) async fn apply(
     transaction: &mut Transaction<'_, Postgres>,
-    mapping: &MappingRuntimePlan,
+    _mapping: &MappingRuntimePlan,
     table: &HelperShadowTablePlan,
-) -> Result<(), RunnerReconcileRuntimeError> {
+) -> Result<(), ReconcileApplyFailure> {
     if table.primary_key_columns().is_empty() {
-        return Err(RunnerReconcileRuntimeError::MissingUpsertPrimaryKey {
-            mapping_id: mapping.mapping_id().to_owned(),
-            table: table.source_table().label(),
-        });
+        return Err(ReconcileApplyFailure::missing_upsert_primary_key(
+            table.source_table().label(),
+        ));
     }
 
     sqlx::query(&render_upsert_sql(table))
         .execute(transaction.as_mut())
         .await
         .map(|_| ())
-        .map_err(|source| RunnerReconcileRuntimeError::ApplyUpsert {
-            mapping_id: mapping.mapping_id().to_owned(),
-            table: table.source_table().label(),
-            source,
-        })
+        .map_err(|source| ReconcileApplyFailure::apply_upsert(table.source_table().label(), source))
 }
 
 fn render_upsert_sql(table: &HelperShadowTablePlan) -> String {

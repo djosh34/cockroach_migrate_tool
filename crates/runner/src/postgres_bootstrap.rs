@@ -7,11 +7,11 @@ use crate::{
     error::RunnerBootstrapError,
     helper_plan::MappingHelperPlan,
     sql_name::{QualifiedTableName, SqlIdentifier},
+    tracking_state::seed_tracking_state,
     validated_schema::{
         ColumnSchema, ForeignKeyAction, ForeignKeyShape, PrimaryKeyShape, TableSchema,
         ValidatedSchema,
     },
-    webhook_runtime::tracking::seed_tracking_state,
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";

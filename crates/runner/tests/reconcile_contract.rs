@@ -338,6 +338,40 @@ impl RunnerProcess {
             .send()
             .expect("ingest request should complete")
     }
+
+    fn wait_for_failed_exit(&mut self) -> String {
+        for _ in 0..50 {
+            if let Some(status) = self
+                .child
+                .try_wait()
+                .expect("runner child status should be readable")
+            {
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                self.child
+                    .stdout
+                    .as_mut()
+                    .expect("runner stdout pipe should exist")
+                    .read_to_string(&mut stdout)
+                    .expect("runner stdout should be readable");
+                self.child
+                    .stderr
+                    .as_mut()
+                    .expect("runner stderr pipe should exist")
+                    .read_to_string(&mut stderr)
+                    .expect("runner stderr should be readable");
+                assert!(
+                    !status.success(),
+                    "runner exited successfully but failure was expected\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                );
+                return stderr;
+            }
+
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        panic!("runner did not exit with failure in time");
+    }
 }
 
 impl Drop for RunnerProcess {
@@ -968,6 +1002,326 @@ fn run_advances_success_tracking_after_a_full_upsert_pass() {
          FROM _cockroach_migration_tool.table_sync_state \
          WHERE mapping_id = 'app-a' AND source_table_name = 'public.customers';",
         &format!("true:{watermark}"),
+    );
+}
+
+#[test]
+fn run_records_reconcile_failure_state_before_exiting() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (
+             id bigint PRIMARY KEY,
+             email text NOT NULL CHECK (position('@' IN email) > 1)
+         );",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let initial_watermark = "1776526353000000000.0000000000";
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "tracked@example.com"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(initial_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(latest_reconciled_resolved_watermark, '<null>') \
+         FROM _cockroach_migration_tool.stream_state \
+         WHERE mapping_id = 'app-a';",
+        initial_watermark,
+    );
+
+    let failing_watermark = "1776526353000000000.0000000001";
+    let invalid_row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "invalid-email"),
+    );
+    assert_eq!(invalid_row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(failing_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    let stderr = runner.wait_for_failed_exit();
+    assert!(
+        stderr.contains("failed to apply reconcile upsert"),
+        "runner stderr did not include reconcile failure context:\n{stderr}"
+    );
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark || ':' || \
+                    latest_reconciled_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        format!("{failing_watermark}:{initial_watermark}")
+    );
+    let table_sync_state = postgres.query(
+        "app_a",
+        "SELECT COALESCE(last_successful_sync_watermark, '<null>') || ':' || \
+                COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+    );
+    assert!(
+        table_sync_state.starts_with(&format!("{initial_watermark}:")),
+        "table sync watermark regressed after failed reconcile: {table_sync_state}"
+    );
+    assert!(
+        table_sync_state.contains("reconcile upsert failed for public.customers"),
+        "table sync error did not include durable reconcile failure context: {table_sync_state}"
+    );
+}
+
+#[test]
+fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (
+             id bigint PRIMARY KEY,
+             email text NOT NULL CHECK (position('@' IN email) > 1)
+         );",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let initial_watermark = "1776526353000000000.0000000000";
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "tracked@example.com"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(initial_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(latest_reconciled_resolved_watermark, '<null>') \
+         FROM _cockroach_migration_tool.stream_state \
+         WHERE mapping_id = 'app-a';",
+        initial_watermark,
+    );
+
+    let failing_watermark = "1776526353000000000.0000000001";
+    let invalid_row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "invalid-email"),
+    );
+    assert_eq!(invalid_row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(failing_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+    let _stderr = runner.wait_for_failed_exit();
+
+    let mut retry_runner = RunnerProcess::start(&config_path);
+    retry_runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let corrected_row_response = retry_runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "recovered@example.com"),
+    );
+    assert_eq!(corrected_row_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        "recovered@example.com",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(latest_reconciled_resolved_watermark, '<null>') \
+         FROM _cockroach_migration_tool.stream_state \
+         WHERE mapping_id = 'app-a';",
+        failing_watermark,
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_successful_sync_watermark, '<null>') || ':' || \
+                COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+        &format!("{failing_watermark}:<null>"),
+    );
+}
+
+#[test]
+fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (
+             id bigint PRIMARY KEY,
+             email text NOT NULL CHECK (position('@' IN email) > 1)
+         );
+         CREATE TABLE public.orders (
+             id bigint PRIMARY KEY,
+             customer_id bigint NOT NULL REFERENCES public.customers(id),
+             total_cents bigint NOT NULL CHECK (total_cents > 0)
+         );",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers", "public.orders"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let initial_watermark = "1776526353000000000.0000000000";
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "tracked@example.com"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+    let order_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &order_row_batch_body("demo_a", 1, 1500),
+    );
+    assert_eq!(order_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(initial_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(latest_reconciled_resolved_watermark, '<null>') \
+         FROM _cockroach_migration_tool.stream_state \
+         WHERE mapping_id = 'app-a';",
+        initial_watermark,
+    );
+
+    let failing_watermark = "1776526353000000000.0000000001";
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "ahead@example.com"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+    let order_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &order_row_batch_body("demo_a", 1, -1),
+    );
+    assert_eq!(order_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(failing_watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    let _stderr = runner.wait_for_failed_exit();
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark || ':' || \
+                    latest_reconciled_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        format!("{failing_watermark}:{initial_watermark}")
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        ),
+        "tracked@example.com"
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT COALESCE(total_cents::text, '<null>') FROM public.orders WHERE id = 10;",
+        ),
+        "1500"
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT string_agg(
+                source_table_name || ':' ||
+                COALESCE(last_successful_sync_watermark, '<null>') || ':' ||
+                COALESCE(last_error, '<null>'),
+                ',' ORDER BY source_table_name
+             )
+             FROM _cockroach_migration_tool.table_sync_state
+             WHERE mapping_id = 'app-a';",
+        ),
+        format!(
+            "public.customers:{0}:<null>,public.orders:{0}:reconcile upsert failed for public.orders: error returned from database: new row for relation \"orders\" violates check constraint \"orders_total_cents_check\"",
+            initial_watermark
+        )
     );
 }
 

@@ -206,9 +206,25 @@ pub enum RunnerReconcileRuntimeError {
         source: sqlx::Error,
     },
     #[error(
+        "failed to roll back reconcile transaction for mapping `{mapping_id}` in `{database}` after a pass error: {source}"
+    )]
+    Rollback {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
         "failed to update reconcile tracking state for mapping `{mapping_id}` in `{database}`: {source}"
     )]
     UpdateTrackingState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to begin reconcile failure-tracking transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    BeginFailureTrackingTransaction {
         mapping_id: String,
         database: String,
         source: sqlx::Error,
@@ -222,6 +238,22 @@ pub enum RunnerReconcileRuntimeError {
         mapping_id: String,
         database: String,
         table: String,
+    },
+    #[error(
+        "failed to persist reconcile failure-tracking state for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    PersistFailureTrackingState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to commit reconcile failure-tracking transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    CommitFailureTrackingTransaction {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
     },
     #[error(
         "failed to commit reconcile transaction for mapping `{mapping_id}` in `{database}`: {source}"

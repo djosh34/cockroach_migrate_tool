@@ -14,6 +14,54 @@ pub(crate) struct ResolvedTrackingTarget {
     pub(crate) resolved_watermark: String,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ReconcilePhase {
+    Upsert,
+    Delete,
+}
+
+impl std::fmt::Display for ReconcilePhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Upsert => write!(f, "upsert"),
+            Self::Delete => write!(f, "delete"),
+        }
+    }
+}
+
+pub(crate) struct ReconcileFailure {
+    mapping_id: String,
+    database: String,
+    table: String,
+    phase: ReconcilePhase,
+    error_detail: String,
+}
+
+impl ReconcileFailure {
+    pub(crate) fn new(
+        mapping_id: String,
+        database: String,
+        table: String,
+        phase: ReconcilePhase,
+        error_message: String,
+    ) -> Self {
+        Self {
+            mapping_id,
+            database,
+            table,
+            phase,
+            error_detail: error_message,
+        }
+    }
+
+    fn rendered_error(&self) -> String {
+        format!(
+            "reconcile {} failed for {}: {}",
+            self.phase, self.table, self.error_detail
+        )
+    }
+}
+
 pub(crate) async fn seed_tracking_state(
     postgres: &mut PgConnection,
     mapping_id: &str,
@@ -196,5 +244,57 @@ pub(crate) async fn persist_reconcile_success(
         }
     }
 
+    Ok(())
+}
+
+pub(crate) async fn persist_reconcile_failure(
+    postgres: &mut PgConnection,
+    failure: ReconcileFailure,
+) -> Result<(), RunnerReconcileRuntimeError> {
+    let mut transaction = postgres
+        .begin()
+        .await
+        .map_err(|source| RunnerReconcileRuntimeError::BeginFailureTrackingTransaction {
+            mapping_id: failure.mapping_id.clone(),
+            database: failure.database.clone(),
+            source,
+        })?;
+
+    let result = sqlx::query(
+        format!(
+            "UPDATE {HELPER_SCHEMA}.table_sync_state
+             SET last_error = $3
+             WHERE mapping_id = $1
+               AND source_table_name = $2"
+        )
+        .as_str(),
+    )
+    .bind(&failure.mapping_id)
+    .bind(&failure.table)
+    .bind(failure.rendered_error())
+    .execute(transaction.as_mut())
+    .await
+    .map_err(|source| RunnerReconcileRuntimeError::PersistFailureTrackingState {
+        mapping_id: failure.mapping_id.clone(),
+        database: failure.database.clone(),
+        source,
+    })?;
+
+    if result.rows_affected() != 1 {
+        return Err(RunnerReconcileRuntimeError::MissingTableTrackingState {
+            mapping_id: failure.mapping_id,
+            database: failure.database,
+            table: failure.table,
+        });
+    }
+
+    transaction
+        .commit()
+        .await
+        .map_err(|source| RunnerReconcileRuntimeError::CommitFailureTrackingTransaction {
+            mapping_id: failure.mapping_id,
+            database: failure.database,
+            source,
+        })?;
     Ok(())
 }

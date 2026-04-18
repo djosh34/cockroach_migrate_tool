@@ -2,10 +2,10 @@ use crate::{
     error::RunnerWebhookRoutingError,
     helper_plan::HelperShadowTablePlan,
     runtime_plan::MappingRuntimePlan,
+    tracking_state::ResolvedTrackingTarget,
     webhook_runtime::{
         payload::{ResolvedRequest, RowBatchRequest, WebhookRequest},
         persistence::RowMutationBatch,
-        tracking::ResolvedTrackingTarget,
     },
 };
 

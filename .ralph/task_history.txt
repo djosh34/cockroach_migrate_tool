@@ -57,3 +57,4 @@
 .ralph/tasks/story-06-destination-ingest/03-task-persist-resolved-watermarks-and-stream-state.md
 .ralph/tasks/story-07-reconcile/01-task-build-continuous-upsert-reconcile-loop.md
 .ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass.md
+.ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md

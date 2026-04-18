@@ -7,6 +7,7 @@ mod reconcile_runtime;
 mod runtime_plan;
 mod schema_compare;
 mod sql_name;
+mod tracking_state;
 mod validated_schema;
 mod webhook_runtime;
 

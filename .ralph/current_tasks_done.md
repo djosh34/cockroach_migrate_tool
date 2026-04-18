@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 11:31:11 PM CEST 2026
+Generated: Sat Apr 18 11:52:44 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -149,6 +149,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the continuous SQL-driven delete reconcile pass <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md`
+
+```
+## Task: Track reconciled watermarks and repeatable sync state <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
