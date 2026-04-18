@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod helper_plan;
+mod molt_verify;
 mod postgres_bootstrap;
 mod postgres_setup;
 mod reconcile_runtime;
@@ -18,6 +19,7 @@ use clap::{Parser, Subcommand};
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
 use helper_plan::{HelperPlanArtifacts, render_helper_plan};
+use molt_verify::{MoltVerifySummary, run_verify};
 use postgres_bootstrap::bootstrap_postgres;
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 use reconcile_runtime::serve as serve_reconcile_runtime;
@@ -69,6 +71,16 @@ enum Command {
         #[arg(long)]
         output_dir: PathBuf,
     },
+    Verify {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        mapping: String,
+        #[arg(long)]
+        source_url: String,
+        #[arg(long, default_value_t = false)]
+        allow_tls_mode_disable: bool,
+    },
     Run {
         #[arg(long)]
         config: PathBuf,
@@ -117,6 +129,20 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
                 &output_dir,
             )?)))
         }
+        Command::Verify {
+            config,
+            mapping,
+            source_url,
+            allow_tls_mode_disable,
+        } => {
+            let config = LoadedRunnerConfig::load(&config)?;
+            Ok(Some(CommandOutput::MoltVerify(run_verify(
+                &config,
+                &mapping,
+                &source_url,
+                allow_tls_mode_disable,
+            )?)))
+        }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             let startup_plan = RunnerStartupPlan::from_config(config.config())?;
@@ -145,6 +171,7 @@ pub enum CommandOutput {
     PostgresSetupArtifacts(PostgresSetupArtifacts),
     SchemaCompare(SchemaCompareSummary),
     HelperPlanArtifacts(HelperPlanArtifacts),
+    MoltVerify(MoltVerifySummary),
 }
 
 impl std::fmt::Display for CommandOutput {
@@ -154,6 +181,7 @@ impl std::fmt::Display for CommandOutput {
             Self::PostgresSetupArtifacts(summary) => summary.fmt(f),
             Self::SchemaCompare(summary) => summary.fmt(f),
             Self::HelperPlanArtifacts(summary) => summary.fmt(f),
+            Self::MoltVerify(summary) => summary.fmt(f),
         }
     }
 }

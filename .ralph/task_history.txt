@@ -59,3 +59,4 @@
 .ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass.md
 .ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md
 .ralph/tasks/story-08-multi-db-orchestration/01-task-run-multiple-db-mappings-from-one-destination-container.md
+.ralph/tasks/story-09-verification-cutover/01-task-wrap-molt-verify-and-fail-on-log-detected-mismatches.md

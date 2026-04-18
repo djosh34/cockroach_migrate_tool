@@ -25,6 +25,8 @@ pub enum RunnerError {
     WebhookRequest(#[from] RunnerIngressRequestError),
     #[error(transparent)]
     SchemaCompare(#[from] SchemaCompareError),
+    #[error("verify: {0}")]
+    Verify(#[from] RunnerVerifyError),
 }
 
 #[derive(Debug, Error)]
@@ -68,6 +70,32 @@ pub enum RunnerHelperPlanError {
     MissingValidatedTable { mapping_id: String, table: String },
     #[error("dependency cycle detected for mapping `{mapping_id}` across tables: {tables}")]
     DependencyCycle { mapping_id: String, tables: String },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerVerifyError {
+    #[error(transparent)]
+    Artifact(#[from] RunnerArtifactError),
+    #[error("mapping `{mapping_id}` is not defined in `{config_path}`")]
+    UnknownMapping {
+        mapping_id: String,
+        config_path: PathBuf,
+    },
+    #[error("mapping `{mapping_id}` includes invalid table `{table}`; expected schema.table")]
+    InvalidMappedTable { mapping_id: String, table: String },
+    #[error("failed to start molt verify command `{command}`")]
+    SpawnCommand { command: String, source: io::Error },
+    #[error("molt verify command `{command}` exited with status `{status}`")]
+    CommandFailed { command: String, status: i32 },
+    #[error("molt verify for mapping `{mapping_id}` did not emit any summary records")]
+    MissingSummary { mapping_id: String },
+    #[error("molt verify for mapping `{mapping_id}` did not emit a completion record")]
+    MissingCompletion { mapping_id: String },
+    #[error("data mismatches detected for mapping `{mapping_id}`: {details}")]
+    DataMismatch {
+        mapping_id: String,
+        details: String,
+    },
 }
 
 #[derive(Debug, Error)]

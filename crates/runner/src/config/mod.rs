@@ -57,6 +57,10 @@ impl RunnerConfig {
         self.mappings.len()
     }
 
+    pub(crate) fn verify(&self) -> &VerifyConfig {
+        &self.verify
+    }
+
     pub(crate) fn mappings(&self) -> &[MappingConfig] {
         &self.mappings
     }
@@ -165,6 +169,10 @@ impl PostgresConnectionConfig {
     pub(crate) fn user(&self) -> &str {
         &self.user
     }
+
+    pub(crate) fn password(&self) -> &str {
+        &self.password
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -223,6 +231,12 @@ pub(crate) struct VerifyConfig {
     pub(super) molt: MoltVerifyConfig,
 }
 
+impl VerifyConfig {
+    pub(crate) fn molt(&self) -> &MoltVerifyConfig {
+        &self.molt
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct MoltVerifyConfig {
     pub(super) command: String,
@@ -230,6 +244,14 @@ pub(crate) struct MoltVerifyConfig {
 }
 
 impl MoltVerifyConfig {
+    pub(crate) fn command(&self) -> &str {
+        &self.command
+    }
+
+    pub(crate) fn report_dir(&self) -> &Path {
+        &self.report_dir
+    }
+
     pub(crate) fn label(&self) -> String {
         format!("{}@{}", self.command, self.report_dir.display())
     }
