@@ -106,6 +106,8 @@ fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image() {
     let validate_stdout =
         String::from_utf8(validate_output.stdout).expect("docker validate output should be utf-8");
     assert!(validate_stdout.contains("config=/config/container-runner-config.yml"));
+    assert!(validate_stdout.contains("mappings=2"));
+    assert!(validate_stdout.contains("verify=molt@/work/molt"));
     assert!(validate_stdout.contains("tls=/config/certs/server.crt+/config/certs/server.key"));
 
     let run_output = Command::new("docker")
@@ -133,6 +135,7 @@ fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image() {
         String::from_utf8(run_output.stdout).expect("docker run output should be valid utf-8");
     assert!(run_stdout.contains("runner ready:"));
     assert!(run_stdout.contains("config=/config/container-runner-config.yml"));
+    assert!(run_stdout.contains("mappings=2"));
     assert!(run_stdout.contains("webhook=0.0.0.0:8443"));
 
     let remove_output = Command::new("docker")
