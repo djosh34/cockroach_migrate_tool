@@ -123,7 +123,6 @@ main() {
         WITH
           initial_scan = 'only',
           envelope = 'enriched',
-          updated,
           webhook_sink_config = '{\"Flush\":{\"Messages\":25,\"Frequency\":\"2s\"}}';
       " | tail -n 1
   )
