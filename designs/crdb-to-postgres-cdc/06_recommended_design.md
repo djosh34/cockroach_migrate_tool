@@ -164,7 +164,7 @@ That is the write-freeze cutover model.
 ## Why This Design Is Preferred
 
 - It matches the desired helper-schema layout.
-- It is simpler than a generic event-log merge engine.
+- It keeps the implementation shape direct and operationally inspectable.
 - It respects active constraints on the real tables.
 - It gives a clean webhook acknowledgement rule.
 - It is easy to inspect in PostgreSQL during long-running continuous shadowing.

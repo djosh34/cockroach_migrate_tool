@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This design package captures the investigation, candidate architectures, tradeoffs,
-open questions, and recommended direction for a one-time CockroachDB to PostgreSQL
+This design package captures the investigation, selected architecture, tradeoffs,
+and recommended direction for a one-time CockroachDB to PostgreSQL
 migration system that:
 
 - can perform initial load plus live catch-up via CockroachDB CDC

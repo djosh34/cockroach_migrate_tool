@@ -4,7 +4,7 @@
 Must use tdd skill to complete
 
 
-**Goal:** Persist resolved messages and stream tracking state in `_cockroach_migration_tool`. The higher order goal is to make restartability and reconcile progress explicit and queryable without introducing a generic event-log engine.
+**Goal:** Persist resolved messages and stream tracking state in `_cockroach_migration_tool`. The higher order goal is to make restartability and reconcile progress explicit and queryable with a small, direct state model.
 
 In scope:
 - persist latest received resolved watermark
@@ -32,4 +32,3 @@ This task must align with the selected minimal tracking model:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
-
