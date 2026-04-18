@@ -1,4 +1,4 @@
-## Task: Generate PostgreSQL grant SQL and operator-facing bootstrap artifacts <status>not_started</status> <passes>false</passes>
+## Task: Generate PostgreSQL grant SQL and operator-facing bootstrap artifacts <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -24,12 +24,13 @@ This task must preserve the chosen rule:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers SQL generation from config and required privilege assertions
-- [ ] Generated artifacts describe only scoped-role needs and avoid superuser assumptions for runtime behavior
-- [ ] The helper schema grant contract is explicit and reproducible
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers SQL generation from config and required privilege assertions
+- [x] Generated artifacts describe only scoped-role needs and avoid superuser assumptions for runtime behavior
+- [x] The helper schema grant contract is explicit and reproducible
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-03-operator-ux-config/02-task-generate-postgresql-grant-sql-and-operator-artifacts_plans/2026-04-18-postgresql-grant-sql-and-operator-artifacts-plan.md</plan>

@@ -47,3 +47,4 @@
 .ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md
 .ralph/tasks/story-02-rust-foundation/02-task-build-single-binary-container-contract.md
 .ralph/tasks/story-03-operator-ux-config/01-task-define-single-config-yaml-and-multi-db-mapping.md
+.ralph/tasks/story-03-operator-ux-config/02-task-generate-postgresql-grant-sql-and-operator-artifacts.md

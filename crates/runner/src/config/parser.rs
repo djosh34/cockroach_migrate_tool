@@ -202,15 +202,9 @@ impl RawPostgresConnectionConfig {
         Ok(PostgresConnectionConfig {
             host: validate_text(self.host, "mappings.destination.connection.host")?,
             port: self.port,
-            database: validate_text(
-                self.database,
-                "mappings.destination.connection.database",
-            )?,
+            database: validate_text(self.database, "mappings.destination.connection.database")?,
             user: validate_text(self.user, "mappings.destination.connection.user")?,
-            password: validate_text(
-                self.password,
-                "mappings.destination.connection.password",
-            )?,
+            password: validate_text(self.password, "mappings.destination.connection.password")?,
         })
     }
 }
@@ -252,7 +246,7 @@ fn validate_tables(values: Vec<String>) -> Result<Vec<String>, RunnerConfigError
     let mut tables = Vec::with_capacity(values.len());
     let mut seen = BTreeSet::new();
     for value in values {
-        let table = validate_text(value, "mappings.source.tables")?;
+        let table = validate_table_name(value)?;
         if !seen.insert(table.clone()) {
             return Err(RunnerConfigError::InvalidField {
                 field: "mappings.source.tables",
@@ -263,6 +257,19 @@ fn validate_tables(values: Vec<String>) -> Result<Vec<String>, RunnerConfigError
     }
 
     Ok(tables)
+}
+
+fn validate_table_name(value: String) -> Result<String, RunnerConfigError> {
+    let table = validate_text(value, "mappings.source.tables")?;
+    let mut parts = table.split('.');
+
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(schema), Some(name), None) if !schema.is_empty() && !name.is_empty() => Ok(table),
+        _ => Err(RunnerConfigError::InvalidField {
+            field: "mappings.source.tables",
+            message: "entries must use schema.table",
+        }),
+    }
 }
 
 fn validate_text(value: String, field: &'static str) -> Result<String, RunnerConfigError> {

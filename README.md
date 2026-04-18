@@ -16,18 +16,43 @@ The destination runtime is one container that starts the `runner` binary directl
 
 ```yaml
 # config/runner.yml
-postgres:
-  host: pg.example.internal
-  port: 5432
-  database: migration_db
-  user: migration_user
-  password: runner-secret
 webhook:
   bind_addr: 0.0.0.0:8443
-  tls_cert_path: /config/certs/server.crt
-  tls_key_path: /config/certs/server.key
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
 reconcile:
   interval_secs: 30
+verify:
+  molt:
+    command: molt
+    report_dir: /work/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+        - public.orders
+    destination:
+      connection:
+        host: pg-a.example.internal
+        port: 5432
+        database: app_a
+        user: migration_user_a
+        password: runner-secret-a
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+    destination:
+      connection:
+        host: pg-b.example.internal
+        port: 5432
+        database: app_b
+        user: migration_user_b
+        password: runner-secret-b
 ```
 
 2. Build the destination image directly from the repository root:
@@ -45,7 +70,17 @@ docker run --rm \
   validate-config --config /config/runner.yml
 ```
 
-4. Start the destination runtime directly through the image entrypoint:
+4. Render the PostgreSQL grant artifacts and review the generated `README.md` plus per-mapping `grants.sql` files. These grants stay manual and explicit; no superuser role is assumed.
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  -v "$(pwd)/postgres-setup:/work/postgres-setup" \
+  cockroach-migrate-runner \
+  render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
+```
+
+5. Start the destination runtime directly through the image entrypoint:
 
 ```bash
 docker run --rm \
@@ -55,7 +90,7 @@ docker run --rm \
   run --config /config/runner.yml
 ```
 
-The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>` and `runner run --config <path>` interface remains the public contract on the host and in the container.
+The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
 ## Command Contract
 

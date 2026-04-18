@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod postgres_setup;
 
 use std::path::PathBuf;
 
@@ -7,6 +8,7 @@ use clap::{Parser, Subcommand};
 
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
+use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -24,6 +26,12 @@ enum Command {
         #[arg(long)]
         config: PathBuf,
     },
+    RenderPostgresSetup {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+    },
     Run {
         #[arg(long)]
         config: PathBuf,
@@ -36,6 +44,12 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
             let config = LoadedRunnerConfig::load(&config)?;
             Ok(CommandOutput::Validated(ValidatedConfig::from(&config)))
         }
+        Command::RenderPostgresSetup { config, output_dir } => {
+            let config = LoadedRunnerConfig::load(&config)?;
+            Ok(CommandOutput::PostgresSetupArtifacts(
+                render_postgres_setup(&config, &output_dir)?,
+            ))
+        }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             Ok(CommandOutput::Startup(RunnerStartupSummary::from(&config)))
@@ -45,6 +59,7 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
 
 pub enum CommandOutput {
     Validated(ValidatedConfig),
+    PostgresSetupArtifacts(PostgresSetupArtifacts),
     Startup(RunnerStartupSummary),
 }
 
@@ -52,6 +67,7 @@ impl std::fmt::Display for CommandOutput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Validated(config) => config.fmt(f),
+            Self::PostgresSetupArtifacts(summary) => summary.fmt(f),
             Self::Startup(summary) => summary.fmt(f),
         }
     }

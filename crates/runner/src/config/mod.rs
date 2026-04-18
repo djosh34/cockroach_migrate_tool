@@ -55,6 +55,10 @@ impl RunnerConfig {
         self.mappings.len()
     }
 
+    pub(crate) fn mappings(&self) -> &[MappingConfig] {
+        &self.mappings
+    }
+
     pub(crate) fn mapping_labels(&self) -> String {
         self.mappings
             .iter()
@@ -76,6 +80,18 @@ pub(crate) struct MappingConfig {
 }
 
 impl MappingConfig {
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(crate) fn source(&self) -> &SourceConfig {
+        &self.source
+    }
+
+    pub(crate) fn destination(&self) -> &DestinationConfig {
+        &self.destination
+    }
+
     pub(crate) fn label(&self) -> String {
         format!(
             "{}={}({} tables)->{}",
@@ -93,9 +109,21 @@ pub(crate) struct SourceConfig {
     pub(super) tables: Vec<String>,
 }
 
+impl SourceConfig {
+    pub(crate) fn tables(&self) -> &[String] {
+        &self.tables
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct DestinationConfig {
     pub(super) connection: PostgresConnectionConfig,
+}
+
+impl DestinationConfig {
+    pub(crate) fn connection(&self) -> &PostgresConnectionConfig {
+        &self.connection
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -111,6 +139,14 @@ impl PostgresConnectionConfig {
     pub(crate) fn endpoint_label(&self) -> String {
         let _ = self.connect_options();
         format!("{}:{}/{}", self.host, self.port, self.database)
+    }
+
+    pub(crate) fn database(&self) -> &str {
+        &self.database
+    }
+
+    pub(crate) fn user(&self) -> &str {
+        &self.user
     }
 
     fn connect_options(&self) -> sqlx::postgres::PgConnectOptions {
