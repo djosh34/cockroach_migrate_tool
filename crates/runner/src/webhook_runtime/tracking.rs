@@ -1,8 +1,8 @@
-use sqlx::{Connection, PgConnection};
+use sqlx::{Connection, PgConnection, Postgres, Row, Transaction};
 
 use crate::{
     config::PostgresConnectionConfig,
-    error::RunnerWebhookPersistenceError,
+    error::{RunnerReconcileRuntimeError, RunnerWebhookPersistenceError},
     helper_plan::HelperShadowTablePlan,
 };
 
@@ -121,5 +121,80 @@ pub(crate) async fn persist_resolved_watermark(
             database,
             source,
         })?;
+    Ok(())
+}
+
+pub(crate) async fn persist_reconcile_success(
+    transaction: &mut Transaction<'_, Postgres>,
+    mapping_id: &str,
+    database: &str,
+    helper_tables: &[HelperShadowTablePlan],
+) -> Result<(), RunnerReconcileRuntimeError> {
+    let stream_row = sqlx::query(
+        format!(
+            "UPDATE {HELPER_SCHEMA}.stream_state
+             SET latest_reconciled_resolved_watermark = CASE
+                 WHEN latest_received_resolved_watermark IS NULL
+                 THEN latest_reconciled_resolved_watermark
+                 WHEN latest_reconciled_resolved_watermark IS NULL
+                   OR latest_reconciled_resolved_watermark < latest_received_resolved_watermark
+                 THEN latest_received_resolved_watermark
+                 ELSE latest_reconciled_resolved_watermark
+             END
+             WHERE mapping_id = $1
+             RETURNING latest_received_resolved_watermark"
+        )
+        .as_str(),
+    )
+    .bind(mapping_id)
+    .fetch_optional(transaction.as_mut())
+    .await
+    .map_err(|source| RunnerReconcileRuntimeError::UpdateTrackingState {
+        mapping_id: mapping_id.to_owned(),
+        database: database.to_owned(),
+        source,
+    })?
+    .ok_or_else(|| RunnerReconcileRuntimeError::MissingTrackingState {
+        mapping_id: mapping_id.to_owned(),
+        database: database.to_owned(),
+    })?;
+    let latest_received = stream_row.get::<Option<String>, _>("latest_received_resolved_watermark");
+
+    let Some(latest_received) = latest_received else {
+        return Ok(());
+    };
+
+    for helper_table in helper_tables {
+        let result = sqlx::query(
+            format!(
+                "UPDATE {HELPER_SCHEMA}.table_sync_state
+                 SET last_successful_sync_time = NOW(),
+                     last_successful_sync_watermark = $3,
+                     last_error = NULL
+                 WHERE mapping_id = $1
+                   AND source_table_name = $2"
+            )
+            .as_str(),
+        )
+        .bind(mapping_id)
+        .bind(helper_table.source_table().label())
+        .bind(&latest_received)
+        .execute(transaction.as_mut())
+        .await
+        .map_err(|source| RunnerReconcileRuntimeError::UpdateTrackingState {
+            mapping_id: mapping_id.to_owned(),
+            database: database.to_owned(),
+            source,
+        })?;
+
+        if result.rows_affected() != 1 {
+            return Err(RunnerReconcileRuntimeError::MissingTableTrackingState {
+                mapping_id: mapping_id.to_owned(),
+                database: database.to_owned(),
+                table: helper_table.source_table().label(),
+            });
+        }
+    }
+
     Ok(())
 }

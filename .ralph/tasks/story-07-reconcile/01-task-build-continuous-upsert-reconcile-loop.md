@@ -1,4 +1,4 @@
-## Task: Build the continuous upsert reconcile loop from shadow to real tables <status>not_started</status> <passes>false</passes>
+## Task: Build the continuous upsert reconcile loop from shadow to real tables <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -24,12 +24,13 @@ This task must preserve:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers dependency-ordered upsert reconcile and repeated execution
-- [ ] Real tables converge toward helper shadow state through repeated upsert passes
-- [ ] Successful upsert reconcile updates sync state in PostgreSQL helper tables
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers dependency-ordered upsert reconcile and repeated execution
+- [x] Real tables converge toward helper shadow state through repeated upsert passes
+- [x] Successful upsert reconcile updates sync state in PostgreSQL helper tables
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-07-reconcile/01-task-build-continuous-upsert-reconcile-loop_plans/2026-04-18-continuous-upsert-reconcile-loop-plan.md</plan>

@@ -55,3 +55,4 @@
 .ralph/tasks/story-06-destination-ingest/01-task-build-https-webhook-server-and-routing.md
 .ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables.md
 .ralph/tasks/story-06-destination-ingest/03-task-persist-resolved-watermarks-and-stream-state.md
+.ralph/tasks/story-07-reconcile/01-task-build-continuous-upsert-reconcile-loop.md

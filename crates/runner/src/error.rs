@@ -15,6 +15,10 @@ pub enum RunnerError {
     HelperPlan(#[from] RunnerHelperPlanError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
+    #[error("runtime plan: {0}")]
+    RuntimePlan(#[from] RunnerRuntimePlanError),
+    #[error("reconcile runtime: {0}")]
+    ReconcileRuntime(#[from] RunnerReconcileRuntimeError),
     #[error("webhook runtime: {0}")]
     WebhookRuntime(#[from] RunnerWebhookRuntimeError),
     #[error("webhook request: {0}")]
@@ -121,6 +125,16 @@ pub enum RunnerBootstrapError {
 }
 
 #[derive(Debug, Error)]
+pub enum RunnerRuntimePlanError {
+    #[error("bootstrap output is missing helper metadata for mapping `{mapping_id}`")]
+    MissingHelperPlan { mapping_id: String },
+    #[error(
+        "helper plan for mapping `{mapping_id}` is missing reconcile metadata for selected table `{table}`"
+    )]
+    MissingReconcileTable { mapping_id: String, table: String },
+}
+
+#[derive(Debug, Error)]
 pub enum RunnerWebhookRuntimeError {
     #[error("failed to bind webhook listener on `{addr}`")]
     Bind {
@@ -149,6 +163,64 @@ pub enum RunnerWebhookRuntimeError {
     },
     #[error("webhook connection task failed")]
     ConnectionTask { source: JoinError },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerReconcileRuntimeError {
+    #[error("failed to connect mapping `{mapping_id}` to `{endpoint}` for reconcile: {source}")]
+    Connect {
+        mapping_id: String,
+        endpoint: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to begin reconcile transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    BeginTransaction {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "reconcile upsert for mapping `{mapping_id}` real table `{table}` requires primary-key metadata"
+    )]
+    MissingPrimaryKey { mapping_id: String, table: String },
+    #[error(
+        "failed to apply reconcile upsert for mapping `{mapping_id}` real table `{table}`: {source}"
+    )]
+    ApplyUpsert {
+        mapping_id: String,
+        table: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to update reconcile tracking state for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    UpdateTrackingState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error("stream tracking state row is missing for mapping `{mapping_id}` in `{database}`")]
+    MissingTrackingState { mapping_id: String, database: String },
+    #[error(
+        "table sync tracking state row is missing for mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
+    MissingTableTrackingState {
+        mapping_id: String,
+        database: String,
+        table: String,
+    },
+    #[error(
+        "failed to commit reconcile transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    Commit {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error("reconcile worker task failed")]
+    WorkerTask { source: JoinError },
 }
 
 #[derive(Debug, Error)]

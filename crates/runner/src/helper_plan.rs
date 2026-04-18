@@ -62,6 +62,7 @@ impl Display for HelperPlanArtifacts {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct MappingHelperPlan {
     mapping_id: String,
     helper_tables: Vec<HelperShadowTablePlan>,
@@ -106,6 +107,10 @@ impl MappingHelperPlan {
 
     pub(crate) fn helper_tables(&self) -> &[HelperShadowTablePlan] {
         &self.helper_tables
+    }
+
+    pub(crate) fn reconcile_upsert_order(&self) -> &[QualifiedTableName] {
+        &self.reconcile_order.upsert_order
     }
 
     fn write_to(&self, output_dir: &Path) -> Result<(), RunnerArtifactError> {
@@ -212,6 +217,7 @@ pub(crate) struct HelperColumnPlan {
     name: SqlIdentifier,
     raw_type: String,
     nullable: bool,
+    generated: bool,
 }
 
 impl HelperColumnPlan {
@@ -220,11 +226,16 @@ impl HelperColumnPlan {
             name: column.name().clone(),
             raw_type: column.raw_type().to_owned(),
             nullable: column.nullable(),
+            generated: column.generated(),
         }
     }
 
     pub(crate) fn name(&self) -> &SqlIdentifier {
         &self.name
+    }
+
+    pub(crate) fn generated(&self) -> bool {
+        self.generated
     }
 
     fn render_sql(&self) -> String {
@@ -233,6 +244,7 @@ impl HelperColumnPlan {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct ReconcileOrder {
     upsert_order: Vec<QualifiedTableName>,
     delete_order: Vec<QualifiedTableName>,

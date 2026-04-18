@@ -95,14 +95,21 @@ pub(crate) struct ColumnSchema {
     name: SqlIdentifier,
     raw_type: String,
     nullable: bool,
+    generated: bool,
 }
 
 impl ColumnSchema {
-    pub(crate) fn new(name: SqlIdentifier, raw_type: String, nullable: bool) -> Self {
+    pub(crate) fn new(
+        name: SqlIdentifier,
+        raw_type: String,
+        nullable: bool,
+        generated: bool,
+    ) -> Self {
         Self {
             name,
             raw_type,
             nullable,
+            generated,
         }
     }
 
@@ -116,6 +123,10 @@ impl ColumnSchema {
 
     pub(crate) fn nullable(&self) -> bool {
         self.nullable
+    }
+
+    pub(crate) fn generated(&self) -> bool {
+        self.generated
     }
 }
 

@@ -209,7 +209,8 @@ async fn load_table_columns(
         SELECT
             attribute.attname AS column_name,
             pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) AS raw_type,
-            NOT attribute.attnotnull AS nullable
+            NOT attribute.attnotnull AS nullable,
+            attribute.attgenerated <> '' AS generated
         FROM pg_attribute AS attribute
         JOIN pg_class AS relation
           ON relation.oid = attribute.attrelid
@@ -240,6 +241,7 @@ async fn load_table_columns(
                 SqlIdentifier::new(&row.get::<String, _>("column_name")),
                 row.get::<String, _>("raw_type"),
                 row.get::<bool, _>("nullable"),
+                row.get::<bool, _>("generated"),
             )
         })
         .collect())
@@ -299,7 +301,7 @@ async fn load_foreign_keys(
             referenced_namespace.nspname AS referenced_schema,
             referenced_relation.relname AS referenced_table,
             referenced_attribute.attname AS referenced_column,
-            table_constraint.confdeltype AS on_delete
+            table_constraint.confdeltype::text AS on_delete
         FROM pg_constraint AS table_constraint
         JOIN pg_class AS relation
           ON relation.oid = table_constraint.conrelid

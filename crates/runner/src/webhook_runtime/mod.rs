@@ -3,7 +3,7 @@ mod routing;
 pub(crate) mod tracking;
 mod payload;
 
-use std::{collections::BTreeMap, fs, sync::Arc};
+use std::{fs, sync::Arc};
 
 use axum::{
     Router,
@@ -23,25 +23,18 @@ use tokio::{net::TcpListener, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    config::LoadedRunnerConfig,
-    helper_plan::MappingHelperPlan,
     error::{
         RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError,
     },
+    runtime_plan::RunnerRuntimePlan,
 };
 use persistence::persist_row_batch;
 use payload::parse_webhook_request;
-use routing::RunnerWebhookPlan;
 use tracking::persist_resolved_watermark;
 
 pub(crate) async fn serve(
-    loaded_config: &LoadedRunnerConfig,
-    helper_plans: BTreeMap<String, MappingHelperPlan>,
+    runtime: Arc<RunnerRuntimePlan>,
 ) -> Result<(), RunnerWebhookRuntimeError> {
-    let runtime = Arc::new(RunnerWebhookPlan::from_config(
-        loaded_config.config(),
-        helper_plans,
-    ));
     let listener = TcpListener::bind(runtime.bind_addr())
         .await
         .map_err(|source| RunnerWebhookRuntimeError::Bind {
@@ -87,7 +80,7 @@ pub(crate) async fn serve(
     }
 }
 
-fn load_tls_config(runtime: &RunnerWebhookPlan) -> Result<ServerConfig, RunnerWebhookRuntimeError> {
+fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWebhookRuntimeError> {
     if rustls::crypto::CryptoProvider::get_default().is_none() {
         rustls::crypto::ring::default_provider()
             .install_default()
@@ -142,7 +135,7 @@ async fn healthz() -> &'static str {
 
 async fn ingest(
     Path(mapping_id): Path<String>,
-    State(runtime): State<Arc<RunnerWebhookPlan>>,
+    State(runtime): State<Arc<RunnerRuntimePlan>>,
     body: Bytes,
 ) -> impl IntoResponse {
     match handle_ingest(mapping_id, runtime, body).await {
@@ -153,12 +146,12 @@ async fn ingest(
 
 async fn handle_ingest(
     mapping_id: String,
-    runtime: Arc<RunnerWebhookPlan>,
+    runtime: Arc<RunnerRuntimePlan>,
     body: Bytes,
 ) -> Result<StatusCode, RunnerIngressRequestError> {
-    let route = runtime.require_route(&mapping_id)?;
+    let mapping = runtime.require_mapping(&mapping_id)?;
     let request = parse_webhook_request(body.as_ref())?;
-    let dispatch_target = route.route_request(request)?;
+    let dispatch_target = routing::route_request(mapping, request)?;
     dispatch(dispatch_target).await
 }
 

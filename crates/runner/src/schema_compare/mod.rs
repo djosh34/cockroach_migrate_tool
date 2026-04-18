@@ -421,7 +421,12 @@ fn parse_column(value: &str) -> ColumnSchema {
     let clauses = clauses.to_ascii_uppercase();
     let nullable = !clauses.contains("NOT NULL");
 
-    ColumnSchema::new(SqlIdentifier::new(column_name), raw_type.to_owned(), nullable)
+    ColumnSchema::new(
+        SqlIdentifier::new(column_name),
+        raw_type.to_owned(),
+        nullable,
+        false,
+    )
 }
 
 fn compare_selected_tables(

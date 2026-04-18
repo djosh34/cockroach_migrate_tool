@@ -3,6 +3,8 @@ mod error;
 mod helper_plan;
 mod postgres_bootstrap;
 mod postgres_setup;
+mod reconcile_runtime;
+mod runtime_plan;
 mod schema_compare;
 mod sql_name;
 mod validated_schema;
@@ -17,6 +19,8 @@ pub use error::RunnerError;
 use helper_plan::{HelperPlanArtifacts, render_helper_plan};
 use postgres_bootstrap::bootstrap_postgres;
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
+use reconcile_runtime::serve as serve_reconcile_runtime;
+use runtime_plan::RunnerRuntimePlan;
 use schema_compare::{SchemaCompareSummary, compare_mapping_exports};
 use webhook_runtime::serve as serve_webhook_runtime;
 
@@ -115,7 +119,20 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             let helper_plans = bootstrap_postgres(&config).await?;
-            serve_webhook_runtime(&config, helper_plans).await?;
+            let runtime = RunnerRuntimePlan::from_config(config.config(), helper_plans)?;
+            let runtime = std::sync::Arc::new(runtime);
+            tokio::try_join!(
+                async {
+                    serve_webhook_runtime(runtime.clone())
+                        .await
+                        .map_err(RunnerError::from)
+                },
+                async {
+                    serve_reconcile_runtime(runtime.clone())
+                        .await
+                        .map_err(RunnerError::from)
+                }
+            )?;
             Ok(None)
         }
     }
