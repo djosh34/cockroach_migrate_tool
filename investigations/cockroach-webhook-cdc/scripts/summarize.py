@@ -66,6 +66,12 @@ def main():
         if not isinstance(body, dict):
             continue
 
+        if "resolved" in body:
+            stats["events_by_kind"]["resolved"] += 1
+            if "resolved" not in stats["sample_files"]:
+                stats["sample_files"]["resolved"] = request_path.name
+            continue
+
         payload = body.get("payload", [])
         if not isinstance(payload, list):
             continue

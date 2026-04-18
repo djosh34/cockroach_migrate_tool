@@ -88,6 +88,9 @@ main() {
   local snapshot_sink_uri
   snapshot_sink_uri="webhook-https://host.docker.internal:8443/snapshot-only?ca_cert=${ca_cert_urlencoded}"
 
+  local source_sink_uri
+  source_sink_uri="webhook-https://host.docker.internal:8443/enriched-source?ca_cert=${ca_cert_urlencoded}"
+
   local live_job_id
   live_job_id=$(
     docker compose exec -T cockroach \
@@ -131,6 +134,29 @@ main() {
   sleep 10
 
   run_sql_file "${ROOT_DIR}/sql/03_post_snapshot_mutation.sql"
+  sleep 8
+
+  local source_job_id
+  source_job_id=$(
+    docker compose exec -T cockroach \
+      cockroach sql --insecure --host=localhost:26257 --format=tsv -e "
+        USE demo_cdc;
+        CREATE CHANGEFEED FOR TABLE customers
+        INTO '${source_sink_uri}'
+        WITH
+          initial_scan = 'no',
+          envelope = 'enriched',
+          enriched_properties = 'source',
+          updated,
+          mvcc_timestamp,
+          webhook_sink_config = '{\"Flush\":{\"Messages\":1,\"Frequency\":\"1s\"}}';
+      " | tail -n 1
+  )
+
+  printf '%s\n' "${source_job_id}" > "${ROOT_DIR}/output/sql/source_job_id.txt"
+  sleep 5
+
+  run_sql_file "${ROOT_DIR}/sql/04_source_probe_mutation.sql"
   sleep 8
 
   run_sql_capture "${ROOT_DIR}/output/sql/02_show_changefeed_jobs.txt" \
