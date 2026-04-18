@@ -189,7 +189,8 @@ fn render_nested_columns(value: &[Vec<String>]) -> String {
     if value.is_empty() {
         "none".to_owned()
     } else {
-        value.iter()
+        value
+            .iter()
             .map(|columns| format!("({})", columns.join(", ")))
             .collect::<Vec<_>>()
             .join(", ")

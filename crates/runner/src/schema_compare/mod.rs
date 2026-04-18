@@ -72,14 +72,12 @@ pub(crate) fn validate_mapping_exports(
     cockroach_schema_path: &Path,
     postgres_schema_path: &Path,
 ) -> Result<ValidatedMappingSchema, SchemaCompareError> {
-    let mapping =
-        loaded_config
-            .config()
-            .mapping(mapping_id)
-            .ok_or_else(|| SchemaCompareError::MissingMapping {
-                config_path: loaded_config.path().display().to_string(),
-                mapping_id: mapping_id.to_owned(),
-            })?;
+    let mapping = loaded_config.config().mapping(mapping_id).ok_or_else(|| {
+        SchemaCompareError::MissingMapping {
+            config_path: loaded_config.path().display().to_string(),
+            mapping_id: mapping_id.to_owned(),
+        }
+    })?;
 
     let selected_tables = mapping
         .source()
@@ -153,8 +151,7 @@ pub(super) fn apply_statement(
         || statement == "SET"
         || statement.starts_with("SET ")
         || statement.starts_with("SELECT ")
-        || statement.starts_with("ALTER TABLE ")
-            && statement.contains(" VALIDATE CONSTRAINT ")
+        || statement.starts_with("ALTER TABLE ") && statement.contains(" VALIDATE CONSTRAINT ")
     {
         return Ok(());
     }
@@ -181,18 +178,19 @@ fn apply_create_table(
     format: &'static str,
 ) -> Result<(), SchemaCompareError> {
     let rest = statement.trim_start_matches("CREATE TABLE ").trim();
-    let open_paren = rest.find('(').ok_or_else(|| SchemaCompareError::ParseFile {
-        format,
-        path: path.to_path_buf(),
-        message: format!("missing column list in statement `{statement}`"),
-    })?;
-    let close_paren = find_matching_paren(rest, open_paren).ok_or_else(|| {
-        SchemaCompareError::ParseFile {
+    let open_paren = rest
+        .find('(')
+        .ok_or_else(|| SchemaCompareError::ParseFile {
+            format,
+            path: path.to_path_buf(),
+            message: format!("missing column list in statement `{statement}`"),
+        })?;
+    let close_paren =
+        find_matching_paren(rest, open_paren).ok_or_else(|| SchemaCompareError::ParseFile {
             format,
             path: path.to_path_buf(),
             message: format!("unterminated column list in statement `{statement}`"),
-        }
-    })?;
+        })?;
     let table_name = QualifiedTableName::from_sql(rest[..open_paren].trim());
     let body = &rest[open_paren + 1..close_paren];
     let mut table_schema = TableSchema::default();
@@ -205,7 +203,13 @@ fn apply_create_table(
 
         if item.starts_with("CONSTRAINT ") {
             let (_, constraint_body) = split_first_token(item.trim_start_matches("CONSTRAINT "));
-            apply_constraint_body(&mut table_schema, constraint_body, table_name.clone(), path, format)?;
+            apply_constraint_body(
+                &mut table_schema,
+                constraint_body,
+                table_name.clone(),
+                path,
+                format,
+            )?;
             continue;
         }
 
@@ -244,11 +248,17 @@ fn apply_alter_table(
 
     let table_name = QualifiedTableName::from_sql(rest[..index].trim());
     let (_, constraint_body) = split_first_token(rest[index + add_constraint.len()..].trim());
-    let table_schema = schema.table_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
-        format,
-        path: path.to_path_buf(),
-        message: format!("constraint references missing table `{}`", table_name.label()),
-    })?;
+    let table_schema =
+        schema
+            .table_mut(&table_name)
+            .ok_or_else(|| SchemaCompareError::ParseFile {
+                format,
+                path: path.to_path_buf(),
+                message: format!(
+                    "constraint references missing table `{}`",
+                    table_name.label()
+                ),
+            })?;
     apply_constraint_body(table_schema, constraint_body, table_name, path, format)
 }
 
@@ -279,10 +289,12 @@ fn apply_create_index(
             message: format!("missing index column list in statement `{statement}`"),
         });
     };
-    let close = find_matching_paren(after_on, columns_start).ok_or_else(|| SchemaCompareError::ParseFile {
-        format,
-        path: path.to_path_buf(),
-        message: format!("unterminated index column list in statement `{statement}`"),
+    let close = find_matching_paren(after_on, columns_start).ok_or_else(|| {
+        SchemaCompareError::ParseFile {
+            format,
+            path: path.to_path_buf(),
+            message: format!("unterminated index column list in statement `{statement}`"),
+        }
     })?;
     let table_name = after_on[..columns_start]
         .trim()
@@ -290,11 +302,14 @@ fn apply_create_index(
         .trim();
     let table_name = QualifiedTableName::from_sql(table_name);
     let columns = parse_index_columns(&after_on[columns_start + 1..close]);
-    let table_schema = schema.table_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
-        format,
-        path: path.to_path_buf(),
-        message: format!("index references missing table `{}`", table_name.label()),
-    })?;
+    let table_schema =
+        schema
+            .table_mut(&table_name)
+            .ok_or_else(|| SchemaCompareError::ParseFile {
+                format,
+                path: path.to_path_buf(),
+                message: format!("index references missing table `{}`", table_name.label()),
+            })?;
     if is_unique {
         table_schema.push_unique_constraint(UniqueConstraintShape::new(
             columns
@@ -331,18 +346,26 @@ fn apply_constraint_body(
                 message: format!("missing unique index columns on `{}`", table_name.label()),
             });
         };
-        let columns = extract_parenthesized(&rest[open..]).ok_or_else(|| SchemaCompareError::ParseFile {
-            format,
-            path: path.to_path_buf(),
-            message: format!("unterminated unique index columns on `{}`", table_name.label()),
-        })?;
-        table_schema.push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
+        let columns =
+            extract_parenthesized(&rest[open..]).ok_or_else(|| SchemaCompareError::ParseFile {
+                format,
+                path: path.to_path_buf(),
+                message: format!(
+                    "unterminated unique index columns on `{}`",
+                    table_name.label()
+                ),
+            })?;
+        table_schema
+            .push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
         return Ok(());
     }
 
-    if let Some(columns) = constraint_body.strip_prefix("UNIQUE ").and_then(extract_parenthesized)
+    if let Some(columns) = constraint_body
+        .strip_prefix("UNIQUE ")
+        .and_then(extract_parenthesized)
     {
-        table_schema.push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
+        table_schema
+            .push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
         return Ok(());
     }
 
@@ -354,11 +377,12 @@ fn apply_constraint_body(
                 message: format!("missing index columns on `{}`", table_name.label()),
             });
         };
-        let columns = extract_parenthesized(&rest[open..]).ok_or_else(|| SchemaCompareError::ParseFile {
-            format,
-            path: path.to_path_buf(),
-            message: format!("unterminated index columns on `{}`", table_name.label()),
-        })?;
+        let columns =
+            extract_parenthesized(&rest[open..]).ok_or_else(|| SchemaCompareError::ParseFile {
+                format,
+                path: path.to_path_buf(),
+                message: format!("unterminated index columns on `{}`", table_name.label()),
+            })?;
         table_schema.push_index(IndexShape::new(parse_index_columns(columns)));
         return Ok(());
     }
@@ -368,14 +392,19 @@ fn apply_constraint_body(
             return Err(SchemaCompareError::ParseFile {
                 format,
                 path: path.to_path_buf(),
-                message: format!("missing foreign key source columns on `{}`", table_name.label()),
+                message: format!(
+                    "missing foreign key source columns on `{}`",
+                    table_name.label()
+                ),
             });
         };
         let after_source = rest[source_columns.len() + 2..].trim();
-        let after_references = after_source.strip_prefix("REFERENCES ").ok_or_else(|| SchemaCompareError::ParseFile {
-            format,
-            path: path.to_path_buf(),
-            message: format!("missing REFERENCES clause on `{}`", table_name.label()),
+        let after_references = after_source.strip_prefix("REFERENCES ").ok_or_else(|| {
+            SchemaCompareError::ParseFile {
+                format,
+                path: path.to_path_buf(),
+                message: format!("missing REFERENCES clause on `{}`", table_name.label()),
+            }
         })?;
         let Some(reference_open) = after_references.find('(') else {
             return Err(SchemaCompareError::ParseFile {
@@ -384,14 +413,17 @@ fn apply_constraint_body(
                 message: format!("missing referenced columns on `{}`", table_name.label()),
             });
         };
-        let referenced_table = QualifiedTableName::from_sql(after_references[..reference_open].trim());
-        let referenced_columns = extract_parenthesized(&after_references[reference_open..]).ok_or_else(|| {
-            SchemaCompareError::ParseFile {
+        let referenced_table =
+            QualifiedTableName::from_sql(after_references[..reference_open].trim());
+        let referenced_columns = extract_parenthesized(&after_references[reference_open..])
+            .ok_or_else(|| SchemaCompareError::ParseFile {
                 format,
                 path: path.to_path_buf(),
-                message: format!("unterminated referenced columns on `{}`", table_name.label()),
-            }
-        })?;
+                message: format!(
+                    "unterminated referenced columns on `{}`",
+                    table_name.label()
+                ),
+            })?;
         let trailing = after_references[reference_open + referenced_columns.len() + 2..].trim();
         let on_delete = if trailing.contains("ON DELETE SET NULL") {
             ForeignKeyAction::SetNull
@@ -456,7 +488,12 @@ fn compare_selected_tables(
             .columns()
             .iter()
             .map(|column| column.name().clone())
-            .chain(postgres_table.columns().iter().map(|column| column.name().clone()))
+            .chain(
+                postgres_table
+                    .columns()
+                    .iter()
+                    .map(|column| column.name().clone()),
+            )
             .collect::<BTreeSet<_>>();
 
         for column_name in column_names {

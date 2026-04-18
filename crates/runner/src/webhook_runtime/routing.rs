@@ -43,13 +43,12 @@ fn route_row_batch(
         }
 
         let table = source.table_label();
-        let helper_table =
-            mapping
-                .helper_table(&table)
-                .ok_or_else(|| RunnerWebhookRoutingError::SourceTableNotMapped {
-                    mapping_id: mapping.mapping_id().to_owned(),
-                    table: table.clone(),
-                })?;
+        let helper_table = mapping.helper_table(&table).ok_or_else(|| {
+            RunnerWebhookRoutingError::SourceTableNotMapped {
+                mapping_id: mapping.mapping_id().to_owned(),
+                table: table.clone(),
+            }
+        })?;
 
         match &selected_table {
             Some(existing) if existing.source_table().label() != table => {
@@ -64,9 +63,10 @@ fn route_row_batch(
         }
     }
 
-    let selected_table = selected_table.ok_or_else(|| RunnerWebhookRoutingError::EmptyRowBatch {
-        mapping_id: mapping.mapping_id().to_owned(),
-    })?;
+    let selected_table =
+        selected_table.ok_or_else(|| RunnerWebhookRoutingError::EmptyRowBatch {
+            mapping_id: mapping.mapping_id().to_owned(),
+        })?;
 
     Ok(DispatchTarget::RowBatch(Box::new(RowMutationBatch {
         mapping_id: mapping.mapping_id().to_owned(),

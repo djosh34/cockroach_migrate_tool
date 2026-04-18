@@ -56,7 +56,12 @@ impl MoltVerifyRequest {
         Ok(Self {
             command: loaded_config.config().verify().molt().command().to_owned(),
             mapping_id: mapping.id().to_owned(),
-            report_dir: loaded_config.config().verify().molt().report_dir().to_path_buf(),
+            report_dir: loaded_config
+                .config()
+                .verify()
+                .molt()
+                .report_dir()
+                .to_path_buf(),
             source_url: source_url.to_owned(),
             target_url: format!(
                 "postgresql://{}:{}@{}:{}/{}",
@@ -173,10 +178,7 @@ impl MoltVerifySummary {
     ) -> Result<Self, RunnerVerifyError> {
         write_raw_log(&request, &output)?;
         let records = parse_json_records(&output.raw_output);
-        let summaries: Vec<_> = records
-            .iter()
-            .filter_map(MoltLogRecord::summary)
-            .collect();
+        let summaries: Vec<_> = records.iter().filter_map(MoltLogRecord::summary).collect();
         if summaries.is_empty() {
             return Err(RunnerVerifyError::MissingSummary {
                 mapping_id: request.mapping_id,
@@ -250,18 +252,22 @@ fn write_raw_log(
 ) -> Result<PathBuf, RunnerVerifyError> {
     let report_dir = ensure_report_dir(request)?;
     let raw_log_path = report_dir.join(format!("{}.raw.log", request.mapping_id));
-    fs::write(&raw_log_path, &output.raw_output).map_err(|source| RunnerArtifactError::WriteFile {
-        path: raw_log_path.clone(),
-        source,
+    fs::write(&raw_log_path, &output.raw_output).map_err(|source| {
+        RunnerArtifactError::WriteFile {
+            path: raw_log_path.clone(),
+            source,
+        }
     })?;
     Ok(raw_log_path)
 }
 
 fn ensure_report_dir(request: &MoltVerifyRequest) -> Result<PathBuf, RunnerVerifyError> {
     let report_dir = request.report_dir.clone();
-    fs::create_dir_all(&report_dir).map_err(|source| RunnerArtifactError::CreateOutputDirectory {
-        path: report_dir.clone(),
-        source,
+    fs::create_dir_all(&report_dir).map_err(|source| {
+        RunnerArtifactError::CreateOutputDirectory {
+            path: report_dir.clone(),
+            source,
+        }
     })?;
     Ok(report_dir)
 }

@@ -122,14 +122,13 @@ pub(crate) async fn persist_resolved_watermark(
             endpoint,
             source,
         })?;
-    let mut transaction = postgres
-        .begin()
-        .await
-        .map_err(|source| RunnerWebhookPersistenceError::BeginTransaction {
+    let mut transaction = postgres.begin().await.map_err(|source| {
+        RunnerWebhookPersistenceError::BeginTransaction {
             mapping_id: target.mapping_id.clone(),
             database: database.clone(),
             source,
-        })?;
+        }
+    })?;
 
     let result = sqlx::query(
         format!(
@@ -148,11 +147,13 @@ pub(crate) async fn persist_resolved_watermark(
     .bind(&target.resolved_watermark)
     .execute(transaction.as_mut())
     .await
-    .map_err(|source| RunnerWebhookPersistenceError::UpdateTrackingState {
-        mapping_id: target.mapping_id.clone(),
-        database: database.clone(),
-        source,
-    })?;
+    .map_err(
+        |source| RunnerWebhookPersistenceError::UpdateTrackingState {
+            mapping_id: target.mapping_id.clone(),
+            database: database.clone(),
+            source,
+        },
+    )?;
 
     if result.rows_affected() != 1 {
         return Err(RunnerWebhookPersistenceError::MissingTrackingState {
@@ -251,14 +252,13 @@ pub(crate) async fn persist_reconcile_failure(
     postgres: &mut PgConnection,
     failure: ReconcileFailure,
 ) -> Result<(), RunnerReconcileRuntimeError> {
-    let mut transaction = postgres
-        .begin()
-        .await
-        .map_err(|source| RunnerReconcileRuntimeError::BeginFailureTrackingTransaction {
+    let mut transaction = postgres.begin().await.map_err(|source| {
+        RunnerReconcileRuntimeError::BeginFailureTrackingTransaction {
             mapping_id: failure.mapping_id.clone(),
             database: failure.database.clone(),
             source,
-        })?;
+        }
+    })?;
 
     let result = sqlx::query(
         format!(
@@ -274,11 +274,13 @@ pub(crate) async fn persist_reconcile_failure(
     .bind(failure.rendered_error())
     .execute(transaction.as_mut())
     .await
-    .map_err(|source| RunnerReconcileRuntimeError::PersistFailureTrackingState {
-        mapping_id: failure.mapping_id.clone(),
-        database: failure.database.clone(),
-        source,
-    })?;
+    .map_err(
+        |source| RunnerReconcileRuntimeError::PersistFailureTrackingState {
+            mapping_id: failure.mapping_id.clone(),
+            database: failure.database.clone(),
+            source,
+        },
+    )?;
 
     if result.rows_affected() != 1 {
         return Err(RunnerReconcileRuntimeError::MissingTableTrackingState {
@@ -288,13 +290,12 @@ pub(crate) async fn persist_reconcile_failure(
         });
     }
 
-    transaction
-        .commit()
-        .await
-        .map_err(|source| RunnerReconcileRuntimeError::CommitFailureTrackingTransaction {
+    transaction.commit().await.map_err(|source| {
+        RunnerReconcileRuntimeError::CommitFailureTrackingTransaction {
             mapping_id: failure.mapping_id,
             database: failure.database,
             source,
-        })?;
+        }
+    })?;
     Ok(())
 }

@@ -1,6 +1,6 @@
+mod payload;
 mod persistence;
 mod routing;
-mod payload;
 
 use std::{fs, sync::Arc};
 
@@ -22,14 +22,12 @@ use tokio::{net::TcpListener, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    error::{
-        RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError,
-    },
+    error::{RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError},
     runtime_plan::RunnerRuntimePlan,
     tracking_state::persist_resolved_watermark,
 };
-use persistence::persist_row_batch;
 use payload::parse_webhook_request;
+use persistence::persist_row_batch;
 
 pub(crate) async fn serve(
     runtime: Arc<RunnerRuntimePlan>,
@@ -110,12 +108,13 @@ fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWe
         });
     }
 
-    let private_key = rustls_pemfile::private_key(&mut key_contents.as_slice()).map_err(|source| {
-        RunnerWebhookRuntimeError::ReadTlsPrivateKey {
-            path: runtime.tls_key_path().to_path_buf(),
-            source,
-        }
-    })?;
+    let private_key =
+        rustls_pemfile::private_key(&mut key_contents.as_slice()).map_err(|source| {
+            RunnerWebhookRuntimeError::ReadTlsPrivateKey {
+                path: runtime.tls_key_path().to_path_buf(),
+                source,
+            }
+        })?;
     let Some(private_key) = private_key else {
         return Err(RunnerWebhookRuntimeError::MissingTlsPrivateKey {
             path: runtime.tls_key_path().to_path_buf(),

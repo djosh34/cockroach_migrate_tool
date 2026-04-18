@@ -66,7 +66,9 @@ impl RunnerConfig {
     }
 
     pub(crate) fn mapping(&self, mapping_id: &str) -> Option<&MappingConfig> {
-        self.mappings.iter().find(|mapping| mapping.id() == mapping_id)
+        self.mappings
+            .iter()
+            .find(|mapping| mapping.id() == mapping_id)
     }
 
     pub(crate) fn verify_label(&self) -> String {
@@ -93,7 +95,6 @@ impl MappingConfig {
     pub(crate) fn destination(&self) -> &DestinationConfig {
         &self.destination
     }
-
 }
 
 #[derive(Clone, Debug)]

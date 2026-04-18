@@ -43,16 +43,22 @@ async fn bootstrap_destination_group(
         .mappings()
         .first()
         .unwrap_or_else(|| panic!("destination group should contain at least one mapping"));
-    let mut postgres = PgConnection::connect_with(&destination_group.connection().connect_options())
-        .await
-        .map_err(|source| RunnerBootstrapError::Connect {
-            mapping_id: first_mapping.mapping_id().to_owned(),
-            endpoint: destination_group.connection().endpoint_label(),
-            source,
-        })?;
-    bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.connection()).await?;
+    let mut postgres =
+        PgConnection::connect_with(&destination_group.connection().connect_options())
+            .await
+            .map_err(|source| RunnerBootstrapError::Connect {
+                mapping_id: first_mapping.mapping_id().to_owned(),
+                endpoint: destination_group.connection().endpoint_label(),
+                source,
+            })?;
+    bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.connection())
+        .await?;
 
-    for mapping in destination_group.mappings().iter().map(MappingBootstrapPlan::from_mapping) {
+    for mapping in destination_group
+        .mappings()
+        .iter()
+        .map(MappingBootstrapPlan::from_mapping)
+    {
         let helper_plan = bootstrap_mapping(&mut postgres, &mapping).await?;
         helper_plans.insert(mapping.mapping_id.clone(), helper_plan);
     }
@@ -166,7 +172,7 @@ async fn bootstrap_mapping(
                     mapping_id: mapping.mapping_id.clone(),
                     database: database.clone(),
                     source,
-            })?;
+                })?;
         }
     }
 
@@ -406,8 +412,9 @@ async fn load_foreign_keys(
         }
 
         current_source_columns.push(SqlIdentifier::new(&row.get::<String, _>("source_column")));
-        current_referenced_columns
-            .push(SqlIdentifier::new(&row.get::<String, _>("referenced_column")));
+        current_referenced_columns.push(SqlIdentifier::new(
+            &row.get::<String, _>("referenced_column"),
+        ));
     }
 
     if current_name.is_some() {

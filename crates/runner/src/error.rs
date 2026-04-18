@@ -27,6 +27,8 @@ pub enum RunnerError {
     SchemaCompare(#[from] SchemaCompareError),
     #[error("verify: {0}")]
     Verify(#[from] RunnerVerifyError),
+    #[error("cutover readiness: {0}")]
+    CutoverReadiness(#[from] RunnerCutoverReadinessError),
 }
 
 #[derive(Debug, Error)]
@@ -92,10 +94,59 @@ pub enum RunnerVerifyError {
     #[error("molt verify for mapping `{mapping_id}` did not emit a completion record")]
     MissingCompletion { mapping_id: String },
     #[error("data mismatches detected for mapping `{mapping_id}`: {details}")]
-    DataMismatch {
+    DataMismatch { mapping_id: String, details: String },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerCutoverReadinessError {
+    #[error("mapping `{mapping_id}` is not defined in `{config_path}`")]
+    UnknownMapping {
         mapping_id: String,
-        details: String,
+        config_path: PathBuf,
     },
+    #[error(
+        "failed to connect mapping `{mapping_id}` to `{endpoint}` for cutover readiness: {source}"
+    )]
+    Connect {
+        mapping_id: String,
+        endpoint: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to read stream readiness state for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    ReadStreamState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to read table readiness state for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
+    ReadTableSyncState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "helper bootstrap is incomplete: missing stream readiness state for mapping `{mapping_id}` in `{database}`"
+    )]
+    MissingTrackingState {
+        mapping_id: String,
+        database: String,
+    },
+    #[error(
+        "helper bootstrap is incomplete: missing table readiness state for mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
+    MissingTableTrackingState {
+        mapping_id: String,
+        database: String,
+        table: String,
+    },
+    #[error("invalid cutover readiness state for mapping `{mapping_id}`: {message}")]
+    InvalidState { mapping_id: String, message: String },
+    #[error(transparent)]
+    Verify(#[from] RunnerVerifyError),
 }
 
 #[derive(Debug, Error)]
@@ -118,7 +169,9 @@ pub enum RunnerBootstrapError {
         database: String,
         source: sqlx::Error,
     },
-    #[error("failed to read destination table shape for mapping `{mapping_id}` in `{database}` table `{table}`: {source}")]
+    #[error(
+        "failed to read destination table shape for mapping `{mapping_id}` in `{database}` table `{table}`: {source}"
+    )]
     ReadCatalog {
         mapping_id: String,
         database: String,
@@ -131,20 +184,26 @@ pub enum RunnerBootstrapError {
         database: String,
         source: RunnerHelperPlanError,
     },
-    #[error("missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`")]
+    #[error(
+        "missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`"
+    )]
     MissingTable {
         mapping_id: String,
         database: String,
         table: String,
     },
-    #[error("unsupported foreign key ON DELETE action `{action}` for mapping `{mapping_id}` in `{database}` table `{table}`")]
+    #[error(
+        "unsupported foreign key ON DELETE action `{action}` for mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
     UnsupportedForeignKeyAction {
         mapping_id: String,
         database: String,
         table: String,
         action: String,
     },
-    #[error("incomplete foreign key metadata while reading mapping `{mapping_id}` in `{database}` table `{table}`")]
+    #[error(
+        "incomplete foreign key metadata while reading mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
     IncompleteForeignKeyMetadata {
         mapping_id: String,
         database: String,
@@ -275,7 +334,10 @@ pub enum RunnerReconcileRuntimeError {
         source: sqlx::Error,
     },
     #[error("stream tracking state row is missing for mapping `{mapping_id}` in `{database}`")]
-    MissingTrackingState { mapping_id: String, database: String },
+    MissingTrackingState {
+        mapping_id: String,
+        database: String,
+    },
     #[error(
         "table sync tracking state row is missing for mapping `{mapping_id}` in `{database}` table `{table}`"
     )]
@@ -390,49 +452,68 @@ pub enum RunnerWebhookRoutingError {
 
 #[derive(Debug, Error)]
 pub enum RunnerWebhookPersistenceError {
-    #[error("failed to connect mapping `{mapping_id}` to `{endpoint}` for helper persistence: {source}")]
+    #[error(
+        "failed to connect mapping `{mapping_id}` to `{endpoint}` for helper persistence: {source}"
+    )]
     Connect {
         mapping_id: String,
         endpoint: String,
         source: sqlx::Error,
     },
-    #[error("failed to begin helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}")]
+    #[error(
+        "failed to begin helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
     BeginTransaction {
         mapping_id: String,
         database: String,
         source: sqlx::Error,
     },
-    #[error("failed to apply helper persistence for mapping `{mapping_id}` helper table `{helper_table}`: {source}")]
+    #[error(
+        "failed to apply helper persistence for mapping `{mapping_id}` helper table `{helper_table}`: {source}"
+    )]
     ApplyMutation {
         mapping_id: String,
         helper_table: String,
         source: sqlx::Error,
     },
-    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` requires primary-key metadata")]
+    #[error(
+        "row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` requires primary-key metadata"
+    )]
     MissingPrimaryKey {
         mapping_id: String,
         helper_table: String,
     },
-    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` is missing required row values")]
+    #[error(
+        "row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` is missing required row values"
+    )]
     MissingValues {
         mapping_id: String,
         helper_table: String,
     },
-    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` does not support `{operation}` yet")]
+    #[error(
+        "row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` does not support `{operation}` yet"
+    )]
     UnsupportedOperation {
         mapping_id: String,
         helper_table: String,
         operation: &'static str,
     },
-    #[error("failed to update stream tracking state for mapping `{mapping_id}` in `{database}`: {source}")]
+    #[error(
+        "failed to update stream tracking state for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
     UpdateTrackingState {
         mapping_id: String,
         database: String,
         source: sqlx::Error,
     },
     #[error("stream tracking state row is missing for mapping `{mapping_id}` in `{database}`")]
-    MissingTrackingState { mapping_id: String, database: String },
-    #[error("failed to commit helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}")]
+    MissingTrackingState {
+        mapping_id: String,
+        database: String,
+    },
+    #[error(
+        "failed to commit helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}"
+    )]
     Commit {
         mapping_id: String,
         database: String,

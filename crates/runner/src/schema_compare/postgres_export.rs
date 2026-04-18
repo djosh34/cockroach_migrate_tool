@@ -3,11 +3,12 @@ use std::path::Path;
 use super::{SchemaCompareError, ValidatedSchema, apply_statement};
 
 pub(super) fn parse_file(path: &Path) -> Result<ValidatedSchema, SchemaCompareError> {
-    let contents = std::fs::read_to_string(path).map_err(|source| SchemaCompareError::ReadFile {
-        format: "postgres",
-        path: path.to_path_buf(),
-        source,
-    })?;
+    let contents =
+        std::fs::read_to_string(path).map_err(|source| SchemaCompareError::ReadFile {
+            format: "postgres",
+            path: path.to_path_buf(),
+            source,
+        })?;
     let statements = extract_statements(&contents);
     let mut schema = ValidatedSchema::default();
     for statement in statements {

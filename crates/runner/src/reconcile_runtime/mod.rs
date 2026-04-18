@@ -50,21 +50,23 @@ async fn run_reconcile_pass(
 ) -> Result<(), RunnerReconcileRuntimeError> {
     let endpoint = mapping.destination_connection().endpoint_label();
     let database = mapping.destination_connection().database().to_owned();
-    let mut postgres = PgConnection::connect_with(&mapping.destination_connection().connect_options())
-        .await
-        .map_err(|source| RunnerReconcileRuntimeError::Connect {
-            mapping_id: mapping.mapping_id().to_owned(),
-            endpoint,
-            source,
-        })?;
-    let mut transaction = postgres
-        .begin()
-        .await
-        .map_err(|source| RunnerReconcileRuntimeError::BeginTransaction {
-            mapping_id: mapping.mapping_id().to_owned(),
-            database: database.clone(),
-            source,
-        })?;
+    let mut postgres =
+        PgConnection::connect_with(&mapping.destination_connection().connect_options())
+            .await
+            .map_err(|source| RunnerReconcileRuntimeError::Connect {
+                mapping_id: mapping.mapping_id().to_owned(),
+                endpoint,
+                source,
+            })?;
+    let mut transaction =
+        postgres
+            .begin()
+            .await
+            .map_err(|source| RunnerReconcileRuntimeError::BeginTransaction {
+                mapping_id: mapping.mapping_id().to_owned(),
+                database: database.clone(),
+                source,
+            })?;
 
     match apply_reconcile_pass(&mut transaction, mapping).await {
         Ok(()) => {
@@ -90,14 +92,13 @@ async fn run_reconcile_pass(
             let phase = failure.phase();
             let table = failure.table().to_owned();
             let error_detail = failure.error_detail();
-            transaction
-                .rollback()
-                .await
-                .map_err(|source| RunnerReconcileRuntimeError::Rollback {
+            transaction.rollback().await.map_err(|source| {
+                RunnerReconcileRuntimeError::Rollback {
                     mapping_id: mapping.mapping_id().to_owned(),
                     database: database.clone(),
                     source,
-                })?;
+                }
+            })?;
             persist_reconcile_failure(
                 &mut postgres,
                 ReconcileFailure::new(

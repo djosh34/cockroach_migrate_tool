@@ -1,4 +1,4 @@
-## Task: Build drain-to-zero and cutover readiness checks <status>not_started</status> <passes>false</passes>
+## Task: Build drain-to-zero and cutover readiness checks <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -19,11 +19,12 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers readiness false/true conditions based on watermarks and verification state
-- [ ] The system can report whether the migration has drained to zero and is ready for final cutover
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers readiness false/true conditions based on watermarks and verification state
+- [x] The system can report whether the migration has drained to zero and is ready for final cutover
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-09-verification-cutover/02-task-build-drain-to-zero-and-cutover-readiness-check_plans/2026-04-19-drain-to-zero-cutover-readiness-plan.md</plan>

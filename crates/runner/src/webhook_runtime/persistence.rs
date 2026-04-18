@@ -29,14 +29,13 @@ pub(crate) async fn persist_row_batch(
             endpoint,
             source,
         })?;
-    let mut transaction = postgres
-        .begin()
-        .await
-        .map_err(|source| RunnerWebhookPersistenceError::BeginTransaction {
+    let mut transaction = postgres.begin().await.map_err(|source| {
+        RunnerWebhookPersistenceError::BeginTransaction {
             mapping_id: batch.mapping_id.clone(),
             database: database.clone(),
             source,
-        })?;
+        }
+    })?;
 
     for row in &batch.rows {
         match row.operation() {
@@ -61,14 +60,12 @@ async fn persist_upsert(
     batch: &RowMutationBatch,
     row: &RowMutation,
 ) -> Result<(), RunnerWebhookPersistenceError> {
-    let values = serde_json::Value::Object(
-        row.values()
-            .cloned()
-            .ok_or_else(|| RunnerWebhookPersistenceError::MissingValues {
-                mapping_id: batch.mapping_id.clone(),
-                helper_table: batch.table.helper_table_name().to_owned(),
-            })?,
-    );
+    let values = serde_json::Value::Object(row.values().cloned().ok_or_else(|| {
+        RunnerWebhookPersistenceError::MissingValues {
+            mapping_id: batch.mapping_id.clone(),
+            helper_table: batch.table.helper_table_name().to_owned(),
+        }
+    })?);
     sqlx::query(&render_upsert_sql(&batch.table))
         .bind(Json(values))
         .execute(transaction.as_mut())

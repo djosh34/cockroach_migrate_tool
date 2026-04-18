@@ -1,4 +1,5 @@
 mod config;
+mod cutover_readiness;
 mod error;
 mod helper_plan;
 mod molt_verify;
@@ -17,6 +18,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 use config::LoadedRunnerConfig;
+use cutover_readiness::{CutoverReadinessSummary, run_cutover_readiness};
 pub use error::RunnerError;
 use helper_plan::{HelperPlanArtifacts, render_helper_plan};
 use molt_verify::{MoltVerifySummary, run_verify};
@@ -81,6 +83,19 @@ enum Command {
         #[arg(long, default_value_t = false)]
         allow_tls_mode_disable: bool,
     },
+    #[command(
+        about = "Determine whether a mapping has drained to zero and is ready for final cutover"
+    )]
+    CutoverReadiness {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        mapping: String,
+        #[arg(long)]
+        source_url: String,
+        #[arg(long, default_value_t = false)]
+        allow_tls_mode_disable: bool,
+    },
     Run {
         #[arg(long)]
         config: PathBuf,
@@ -91,7 +106,9 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
     match cli.command {
         Command::ValidateConfig { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(Some(CommandOutput::Validated(ValidatedConfig::from(&config))))
+            Ok(Some(CommandOutput::Validated(ValidatedConfig::from(
+                &config,
+            ))))
         }
         Command::RenderPostgresSetup { config, output_dir } => {
             let config = LoadedRunnerConfig::load(&config)?;
@@ -121,13 +138,15 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
             output_dir,
         } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(Some(CommandOutput::HelperPlanArtifacts(render_helper_plan(
-                &config,
-                &mapping,
-                &cockroach_schema,
-                &postgres_schema,
-                &output_dir,
-            )?)))
+            Ok(Some(CommandOutput::HelperPlanArtifacts(
+                render_helper_plan(
+                    &config,
+                    &mapping,
+                    &cockroach_schema,
+                    &postgres_schema,
+                    &output_dir,
+                )?,
+            )))
         }
         Command::Verify {
             config,
@@ -142,6 +161,18 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
                 &source_url,
                 allow_tls_mode_disable,
             )?)))
+        }
+        Command::CutoverReadiness {
+            config,
+            mapping,
+            source_url,
+            allow_tls_mode_disable,
+        } => {
+            let config = LoadedRunnerConfig::load(&config)?;
+            Ok(Some(CommandOutput::CutoverReadiness(
+                run_cutover_readiness(&config, &mapping, &source_url, allow_tls_mode_disable)
+                    .await?,
+            )))
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
@@ -172,6 +203,7 @@ pub enum CommandOutput {
     SchemaCompare(SchemaCompareSummary),
     HelperPlanArtifacts(HelperPlanArtifacts),
     MoltVerify(MoltVerifySummary),
+    CutoverReadiness(CutoverReadinessSummary),
 }
 
 impl std::fmt::Display for CommandOutput {
@@ -182,6 +214,7 @@ impl std::fmt::Display for CommandOutput {
             Self::SchemaCompare(summary) => summary.fmt(f),
             Self::HelperPlanArtifacts(summary) => summary.fmt(f),
             Self::MoltVerify(summary) => summary.fmt(f),
+            Self::CutoverReadiness(summary) => summary.fmt(f),
         }
     }
 }

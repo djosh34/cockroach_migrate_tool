@@ -1,8 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    time::Duration,
-};
+use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use crate::{
     config::{MappingConfig, PostgresConnectionConfig, RunnerConfig},
@@ -23,7 +19,8 @@ pub(crate) struct RunnerStartupPlan {
 impl RunnerStartupPlan {
     pub(crate) fn from_config(config: &RunnerConfig) -> Result<Self, RunnerRuntimePlanError> {
         let mut mappings = BTreeMap::new();
-        let mut grouped_mappings = BTreeMap::<DestinationDatabaseKey, Vec<ConfiguredMappingPlan>>::new();
+        let mut grouped_mappings =
+            BTreeMap::<DestinationDatabaseKey, Vec<ConfiguredMappingPlan>>::new();
 
         for mapping in config.mappings() {
             let mapping_plan = ConfiguredMappingPlan::from_config(mapping);

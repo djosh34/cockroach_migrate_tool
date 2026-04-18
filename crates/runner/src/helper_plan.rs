@@ -28,7 +28,11 @@ pub(crate) fn render_helper_plan(
         cockroach_schema_path,
         postgres_schema_path,
     )?;
-    let plan = MappingHelperPlan::from_validated_schema(&validated_mapping.mapping_id, &validated_mapping.selected_tables, &validated_mapping.postgres_schema)?;
+    let plan = MappingHelperPlan::from_validated_schema(
+        &validated_mapping.mapping_id,
+        &validated_mapping.selected_tables,
+        &validated_mapping.postgres_schema,
+    )?;
     plan.write_to(output_dir)?;
 
     Ok(HelperPlanArtifacts {
@@ -78,9 +82,11 @@ impl MappingHelperPlan {
         let helper_tables = selected_tables
             .iter()
             .map(|table_name| {
-                let table = schema.table(table_name).ok_or_else(|| RunnerHelperPlanError::MissingValidatedTable {
-                    mapping_id: mapping_id.to_owned(),
-                    table: table_name.label(),
+                let table = schema.table(table_name).ok_or_else(|| {
+                    RunnerHelperPlanError::MissingValidatedTable {
+                        mapping_id: mapping_id.to_owned(),
+                        table: table_name.label(),
+                    }
                 })?;
                 Ok(HelperShadowTablePlan::from_table(
                     mapping_id,
@@ -119,9 +125,11 @@ impl MappingHelperPlan {
 
     fn write_to(&self, output_dir: &Path) -> Result<(), RunnerArtifactError> {
         let mapping_dir = output_dir.join(&self.mapping_id);
-        fs::create_dir_all(&mapping_dir).map_err(|source| RunnerArtifactError::CreateMappingDirectory {
-            path: mapping_dir.clone(),
-            source,
+        fs::create_dir_all(&mapping_dir).map_err(|source| {
+            RunnerArtifactError::CreateMappingDirectory {
+                path: mapping_dir.clone(),
+                source,
+            }
         })?;
 
         write_artifact(mapping_dir.join("README.md"), MappingReadme(self))?;
@@ -271,15 +279,16 @@ impl ReconcileOrder {
         let mut edges = BTreeSet::<(usize, usize)>::new();
 
         for (child_index, table_name) in selected_tables.iter().enumerate() {
-            let table = schema.table(table_name).ok_or_else(|| RunnerHelperPlanError::MissingValidatedTable {
-                mapping_id: mapping_id.to_owned(),
-                table: table_name.label(),
+            let table = schema.table(table_name).ok_or_else(|| {
+                RunnerHelperPlanError::MissingValidatedTable {
+                    mapping_id: mapping_id.to_owned(),
+                    table: table_name.label(),
+                }
             })?;
 
             for foreign_key in table.foreign_keys() {
-                let Some(parent_index) = table_positions
-                    .get(foreign_key.referenced_table())
-                    .copied()
+                let Some(parent_index) =
+                    table_positions.get(foreign_key.referenced_table()).copied()
                 else {
                     continue;
                 };
@@ -318,7 +327,9 @@ impl ReconcileOrder {
             let remaining_tables = indegree
                 .iter()
                 .enumerate()
-                .filter_map(|(index, degree)| (*degree > 0).then_some(selected_tables[index].label()))
+                .filter_map(|(index, degree)| {
+                    (*degree > 0).then_some(selected_tables[index].label())
+                })
                 .collect::<Vec<_>>()
                 .join(", ");
             return Err(RunnerHelperPlanError::DependencyCycle {
@@ -345,8 +356,14 @@ impl Display for MappingReadme<'_> {
             "This directory contains the rendered helper shadow-table DDL and reconcile ordering for the selected mapping."
         )?;
         writeln!(f)?;
-        writeln!(f, "- `helper_tables.sql`: helper shadow tables in `{HELPER_SCHEMA}`")?;
-        writeln!(f, "- `reconcile_order.txt`: current upsert and delete order")?;
+        writeln!(
+            f,
+            "- `helper_tables.sql`: helper shadow tables in `{HELPER_SCHEMA}`"
+        )?;
+        writeln!(
+            f,
+            "- `reconcile_order.txt`: current upsert and delete order"
+        )?;
         Ok(())
     }
 }
