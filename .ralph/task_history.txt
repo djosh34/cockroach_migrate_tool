@@ -45,3 +45,4 @@
 .ralph/tasks/story-bootstrap-runtime-shared-state/context.md
 .ralph/tasks/story-bootstrap-runtime-shared-state/design-secrets-and-bootstrap-options.md
 .ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md
+.ralph/tasks/story-02-rust-foundation/02-task-build-single-binary-container-contract.md

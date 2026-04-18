@@ -1,4 +1,4 @@
-## Task: Build the single-binary container contract for the destination runner <status>not_started</status> <passes>false</passes>
+## Task: Build the single-binary container contract for the destination runner <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,12 +25,13 @@ This task must preserve the novice-user constraint from `designs/crdb-to-postgre
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers container build and direct binary startup contract
-- [ ] The destination runtime can be built and started directly without wrapper bash scripts
-- [ ] The container shape is one binary in one container, matching the selected design
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers container build and direct binary startup contract
+- [x] The destination runtime can be built and started directly without wrapper bash scripts
+- [x] The container shape is one binary in one container, matching the selected design
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-02-rust-foundation/02-task-build-single-binary-container-contract_plans/2026-04-18-single-binary-container-contract-plan.md</plan>

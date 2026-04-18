@@ -15,7 +15,12 @@ pub(crate) struct RunnerConfig {
     reconcile: ReconcileConfig,
 }
 
-impl RunnerConfig {
+pub(crate) struct LoadedRunnerConfig {
+    path: PathBuf,
+    config: RunnerConfig,
+}
+
+impl LoadedRunnerConfig {
     pub(crate) fn load(path: &Path) -> Result<Self, RunnerConfigError> {
         let contents = fs::read_to_string(path).map_err(|source| RunnerConfigError::ReadFile {
             path: path.to_path_buf(),
@@ -27,9 +32,22 @@ impl RunnerConfig {
                 source,
             }
         })?;
-        raw.validate()
+        Ok(Self {
+            path: path.to_path_buf(),
+            config: raw.validate()?,
+        })
     }
 
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn config(&self) -> &RunnerConfig {
+        &self.config
+    }
+}
+
+impl RunnerConfig {
     pub(crate) fn postgres(&self) -> &PostgresConfig {
         &self.postgres
     }
@@ -90,12 +108,12 @@ impl WebhookConfig {
         self.bind_addr
     }
 
-    pub(crate) fn tls_cert_path(&self) -> &Path {
-        &self.tls_cert_path
-    }
-
-    pub(crate) fn tls_key_path(&self) -> &Path {
-        &self.tls_key_path
+    pub(crate) fn tls_material_label(&self) -> String {
+        format!(
+            "{}+{}",
+            self.tls_cert_path.display(),
+            self.tls_key_path.display()
+        )
     }
 }
 

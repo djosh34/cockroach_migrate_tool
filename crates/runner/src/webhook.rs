@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, path::PathBuf};
+use std::net::SocketAddr;
 
 use axum::{Router, routing::get};
 
@@ -6,8 +6,7 @@ use crate::config::WebhookConfig;
 
 pub(crate) struct WebhookRuntime {
     bind_addr: SocketAddr,
-    tls_cert_path: PathBuf,
-    tls_key_path: PathBuf,
+    tls_material_label: String,
 }
 
 impl WebhookRuntime {
@@ -16,8 +15,7 @@ impl WebhookRuntime {
 
         Self {
             bind_addr: config.bind_addr(),
-            tls_cert_path: config.tls_cert_path().to_path_buf(),
-            tls_key_path: config.tls_key_path().to_path_buf(),
+            tls_material_label: config.tls_material_label(),
         }
     }
 
@@ -25,12 +23,8 @@ impl WebhookRuntime {
         self.bind_addr
     }
 
-    pub(crate) fn tls_material_label(&self) -> String {
-        format!(
-            "{}+{}",
-            self.tls_cert_path.display(),
-            self.tls_key_path.display()
-        )
+    pub(crate) fn tls_material_label(&self) -> &str {
+        &self.tls_material_label
     }
 }
 
