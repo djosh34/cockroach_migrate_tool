@@ -1,7 +1,8 @@
+mod persistence;
 mod routing;
 mod payload;
 
-use std::{fs, sync::Arc};
+use std::{collections::BTreeMap, fs, sync::Arc};
 
 use axum::{
     Router,
@@ -22,15 +23,23 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::{
     config::LoadedRunnerConfig,
+    helper_plan::MappingHelperPlan,
     error::{
         RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError,
     },
 };
+use persistence::persist_row_batch;
 use payload::parse_webhook_request;
 use routing::RunnerWebhookPlan;
 
-pub(crate) async fn serve(loaded_config: &LoadedRunnerConfig) -> Result<(), RunnerWebhookRuntimeError> {
-    let runtime = Arc::new(RunnerWebhookPlan::from_config(loaded_config.config()));
+pub(crate) async fn serve(
+    loaded_config: &LoadedRunnerConfig,
+    helper_plans: BTreeMap<String, MappingHelperPlan>,
+) -> Result<(), RunnerWebhookRuntimeError> {
+    let runtime = Arc::new(RunnerWebhookPlan::from_config(
+        loaded_config.config(),
+        helper_plans,
+    ));
     let listener = TcpListener::bind(runtime.bind_addr())
         .await
         .map_err(|source| RunnerWebhookRuntimeError::Bind {
@@ -148,40 +157,41 @@ async fn handle_ingest(
     let route = runtime.require_route(&mapping_id)?;
     let request = parse_webhook_request(body.as_ref())?;
     let dispatch_target = route.route_request(request)?;
-    dispatch(dispatch_target)
+    dispatch(dispatch_target).await
 }
 
-fn dispatch(
+async fn dispatch(
     dispatch_target: routing::DispatchTarget,
 ) -> Result<StatusCode, RunnerIngressRequestError> {
     match dispatch_target {
-        routing::DispatchTarget::RowBatch {
-            mapping_id,
-            table,
-            rows,
-        } => {
-            let saw_object_rows = rows.iter().all(|row| row.raw().is_object());
-            let _ = (mapping_id, table, rows.len(), saw_object_rows);
-            Err(RunnerIngressRequestError::PersistenceNotImplemented)
+        routing::DispatchTarget::RowBatch(batch) => {
+            persist_row_batch(*batch).await?;
+            Ok(StatusCode::OK)
         }
         routing::DispatchTarget::Resolved {
             mapping_id,
             resolved,
         } => {
             let _ = (mapping_id, resolved);
-            Err(RunnerIngressRequestError::PersistenceNotImplemented)
+            Err(RunnerIngressRequestError::ResolvedNotImplemented)
         }
     }
 }
 
 impl IntoResponse for RunnerIngressRequestError {
     fn into_response(self) -> Response {
-        match self {
+        let status = match &self {
             Self::Routing(RunnerWebhookRoutingError::UnknownMapping { .. }) => {
-                StatusCode::NOT_FOUND.into_response()
+                StatusCode::NOT_FOUND
             }
-            Self::Payload(_) | Self::Routing(_) => StatusCode::BAD_REQUEST.into_response(),
-            Self::PersistenceNotImplemented => StatusCode::NOT_IMPLEMENTED.into_response(),
+            Self::Payload(_) | Self::Routing(_) => StatusCode::BAD_REQUEST,
+            Self::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ResolvedNotImplemented => StatusCode::NOT_IMPLEMENTED,
+        };
+        match self {
+            Self::Routing(_) | Self::Payload(_) | Self::Persistence(_) | Self::ResolvedNotImplemented => {
+                (status, self.to_string()).into_response()
+            }
         }
     }
 }

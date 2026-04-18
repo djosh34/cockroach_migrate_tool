@@ -6,6 +6,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use sqlx::postgres::PgConnectOptions;
+
 use crate::error::RunnerConfigError;
 
 #[derive(Clone, Debug)]
@@ -127,16 +129,17 @@ pub(crate) struct PostgresConnectionConfig {
 }
 
 impl PostgresConnectionConfig {
+    pub(crate) fn connect_options(&self) -> PgConnectOptions {
+        PgConnectOptions::new()
+            .host(&self.host)
+            .port(self.port)
+            .database(&self.database)
+            .username(&self.user)
+            .password(&self.password)
+    }
+
     pub(crate) fn endpoint_label(&self) -> String {
         format!("{}:{}/{}", self.host, self.port, self.database)
-    }
-
-    pub(crate) fn host(&self) -> &str {
-        &self.host
-    }
-
-    pub(crate) fn port(&self) -> u16 {
-        self.port
     }
 
     pub(crate) fn database(&self) -> &str {
@@ -145,10 +148,6 @@ impl PostgresConnectionConfig {
 
     pub(crate) fn user(&self) -> &str {
         &self.user
-    }
-
-    pub(crate) fn password(&self) -> &str {
-        &self.password
     }
 }
 

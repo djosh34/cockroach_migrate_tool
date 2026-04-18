@@ -421,7 +421,7 @@ fn run_adds_one_automatic_helper_index_for_primary_key_columns() {
              WHERE schemaname = '_cockroach_migration_tool'
                AND tablename = 'app-a__public__orders';",
         ),
-        "CREATE INDEX \"app-a__public__orders__pk\" ON _cockroach_migration_tool.\"app-a__public__orders\" USING btree (tenant_id, order_id)"
+        "CREATE UNIQUE INDEX \"app-a__public__orders__pk\" ON _cockroach_migration_tool.\"app-a__public__orders\" USING btree (tenant_id, order_id)"
     );
 }
 

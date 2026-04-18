@@ -114,8 +114,8 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            bootstrap_postgres(&config).await?;
-            serve_webhook_runtime(&config).await?;
+            let helper_plans = bootstrap_postgres(&config).await?;
+            serve_webhook_runtime(&config, helper_plans).await?;
             Ok(None)
         }
     }

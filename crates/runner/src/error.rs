@@ -151,8 +151,10 @@ pub enum RunnerIngressRequestError {
     Payload(#[from] RunnerWebhookPayloadError),
     #[error(transparent)]
     Routing(#[from] RunnerWebhookRoutingError),
-    #[error("durable webhook persistence is not implemented yet")]
-    PersistenceNotImplemented,
+    #[error(transparent)]
+    Persistence(#[from] RunnerWebhookPersistenceError),
+    #[error("resolved watermark persistence is not implemented yet")]
+    ResolvedNotImplemented,
 }
 
 #[derive(Debug, Error)]
@@ -169,12 +171,28 @@ pub enum RunnerWebhookPayloadError {
     LengthMismatch,
     #[error("row-batch request must include array `payload`")]
     MissingPayload,
+    #[error("row-batch request payload must include at least one event")]
+    EmptyPayload,
     #[error("row-batch event must be a json object")]
     InvalidRowEvent,
-    #[error("row-batch event `source` must be a json object when present")]
+    #[error("row-batch event must include `source`")]
+    MissingSource,
+    #[error("row-batch event `source` must be a json object")]
     InvalidSource,
     #[error("row-batch event source is missing `{field}`")]
     MissingSourceField { field: &'static str },
+    #[error("row-batch event must include string `op`")]
+    MissingOperation,
+    #[error("row-batch event `op` `{op}` is not supported")]
+    UnsupportedOperation { op: String },
+    #[error("row-batch event must include object `key`")]
+    MissingKey,
+    #[error("row-batch event `key` must be a json object")]
+    InvalidKey,
+    #[error("upsert row-batch event must include object `after`")]
+    MissingAfter,
+    #[error("upsert row-batch event `after` must be a json object")]
+    InvalidAfter,
     #[error("resolved request must include non-empty `resolved`")]
     InvalidResolved,
 }
@@ -183,8 +201,8 @@ pub enum RunnerWebhookPayloadError {
 pub enum RunnerWebhookRoutingError {
     #[error("unknown mapping `{mapping_id}`")]
     UnknownMapping { mapping_id: String },
-    #[error("row-batch event is missing source metadata for mapping `{mapping_id}`")]
-    MissingSource { mapping_id: String },
+    #[error("row-batch for mapping `{mapping_id}` must include at least one event")]
+    EmptyRowBatch { mapping_id: String },
     #[error(
         "row-batch source database `{database}` does not match mapping `{mapping_id}` expected `{expected}`"
     )]
@@ -202,5 +220,49 @@ pub enum RunnerWebhookRoutingError {
         mapping_id: String,
         first: String,
         second: String,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerWebhookPersistenceError {
+    #[error("failed to connect mapping `{mapping_id}` to `{endpoint}` for helper persistence: {source}")]
+    Connect {
+        mapping_id: String,
+        endpoint: String,
+        source: sqlx::Error,
+    },
+    #[error("failed to begin helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}")]
+    BeginTransaction {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error("failed to apply helper persistence for mapping `{mapping_id}` helper table `{helper_table}`: {source}")]
+    ApplyMutation {
+        mapping_id: String,
+        helper_table: String,
+        source: sqlx::Error,
+    },
+    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` requires primary-key metadata")]
+    MissingPrimaryKey {
+        mapping_id: String,
+        helper_table: String,
+    },
+    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` is missing required row values")]
+    MissingValues {
+        mapping_id: String,
+        helper_table: String,
+    },
+    #[error("row-batch helper persistence for mapping `{mapping_id}` helper table `{helper_table}` does not support `{operation}` yet")]
+    UnsupportedOperation {
+        mapping_id: String,
+        helper_table: String,
+        operation: &'static str,
+    },
+    #[error("failed to commit helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}")]
+    Commit {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
     },
 }

@@ -1,4 +1,6 @@
-use sqlx::{Connection, Executor, PgConnection, Row, postgres::PgConnectOptions};
+use std::collections::BTreeMap;
+
+use sqlx::{Connection, Executor, PgConnection, Row};
 
 use crate::{
     config::{LoadedRunnerConfig, MappingConfig, PostgresConnectionConfig, RunnerConfig},
@@ -15,39 +17,38 @@ const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(crate) async fn bootstrap_postgres(
     loaded_config: &LoadedRunnerConfig,
-) -> Result<(), RunnerBootstrapError> {
-    bootstrap_all_mappings(loaded_config.config()).await?;
-    Ok(())
+) -> Result<BTreeMap<String, MappingHelperPlan>, RunnerBootstrapError> {
+    bootstrap_all_mappings(loaded_config.config()).await
 }
 
-async fn bootstrap_all_mappings(config: &RunnerConfig) -> Result<(), RunnerBootstrapError> {
+async fn bootstrap_all_mappings(
+    config: &RunnerConfig,
+) -> Result<BTreeMap<String, MappingHelperPlan>, RunnerBootstrapError> {
+    let mut helper_plans = BTreeMap::new();
+
     for mapping in config
         .mappings()
         .iter()
         .map(MappingBootstrapPlan::from_mapping)
     {
-        bootstrap_mapping(&mapping).await?;
+        let helper_plan = bootstrap_mapping(&mapping).await?;
+        helper_plans.insert(mapping.mapping_id.clone(), helper_plan);
     }
 
-    Ok(())
+    Ok(helper_plans)
 }
 
-async fn bootstrap_mapping(mapping: &MappingBootstrapPlan<'_>) -> Result<(), RunnerBootstrapError> {
+async fn bootstrap_mapping(
+    mapping: &MappingBootstrapPlan<'_>,
+) -> Result<MappingHelperPlan, RunnerBootstrapError> {
     let endpoint = mapping.connection.endpoint_label();
-    let mut postgres = PgConnection::connect_with(
-        &PgConnectOptions::new()
-            .host(mapping.connection.host())
-            .port(mapping.connection.port())
-            .database(mapping.connection.database())
-            .username(mapping.connection.user())
-            .password(mapping.connection.password()),
-    )
-    .await
-    .map_err(|source| RunnerBootstrapError::Connect {
-        mapping_id: mapping.mapping_id.clone(),
-        endpoint,
-        source,
-    })?;
+    let mut postgres = PgConnection::connect_with(&mapping.connection.connect_options())
+        .await
+        .map_err(|source| RunnerBootstrapError::Connect {
+            mapping_id: mapping.mapping_id.clone(),
+            endpoint,
+            source,
+        })?;
 
     postgres
         .execute(format!("CREATE SCHEMA IF NOT EXISTS {HELPER_SCHEMA}").as_str())
@@ -145,7 +146,7 @@ async fn bootstrap_mapping(mapping: &MappingBootstrapPlan<'_>) -> Result<(), Run
             source,
         })?;
 
-    Ok(())
+    Ok(helper_plan)
 }
 
 async fn load_destination_schema(

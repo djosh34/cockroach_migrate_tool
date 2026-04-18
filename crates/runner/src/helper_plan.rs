@@ -125,7 +125,9 @@ impl MappingHelperPlan {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct HelperShadowTablePlan {
+    source_table: QualifiedTableName,
     helper_table_name: String,
     columns: Vec<HelperColumnPlan>,
     primary_key_columns: Vec<SqlIdentifier>,
@@ -139,6 +141,7 @@ impl HelperShadowTablePlan {
         primary_key_columns: Vec<SqlIdentifier>,
     ) -> Self {
         Self {
+            source_table: source_table.clone(),
             helper_table_name: format!(
                 "{mapping_id}__{}__{}",
                 source_table.schema().raw(),
@@ -150,6 +153,22 @@ impl HelperShadowTablePlan {
                 .collect(),
             primary_key_columns,
         }
+    }
+
+    pub(crate) fn source_table(&self) -> &QualifiedTableName {
+        &self.source_table
+    }
+
+    pub(crate) fn helper_table_name(&self) -> &str {
+        &self.helper_table_name
+    }
+
+    pub(crate) fn columns(&self) -> &[HelperColumnPlan] {
+        &self.columns
+    }
+
+    pub(crate) fn primary_key_columns(&self) -> &[SqlIdentifier] {
+        &self.primary_key_columns
     }
 
     pub(crate) fn create_shadow_table_sql(&self) -> String {
@@ -180,7 +199,7 @@ impl HelperShadowTablePlan {
             .join(", ");
 
         Some(format!(
-            "CREATE INDEX IF NOT EXISTS {} ON {}.{} ({columns})",
+            "CREATE UNIQUE INDEX IF NOT EXISTS {} ON {}.{} ({columns})",
             SqlIdentifier::new(&format!("{}__pk", self.helper_table_name)),
             SqlIdentifier::new(HELPER_SCHEMA),
             SqlIdentifier::new(&self.helper_table_name),
@@ -189,7 +208,7 @@ impl HelperShadowTablePlan {
 }
 
 #[derive(Clone)]
-struct HelperColumnPlan {
+pub(crate) struct HelperColumnPlan {
     name: SqlIdentifier,
     raw_type: String,
     nullable: bool,
@@ -202,6 +221,10 @@ impl HelperColumnPlan {
             raw_type: column.raw_type().to_owned(),
             nullable: column.nullable(),
         }
+    }
+
+    pub(crate) fn name(&self) -> &SqlIdentifier {
+        &self.name
     }
 
     fn render_sql(&self) -> String {

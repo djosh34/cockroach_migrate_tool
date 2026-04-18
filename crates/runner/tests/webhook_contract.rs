@@ -37,6 +37,19 @@ fn run_command(command: &mut Command, context: &str) {
     );
 }
 
+fn run_command_stdout(command: &mut Command, context: &str) -> String {
+    let output = command
+        .output()
+        .unwrap_or_else(|error| panic!("{context} should start: {error}"));
+    assert!(
+        output.status.success(),
+        "{context} failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).expect("command stdout should be utf-8")
+}
+
 struct TestPostgres {
     _data_dir: tempfile::TempDir,
     process: Child,
@@ -107,6 +120,31 @@ impl TestPostgres {
                 ]),
             "psql",
         );
+    }
+
+    fn query(&self, database: &str, sql: &str) -> String {
+        run_command_stdout(
+            Command::new("psql")
+                .env("PGPASSWORD", "")
+                .args([
+                    "-h",
+                    "127.0.0.1",
+                    "-p",
+                    &self.port.to_string(),
+                    "-U",
+                    "postgres",
+                    "-d",
+                    database,
+                    "-v",
+                    "ON_ERROR_STOP=1",
+                    "-At",
+                    "-c",
+                    sql,
+                ]),
+            "psql",
+        )
+        .trim()
+        .to_owned()
     }
 
     fn wait_until_ready(&self) {
@@ -368,7 +406,11 @@ fn run_distinguishes_malformed_json_from_supported_payload_shapes() {
         &client,
         &row_batch_body("demo_a", "customers"),
     );
-    assert_eq!(row_batch.status(), StatusCode::NOT_IMPLEMENTED);
+    let row_batch_status = row_batch.status();
+    let _row_batch_body = row_batch
+        .text()
+        .expect("row-batch response body should be readable");
+    assert_eq!(row_batch_status, StatusCode::OK);
 
     let resolved = runner.post(
         &format!("https://localhost:{bind_port}/ingest/app-a"),
@@ -437,6 +479,327 @@ fn run_rejects_row_batches_that_do_not_match_mapping_source_contract() {
     assert_eq!(mixed_tables.status(), StatusCode::BAD_REQUEST);
 }
 
+#[test]
+fn run_persists_insert_row_batches_before_returning_200() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "0"
+    );
+
+    let row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    let row_batch_status = row_batch.status();
+    let _row_batch_body = row_batch
+        .text()
+        .expect("row-batch response body should be readable");
+    assert_eq!(row_batch_status, StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT id::text || '|' || email FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1|customer@example.com"
+    );
+}
+
+#[test]
+fn run_deletes_helper_rows_from_row_batches() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let insert_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(insert_row_batch.status(), StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1"
+    );
+
+    let delete_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    let delete_status = delete_row_batch.status();
+    let _delete_body = delete_row_batch
+        .text()
+        .expect("delete row-batch response body should be readable");
+    assert_eq!(delete_status, StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "0"
+    );
+}
+
+#[test]
+fn run_updates_existing_helper_rows_by_primary_key() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let insert_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(insert_row_batch.status(), StatusCode::OK);
+
+    let update_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &update_row_batch_body("demo_a", "customers", "updated@example.com"),
+    );
+    assert_eq!(update_row_batch.status(), StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT id::text || '|' || email FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1|updated@example.com"
+    );
+}
+
+#[test]
+fn run_handles_duplicate_row_batch_delivery_idempotently() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    for _ in 0..2 {
+        let create_row_batch = runner.post(
+            &format!("https://localhost:{bind_port}/ingest/app-a"),
+            &client,
+            &row_batch_body("demo_a", "customers"),
+        );
+        assert_eq!(create_row_batch.status(), StatusCode::OK);
+    }
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1"
+    );
+
+    for _ in 0..2 {
+        let update_row_batch = runner.post(
+            &format!("https://localhost:{bind_port}/ingest/app-a"),
+            &client,
+            &update_row_batch_body("demo_a", "customers", "duplicate-safe@example.com"),
+        );
+        assert_eq!(update_row_batch.status(), StatusCode::OK);
+    }
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT id::text || '|' || email FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1|duplicate-safe@example.com"
+    );
+
+    for _ in 0..2 {
+        let delete_row_batch = runner.post(
+            &format!("https://localhost:{bind_port}/ingest/app-a"),
+            &client,
+            &delete_row_batch_body("demo_a", "customers"),
+        );
+        assert_eq!(delete_row_batch.status(), StatusCode::OK);
+    }
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "0"
+    );
+}
+
+#[test]
+fn run_persists_composite_primary_key_tables() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.order_items (order_id bigint NOT NULL, line_id bigint NOT NULL, sku text NOT NULL, PRIMARY KEY (order_id, line_id));",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(&config_path, bind_port, &["public.order_items"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let insert_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &composite_insert_row_batch_body("demo_a", "order_items", "starter-kit"),
+    );
+    assert_eq!(insert_row_batch.status(), StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT order_id::text || '|' || line_id::text || '|' || sku FROM _cockroach_migration_tool."app-a__public__order_items""#,
+        ),
+        "1|2|starter-kit"
+    );
+
+    let update_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &composite_update_row_batch_body("demo_a", "order_items", "starter-kit-v2"),
+    );
+    assert_eq!(update_row_batch.status(), StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT order_id::text || '|' || line_id::text || '|' || sku FROM _cockroach_migration_tool."app-a__public__order_items""#,
+        ),
+        "1|2|starter-kit-v2"
+    );
+
+    let delete_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &composite_delete_row_batch_body("demo_a", "order_items"),
+    );
+    assert_eq!(delete_row_batch.status(), StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__order_items""#,
+        ),
+        "0"
+    );
+}
+
+#[test]
+fn run_returns_non_200_and_rolls_back_partial_row_batch_failures() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let failing_row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &partially_invalid_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(failing_row_batch.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT count(*) FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "0"
+    );
+}
+
 fn row_batch_body(source_database: &str, table_name: &str) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}}]}}"#
@@ -445,4 +808,40 @@ fn row_batch_body(source_database: &str, table_name: &str) -> String {
 
 fn mixed_table_row_batch_body() -> String {
     r#"{"length":2,"payload":[{"after":{"id":1,"email":"customer@example.com"},"before":null,"key":{"id":1},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"},"ts_ns":1},{"after":{"id":2,"total_cents":1500},"before":null,"key":{"id":2},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"orders"},"ts_ns":2}]}"#.to_owned()
+}
+
+fn delete_row_batch_body(source_database: &str, table_name: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":null,"before":{{"id":1,"email":"customer@example.com"}},"key":{{"id":1}},"op":"d","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
+}
+
+fn update_row_batch_body(source_database: &str, table_name: &str, email: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"{email}"}},"before":{{"id":1,"email":"customer@example.com"}},"key":{{"id":1}},"op":"u","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
+}
+
+fn composite_insert_row_batch_body(source_database: &str, table_name: &str, sku: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"order_id":1,"line_id":2,"sku":"{sku}"}},"before":null,"key":{{"order_id":1,"line_id":2}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}}]}}"#
+    )
+}
+
+fn composite_update_row_batch_body(source_database: &str, table_name: &str, sku: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"order_id":1,"line_id":2,"sku":"{sku}"}},"before":{{"order_id":1,"line_id":2,"sku":"starter-kit"}},"key":{{"order_id":1,"line_id":2}},"op":"u","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
+}
+
+fn composite_delete_row_batch_body(source_database: &str, table_name: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":null,"before":{{"order_id":1,"line_id":2,"sku":"starter-kit-v2"}},"key":{{"order_id":1,"line_id":2}},"op":"d","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":3}}]}}"#
+    )
+}
+
+fn partially_invalid_row_batch_body(source_database: &str, table_name: &str) -> String {
+    format!(
+        r#"{{"length":2,"payload":[{{"after":{{"id":1,"email":"first@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}},{{"after":{{"id":2}},"before":null,"key":{{"id":2}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
 }

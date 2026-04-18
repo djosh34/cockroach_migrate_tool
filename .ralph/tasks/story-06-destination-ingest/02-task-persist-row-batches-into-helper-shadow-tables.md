@@ -1,4 +1,4 @@
-## Task: Persist row batches idempotently into helper shadow tables <status>not_started</status> <passes>false</passes>
+## Task: Persist row batches idempotently into helper shadow tables <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,12 +25,13 @@ This task must preserve the selected rule:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers insert, update, delete, duplicate-delivery, and composite-PK helper persistence cases
-- [ ] HTTP `200` is returned only after helper-state persistence commits successfully
-- [ ] Duplicate row-batch delivery does not corrupt helper shadow state
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers insert, update, delete, duplicate-delivery, and composite-PK helper persistence cases
+- [x] HTTP `200` is returned only after helper-state persistence commits successfully
+- [x] Duplicate row-batch delivery does not corrupt helper shadow state
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables_plans/2026-04-18-row-batch-helper-persistence-plan.md</plan>

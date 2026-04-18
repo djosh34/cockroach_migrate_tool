@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::error::RunnerWebhookPayloadError;
 
@@ -17,22 +17,53 @@ impl RowBatchRequest {
     pub(crate) fn rows(&self) -> &[RowEvent] {
         &self.rows
     }
+
+    pub(crate) fn into_rows(self) -> Vec<RowEvent> {
+        self.rows
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct RowEvent {
-    source: Option<SourceMetadata>,
-    raw: Value,
+    source: SourceMetadata,
+    mutation: RowMutation,
 }
 
 impl RowEvent {
-    pub(crate) fn source(&self) -> Option<&SourceMetadata> {
-        self.source.as_ref()
+    pub(crate) fn source(&self) -> &SourceMetadata {
+        &self.source
     }
 
-    pub(crate) fn raw(&self) -> &Value {
-        &self.raw
+    pub(crate) fn into_mutation(self) -> RowMutation {
+        self.mutation
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RowMutation {
+    operation: RowOperation,
+    key: Map<String, Value>,
+    values: Option<Map<String, Value>>,
+}
+
+impl RowMutation {
+    pub(crate) fn operation(&self) -> RowOperation {
+        self.operation
+    }
+
+    pub(crate) fn key(&self) -> &Map<String, Value> {
+        &self.key
+    }
+
+    pub(crate) fn values(&self) -> Option<&Map<String, Value>> {
+        self.values.as_ref()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RowOperation {
+    Upsert,
+    Delete,
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +127,9 @@ pub(crate) fn parse_webhook_request(
     if length as usize != payload.len() {
         return Err(RunnerWebhookPayloadError::LengthMismatch);
     }
+    if payload.is_empty() {
+        return Err(RunnerWebhookPayloadError::EmptyPayload);
+    }
 
     let mut rows = Vec::with_capacity(payload.len());
     for row in payload {
@@ -108,11 +142,60 @@ fn parse_row_event(value: Value) -> Result<RowEvent, RunnerWebhookPayloadError> 
     let object = value
         .as_object()
         .ok_or(RunnerWebhookPayloadError::InvalidRowEvent)?;
-    let source = match object.get("source") {
-        Some(source) => Some(parse_source_metadata(source)?),
-        None => None,
+    let source = object
+        .get("source")
+        .ok_or(RunnerWebhookPayloadError::MissingSource)
+        .and_then(parse_source_metadata)?;
+    Ok(RowEvent {
+        source,
+        mutation: parse_row_mutation(object)?,
+    })
+}
+
+fn parse_row_mutation(
+    object: &serde_json::Map<String, Value>,
+) -> Result<RowMutation, RunnerWebhookPayloadError> {
+    let operation = parse_row_operation(object)?;
+    let key = parse_object_field(
+        object,
+        "key",
+        RunnerWebhookPayloadError::MissingKey,
+        RunnerWebhookPayloadError::InvalidKey,
+    )?;
+    let values = match operation {
+        RowOperation::Upsert => Some(parse_object_field(
+            object,
+            "after",
+            RunnerWebhookPayloadError::MissingAfter,
+            RunnerWebhookPayloadError::InvalidAfter,
+        )?),
+        RowOperation::Delete => None,
     };
-    Ok(RowEvent { source, raw: value })
+
+    Ok(RowMutation {
+        operation,
+        key,
+        values,
+    })
+}
+
+fn parse_row_operation(
+    object: &serde_json::Map<String, Value>,
+) -> Result<RowOperation, RunnerWebhookPayloadError> {
+    let op = object
+        .get("op")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(RunnerWebhookPayloadError::MissingOperation)?;
+
+    match op {
+        "c" | "u" | "r" => Ok(RowOperation::Upsert),
+        "d" => Ok(RowOperation::Delete),
+        other => Err(RunnerWebhookPayloadError::UnsupportedOperation {
+            op: other.to_owned(),
+        }),
+    }
 }
 
 fn parse_source_metadata(value: &Value) -> Result<SourceMetadata, RunnerWebhookPayloadError> {
@@ -137,4 +220,18 @@ fn required_string_field(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .ok_or(RunnerWebhookPayloadError::MissingSourceField { field })
+}
+
+fn parse_object_field(
+    object: &serde_json::Map<String, Value>,
+    field: &'static str,
+    missing_error: RunnerWebhookPayloadError,
+    invalid_error: RunnerWebhookPayloadError,
+) -> Result<Map<String, Value>, RunnerWebhookPayloadError> {
+    object
+        .get(field)
+        .ok_or(missing_error)?
+        .as_object()
+        .cloned()
+        .ok_or(invalid_error)
 }

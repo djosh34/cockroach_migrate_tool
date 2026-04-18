@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 10:05:41 PM CEST 2026
+Generated: Sat Apr 18 10:32:12 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -94,6 +94,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the HTTPS webhook server and table-routing runtime <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables.md`
+
+```
+## Task: Persist row batches idempotently into helper shadow tables <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

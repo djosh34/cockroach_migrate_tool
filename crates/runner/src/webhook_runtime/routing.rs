@@ -1,9 +1,13 @@
-use std::{collections::{BTreeMap, BTreeSet}, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::{
-    config::RunnerConfig,
+    config::{MappingConfig, PostgresConnectionConfig, RunnerConfig},
     error::RunnerWebhookRoutingError,
-    webhook_runtime::payload::{ResolvedRequest, RowBatchRequest, RowEvent, WebhookRequest},
+    helper_plan::{HelperShadowTablePlan, MappingHelperPlan},
+    webhook_runtime::{
+        payload::{ResolvedRequest, RowBatchRequest, WebhookRequest},
+        persistence::RowMutationBatch,
+    },
 };
 
 pub(crate) struct RunnerWebhookPlan {
@@ -15,7 +19,10 @@ pub(crate) struct RunnerWebhookPlan {
 }
 
 impl RunnerWebhookPlan {
-    pub(crate) fn from_config(config: &RunnerConfig) -> Self {
+    pub(crate) fn from_config(
+        config: &RunnerConfig,
+        mut helper_plans: BTreeMap<String, MappingHelperPlan>,
+    ) -> Self {
         Self {
             bind_addr: config.webhook().bind_addr(),
             tls_cert_path: config.webhook().tls().cert_path().to_path_buf(),
@@ -25,13 +32,12 @@ impl RunnerWebhookPlan {
                 .mappings()
                 .iter()
                 .map(|mapping| {
+                    let helper_plan = helper_plans
+                        .remove(mapping.id())
+                        .expect("bootstrap should produce a helper plan for every mapping");
                     (
                         mapping.id().to_owned(),
-                        MappingWebhookRoute::new(
-                            mapping.id(),
-                            mapping.source().database(),
-                            mapping.source().tables(),
-                        ),
+                        MappingWebhookRoute::new(mapping, helper_plan),
                     )
                 })
                 .collect(),
@@ -68,15 +74,22 @@ impl RunnerWebhookPlan {
 pub(crate) struct MappingWebhookRoute {
     mapping_id: String,
     source_database: String,
-    allowed_tables: BTreeSet<String>,
+    destination_connection: PostgresConnectionConfig,
+    tables: BTreeMap<String, HelperShadowTablePlan>,
 }
 
 impl MappingWebhookRoute {
-    fn new(mapping_id: &str, source_database: &str, allowed_tables: &[String]) -> Self {
+    fn new(mapping: &MappingConfig, helper_plan: MappingHelperPlan) -> Self {
         Self {
-            mapping_id: mapping_id.to_owned(),
-            source_database: source_database.to_owned(),
-            allowed_tables: allowed_tables.iter().cloned().collect(),
+            mapping_id: mapping.id().to_owned(),
+            source_database: mapping.source().database().to_owned(),
+            destination_connection: mapping.destination().connection().clone(),
+            tables: helper_plan
+                .helper_tables()
+                .iter()
+                .cloned()
+                .map(|table| (table.source_table().label(), table))
+                .collect(),
         }
     }
 
@@ -101,13 +114,9 @@ impl MappingWebhookRoute {
         &self,
         batch: RowBatchRequest,
     ) -> Result<DispatchTarget, RunnerWebhookRoutingError> {
-        let mut selected_table = None::<String>;
+        let mut selected_table = None::<HelperShadowTablePlan>;
         for row in batch.rows() {
-            let Some(source) = row.source() else {
-                return Err(RunnerWebhookRoutingError::MissingSource {
-                    mapping_id: self.mapping_id.clone(),
-                });
-            };
+            let source = row.source();
             if source.database_name() != self.source_database {
                 return Err(RunnerWebhookRoutingError::SourceDatabaseMismatch {
                     mapping_id: self.mapping_id.clone(),
@@ -117,42 +126,48 @@ impl MappingWebhookRoute {
             }
 
             let table = source.table_label();
-            if !self.allowed_tables.contains(&table) {
-                return Err(RunnerWebhookRoutingError::SourceTableNotMapped {
-                    mapping_id: self.mapping_id.clone(),
-                    table,
-                });
-            }
+            let helper_table =
+                self.tables
+                    .get(&table)
+                    .ok_or_else(|| RunnerWebhookRoutingError::SourceTableNotMapped {
+                        mapping_id: self.mapping_id.clone(),
+                        table: table.clone(),
+                    })?;
 
             match &selected_table {
-                Some(existing) if existing != &table => {
+                Some(existing) if existing.source_table().label() != table => {
                     return Err(RunnerWebhookRoutingError::MixedSourceTables {
                         mapping_id: self.mapping_id.clone(),
-                        first: existing.clone(),
+                        first: existing.source_table().label(),
                         second: table,
                     });
                 }
                 Some(_) => {}
-                None => selected_table = Some(table),
+                None => selected_table = Some(helper_table.clone()),
             }
         }
 
-        Ok(DispatchTarget::RowBatch {
+        let selected_table = selected_table.ok_or_else(|| RunnerWebhookRoutingError::EmptyRowBatch {
             mapping_id: self.mapping_id.clone(),
-            table: selected_table.unwrap_or_default(),
-            rows: batch.rows().to_vec(),
-        })
+        })?;
+
+        Ok(DispatchTarget::RowBatch(Box::new(RowMutationBatch {
+            mapping_id: self.mapping_id.clone(),
+            connection: self.destination_connection.clone(),
+            table: selected_table,
+            rows: batch
+                .into_rows()
+                .into_iter()
+                .map(|row| row.into_mutation())
+                .collect(),
+        })))
     }
 }
 
 pub(crate) enum DispatchTarget {
-    RowBatch {
-        mapping_id: String,
-        table: String,
-        rows: Vec<RowEvent>,
-    },
+    RowBatch(Box<RowMutationBatch>),
     Resolved {
         mapping_id: String,
         resolved: String,
-    }
+    },
 }

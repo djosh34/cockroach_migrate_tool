@@ -1,14 +1,14 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 10:05:41 PM CEST 2026
+Generated: Sat Apr 18 10:32:12 PM CEST 2026
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
 ```
-## Task: Persist row batches idempotently into helper shadow tables <status>not_started</status> <passes>false</passes>
+## Bug: Webhook row-batch persistence contract fails with HTTP 501 instead of 200 <status>not_started</status> <passes>false</passes> <priority>high</priority>
 
 <description>
-Must use tdd skill to complete
+Detected on 2026-04-18 during a reporting audit by running `make test`.
 ```
 
 ==============

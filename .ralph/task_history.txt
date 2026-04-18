@@ -53,3 +53,4 @@
 .ralph/tasks/story-05-schema-validation/01-task-compare-schema-exports-semantically.md
 .ralph/tasks/story-05-schema-validation/02-task-generate-helper-shadow-ddl-and-dependency-order.md
 .ralph/tasks/story-06-destination-ingest/01-task-build-https-webhook-server-and-routing.md
+.ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables.md
