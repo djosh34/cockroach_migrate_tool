@@ -1,4 +1,4 @@
-## Task: Generate helper shadow DDL and dependency order from the validated schema <status>not_started</status> <passes>false</passes>
+## Task: Generate helper shadow DDL and dependency order from the validated schema <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -26,12 +26,13 @@ This task must encode:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers helper DDL generation, dependency ordering, and composite-key support
-- [ ] Generated helper DDL matches the selected shadow-table design rules
-- [ ] Dependency ordering is explicit and reusable by later reconcile tasks
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers helper DDL generation, dependency ordering, and composite-key support
+- [x] Generated helper DDL matches the selected shadow-table design rules
+- [x] Dependency ordering is explicit and reusable by later reconcile tasks
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-05-schema-validation/02-task-generate-helper-shadow-ddl-and-dependency-order_plans/2026-04-18-helper-shadow-ddl-plan.md</plan>

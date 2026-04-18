@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 09:03:53 PM CEST 2026
+Generated: Sat Apr 18 09:32:23 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -72,6 +72,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Compare Cockroach and PostgreSQL schema exports semantically <status>in_progress</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-05-schema-validation/02-task-generate-helper-shadow-ddl-and-dependency-order.md`
+
+```
+## Task: Generate helper shadow DDL and dependency order from the validated schema <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

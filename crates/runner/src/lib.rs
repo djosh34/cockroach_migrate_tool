@@ -1,9 +1,11 @@
 mod config;
 mod error;
+mod helper_plan;
 mod postgres_bootstrap;
 mod postgres_setup;
 mod schema_compare;
 mod sql_name;
+mod validated_schema;
 
 use std::path::PathBuf;
 
@@ -11,6 +13,7 @@ use clap::{Parser, Subcommand};
 
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
+use helper_plan::{HelperPlanArtifacts, render_helper_plan};
 use postgres_bootstrap::{PostgresBootstrapReport, bootstrap_postgres};
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 use schema_compare::{SchemaCompareSummary, compare_mapping_exports};
@@ -47,6 +50,18 @@ enum Command {
         #[arg(long)]
         postgres_schema: PathBuf,
     },
+    RenderHelperPlan {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        mapping: String,
+        #[arg(long)]
+        cockroach_schema: PathBuf,
+        #[arg(long)]
+        postgres_schema: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+    },
     Run {
         #[arg(long)]
         config: PathBuf,
@@ -79,6 +94,22 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
                 &postgres_schema,
             )?))
         }
+        Command::RenderHelperPlan {
+            config,
+            mapping,
+            cockroach_schema,
+            postgres_schema,
+            output_dir,
+        } => {
+            let config = LoadedRunnerConfig::load(&config)?;
+            Ok(CommandOutput::HelperPlanArtifacts(render_helper_plan(
+                &config,
+                &mapping,
+                &cockroach_schema,
+                &postgres_schema,
+                &output_dir,
+            )?))
+        }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             let bootstrap = bootstrap_postgres(&config)?;
@@ -94,6 +125,7 @@ pub enum CommandOutput {
     Validated(ValidatedConfig),
     PostgresSetupArtifacts(PostgresSetupArtifacts),
     SchemaCompare(SchemaCompareSummary),
+    HelperPlanArtifacts(HelperPlanArtifacts),
     Startup(RunnerStartupSummary),
 }
 
@@ -103,6 +135,7 @@ impl std::fmt::Display for CommandOutput {
             Self::Validated(config) => config.fmt(f),
             Self::PostgresSetupArtifacts(summary) => summary.fmt(f),
             Self::SchemaCompare(summary) => summary.fmt(f),
+            Self::HelperPlanArtifacts(summary) => summary.fmt(f),
             Self::Startup(summary) => summary.fmt(f),
         }
     }

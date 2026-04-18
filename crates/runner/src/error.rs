@@ -10,6 +10,8 @@ pub enum RunnerError {
     Config(#[from] RunnerConfigError),
     #[error("postgres setup artifacts: {0}")]
     PostgresSetupArtifacts(#[from] RunnerArtifactError),
+    #[error("helper plan: {0}")]
+    HelperPlan(#[from] RunnerHelperPlanError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
     #[error(transparent)]
@@ -48,6 +50,18 @@ pub enum RunnerArtifactError {
 }
 
 #[derive(Debug, Error)]
+pub enum RunnerHelperPlanError {
+    #[error(transparent)]
+    SchemaCompare(#[from] SchemaCompareError),
+    #[error(transparent)]
+    Artifact(#[from] RunnerArtifactError),
+    #[error("validated schema is missing selected table `{table}` for mapping `{mapping_id}`")]
+    MissingValidatedTable { mapping_id: String, table: String },
+    #[error("dependency cycle detected for mapping `{mapping_id}` across tables: {tables}")]
+    DependencyCycle { mapping_id: String, tables: String },
+}
+
+#[derive(Debug, Error)]
 pub enum RunnerBootstrapError {
     #[error("failed to start async runtime")]
     StartRuntime { source: io::Error },
@@ -70,8 +84,27 @@ pub enum RunnerBootstrapError {
         table: String,
         source: sqlx::Error,
     },
+    #[error("failed to build helper plan for mapping `{mapping_id}` in `{database}`: {source}")]
+    HelperPlan {
+        mapping_id: String,
+        database: String,
+        source: RunnerHelperPlanError,
+    },
     #[error("missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`")]
     MissingTable {
+        mapping_id: String,
+        database: String,
+        table: String,
+    },
+    #[error("unsupported foreign key ON DELETE action `{action}` for mapping `{mapping_id}` in `{database}` table `{table}`")]
+    UnsupportedForeignKeyAction {
+        mapping_id: String,
+        database: String,
+        table: String,
+        action: String,
+    },
+    #[error("incomplete foreign key metadata while reading mapping `{mapping_id}` in `{database}` table `{table}`")]
+    IncompleteForeignKeyMetadata {
         mapping_id: String,
         database: String,
         table: String,

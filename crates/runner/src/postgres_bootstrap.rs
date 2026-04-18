@@ -1,9 +1,14 @@
 use sqlx::{Connection, Executor, PgConnection, Row, postgres::PgConnectOptions};
 
 use crate::{
-    config::{LoadedRunnerConfig, PostgresConnectionConfig, RunnerConfig},
+    config::{LoadedRunnerConfig, MappingConfig, PostgresConnectionConfig, RunnerConfig},
     error::RunnerBootstrapError,
+    helper_plan::MappingHelperPlan,
     sql_name::{QualifiedTableName, SqlIdentifier},
+    validated_schema::{
+        ColumnSchema, ForeignKeyAction, ForeignKeyShape, PrimaryKeyShape, TableSchema,
+        ValidatedSchema,
+    },
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
@@ -46,9 +51,7 @@ async fn bootstrap_all_mappings(config: &RunnerConfig) -> Result<(), RunnerBoots
     Ok(())
 }
 
-async fn bootstrap_mapping(
-    mapping: &MappingBootstrapPlan<'_>,
-) -> Result<(), RunnerBootstrapError> {
+async fn bootstrap_mapping(mapping: &MappingBootstrapPlan<'_>) -> Result<(), RunnerBootstrapError> {
     let endpoint = mapping.connection.endpoint_label();
     let mut postgres = PgConnection::connect_with(
         &PgConnectOptions::new()
@@ -118,12 +121,21 @@ async fn bootstrap_mapping(
             source,
         })?;
 
-    for helper_table in &mapping.helper_tables {
-        ensure_source_table_exists(&mut postgres, mapping, helper_table).await?;
+    let destination_schema = load_destination_schema(&mut postgres, mapping).await?;
+    let helper_plan = MappingHelperPlan::from_validated_schema(
+        &mapping.mapping_id,
+        &mapping.selected_tables,
+        &destination_schema,
+    )
+    .map_err(|source| RunnerBootstrapError::HelperPlan {
+        mapping_id: mapping.mapping_id.clone(),
+        database: mapping.connection.database().to_owned(),
+        source,
+    })?;
 
-        let create_shadow_table_sql = helper_table.create_shadow_table_sql();
+    for helper_table in helper_plan.helper_tables() {
         postgres
-            .execute(create_shadow_table_sql.as_str())
+            .execute(helper_table.create_shadow_table_sql().as_str())
             .await
             .map_err(|source| RunnerBootstrapError::ExecuteDdl {
                 mapping_id: mapping.mapping_id.clone(),
@@ -131,13 +143,9 @@ async fn bootstrap_mapping(
                 source,
             })?;
 
-        let primary_key_columns = load_primary_key_columns(&mut postgres, mapping, helper_table).await?;
-
-        if !primary_key_columns.is_empty() {
-            let create_helper_index_sql =
-                helper_table.create_primary_key_index_sql(&primary_key_columns);
+        if let Some(create_index_sql) = helper_table.create_primary_key_index_sql() {
             postgres
-                .execute(create_helper_index_sql.as_str())
+                .execute(create_index_sql.as_str())
                 .await
                 .map_err(|source| RunnerBootstrapError::ExecuteDdl {
                     mapping_id: mapping.mapping_id.clone(),
@@ -147,68 +155,116 @@ async fn bootstrap_mapping(
         }
     }
 
-    postgres.close().await.map_err(|source| RunnerBootstrapError::Connect {
-        mapping_id: mapping.mapping_id.clone(),
-        endpoint: mapping.connection.endpoint_label(),
-        source,
-    })?;
+    postgres
+        .close()
+        .await
+        .map_err(|source| RunnerBootstrapError::Connect {
+            mapping_id: mapping.mapping_id.clone(),
+            endpoint: mapping.connection.endpoint_label(),
+            source,
+        })?;
 
     Ok(())
 }
 
-async fn ensure_source_table_exists(
+async fn load_destination_schema(
     postgres: &mut PgConnection,
     mapping: &MappingBootstrapPlan<'_>,
-    helper_table: &HelperTablePlan,
-) -> Result<(), RunnerBootstrapError> {
-    let row = sqlx::query(
+) -> Result<ValidatedSchema, RunnerBootstrapError> {
+    let mut schema = ValidatedSchema::default();
+
+    for table_name in &mapping.selected_tables {
+        let columns = load_table_columns(postgres, mapping, table_name).await?;
+        if columns.is_empty() {
+            return Err(RunnerBootstrapError::MissingTable {
+                mapping_id: mapping.mapping_id.clone(),
+                database: mapping.connection.database().to_owned(),
+                table: table_name.label(),
+            });
+        }
+
+        let primary_key_columns = load_primary_key_columns(postgres, mapping, table_name).await?;
+        let foreign_keys = load_foreign_keys(postgres, mapping, table_name).await?;
+
+        let mut table_schema = TableSchema::default();
+        for column in columns {
+            table_schema.push_column(column);
+        }
+        if !primary_key_columns.is_empty() {
+            table_schema.set_primary_key(PrimaryKeyShape::new(primary_key_columns));
+        }
+        for foreign_key in foreign_keys {
+            table_schema.push_foreign_key(foreign_key);
+        }
+
+        schema.insert_table(table_name.clone(), table_schema);
+    }
+
+    Ok(schema)
+}
+
+async fn load_table_columns(
+    postgres: &mut PgConnection,
+    mapping: &MappingBootstrapPlan<'_>,
+    table_name: &QualifiedTableName,
+) -> Result<Vec<ColumnSchema>, RunnerBootstrapError> {
+    let rows = sqlx::query(
         r#"
-        SELECT EXISTS (
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema = $1
-              AND table_name = $2
-        ) AS table_exists
+        SELECT
+            attribute.attname AS column_name,
+            pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) AS raw_type,
+            NOT attribute.attnotnull AS nullable
+        FROM pg_attribute AS attribute
+        JOIN pg_class AS relation
+          ON relation.oid = attribute.attrelid
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        WHERE namespace.nspname = $1
+          AND relation.relname = $2
+          AND attribute.attnum > 0
+          AND NOT attribute.attisdropped
+        ORDER BY attribute.attnum
         "#,
     )
-    .bind(helper_table.source_table.schema().raw())
-    .bind(helper_table.source_table.table().raw())
-    .fetch_one(postgres)
+    .bind(table_name.schema().raw())
+    .bind(table_name.table().raw())
+    .fetch_all(postgres)
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
         mapping_id: mapping.mapping_id.clone(),
         database: mapping.connection.database().to_owned(),
-        table: helper_table.source_table.label(),
+        table: table_name.label(),
         source,
     })?;
 
-    if row.get::<bool, _>("table_exists") {
-        Ok(())
-    } else {
-        Err(RunnerBootstrapError::MissingTable {
-            mapping_id: mapping.mapping_id.clone(),
-            database: mapping.connection.database().to_owned(),
-            table: helper_table.source_table.label(),
+    Ok(rows
+        .into_iter()
+        .map(|row| {
+            ColumnSchema::new(
+                SqlIdentifier::new(&row.get::<String, _>("column_name")),
+                row.get::<String, _>("raw_type"),
+                row.get::<bool, _>("nullable"),
+            )
         })
-    }
+        .collect())
 }
 
 async fn load_primary_key_columns(
     postgres: &mut PgConnection,
     mapping: &MappingBootstrapPlan<'_>,
-    helper_table: &HelperTablePlan,
+    table_name: &QualifiedTableName,
 ) -> Result<Vec<SqlIdentifier>, RunnerBootstrapError> {
     let rows = sqlx::query(
         r#"
         SELECT attribute.attname
         FROM pg_constraint AS table_constraint
-        JOIN pg_class relation
+        JOIN pg_class AS relation
           ON relation.oid = table_constraint.conrelid
-        JOIN pg_namespace namespace
+        JOIN pg_namespace AS namespace
           ON namespace.oid = relation.relnamespace
         JOIN unnest(table_constraint.conkey) WITH ORDINALITY AS key_columns(attnum, ordinality)
           ON TRUE
-        JOIN pg_attribute attribute
+        JOIN pg_attribute AS attribute
           ON attribute.attrelid = relation.oid
          AND attribute.attnum = key_columns.attnum
         WHERE table_constraint.contype = 'p'
@@ -217,14 +273,14 @@ async fn load_primary_key_columns(
         ORDER BY key_columns.ordinality
         "#,
     )
-    .bind(helper_table.source_table.schema().raw())
-    .bind(helper_table.source_table.table().raw())
+    .bind(table_name.schema().raw())
+    .bind(table_name.table().raw())
     .fetch_all(postgres)
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
         mapping_id: mapping.mapping_id.clone(),
         database: mapping.connection.database().to_owned(),
-        table: helper_table.source_table.label(),
+        table: table_name.label(),
         source,
     })?;
 
@@ -234,68 +290,167 @@ async fn load_primary_key_columns(
         .collect())
 }
 
+async fn load_foreign_keys(
+    postgres: &mut PgConnection,
+    mapping: &MappingBootstrapPlan<'_>,
+    table_name: &QualifiedTableName,
+) -> Result<Vec<ForeignKeyShape>, RunnerBootstrapError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            table_constraint.conname AS constraint_name,
+            source_attribute.attname AS source_column,
+            referenced_namespace.nspname AS referenced_schema,
+            referenced_relation.relname AS referenced_table,
+            referenced_attribute.attname AS referenced_column,
+            table_constraint.confdeltype AS on_delete
+        FROM pg_constraint AS table_constraint
+        JOIN pg_class AS relation
+          ON relation.oid = table_constraint.conrelid
+        JOIN pg_namespace AS namespace
+          ON namespace.oid = relation.relnamespace
+        JOIN pg_class AS referenced_relation
+          ON referenced_relation.oid = table_constraint.confrelid
+        JOIN pg_namespace AS referenced_namespace
+          ON referenced_namespace.oid = referenced_relation.relnamespace
+        JOIN unnest(table_constraint.conkey, table_constraint.confkey) WITH ORDINALITY AS key_columns(source_attnum, referenced_attnum, ordinality)
+          ON TRUE
+        JOIN pg_attribute AS source_attribute
+          ON source_attribute.attrelid = relation.oid
+         AND source_attribute.attnum = key_columns.source_attnum
+        JOIN pg_attribute AS referenced_attribute
+          ON referenced_attribute.attrelid = referenced_relation.oid
+         AND referenced_attribute.attnum = key_columns.referenced_attnum
+        WHERE table_constraint.contype = 'f'
+          AND namespace.nspname = $1
+          AND relation.relname = $2
+        ORDER BY table_constraint.conname, key_columns.ordinality
+        "#,
+    )
+    .bind(table_name.schema().raw())
+    .bind(table_name.table().raw())
+    .fetch_all(postgres)
+    .await
+    .map_err(|source| RunnerBootstrapError::ReadCatalog {
+        mapping_id: mapping.mapping_id.clone(),
+        database: mapping.connection.database().to_owned(),
+        table: table_name.label(),
+        source,
+    })?;
+
+    let mut foreign_keys = Vec::new();
+    let mut current_name = None::<String>;
+    let mut current_source_columns = Vec::<SqlIdentifier>::new();
+    let mut current_referenced_columns = Vec::<SqlIdentifier>::new();
+    let mut current_referenced_table = None::<QualifiedTableName>;
+    let mut current_on_delete = None::<ForeignKeyAction>;
+
+    for row in rows {
+        let constraint_name = row.get::<String, _>("constraint_name");
+        if current_name.as_deref() != Some(constraint_name.as_str()) {
+            if current_name.is_some() {
+                let Some(referenced_table) = current_referenced_table.take() else {
+                    return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
+                        mapping_id: mapping.mapping_id.clone(),
+                        database: mapping.connection.database().to_owned(),
+                        table: table_name.label(),
+                    });
+                };
+                let Some(on_delete) = current_on_delete.take() else {
+                    return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
+                        mapping_id: mapping.mapping_id.clone(),
+                        database: mapping.connection.database().to_owned(),
+                        table: table_name.label(),
+                    });
+                };
+                foreign_keys.push(ForeignKeyShape::new(
+                    current_source_columns,
+                    referenced_table,
+                    current_referenced_columns,
+                    on_delete,
+                ));
+                current_source_columns = Vec::new();
+                current_referenced_columns = Vec::new();
+            }
+            current_name = Some(constraint_name);
+            current_referenced_table = Some(QualifiedTableName::new(
+                SqlIdentifier::new(&row.get::<String, _>("referenced_schema")),
+                SqlIdentifier::new(&row.get::<String, _>("referenced_table")),
+            ));
+            current_on_delete = Some(parse_on_delete_action(
+                &row.get::<String, _>("on_delete"),
+                mapping,
+                table_name,
+            )?);
+        }
+
+        current_source_columns.push(SqlIdentifier::new(&row.get::<String, _>("source_column")));
+        current_referenced_columns
+            .push(SqlIdentifier::new(&row.get::<String, _>("referenced_column")));
+    }
+
+    if current_name.is_some() {
+        let Some(referenced_table) = current_referenced_table.take() else {
+            return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
+                mapping_id: mapping.mapping_id.clone(),
+                database: mapping.connection.database().to_owned(),
+                table: table_name.label(),
+            });
+        };
+        let Some(on_delete) = current_on_delete.take() else {
+            return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
+                mapping_id: mapping.mapping_id.clone(),
+                database: mapping.connection.database().to_owned(),
+                table: table_name.label(),
+            });
+        };
+        foreign_keys.push(ForeignKeyShape::new(
+            current_source_columns,
+            referenced_table,
+            current_referenced_columns,
+            on_delete,
+        ));
+    }
+
+    Ok(foreign_keys)
+}
+
+fn parse_on_delete_action(
+    value: &str,
+    mapping: &MappingBootstrapPlan<'_>,
+    table_name: &QualifiedTableName,
+) -> Result<ForeignKeyAction, RunnerBootstrapError> {
+    match value {
+        "a" => Ok(ForeignKeyAction::NoAction),
+        "c" => Ok(ForeignKeyAction::Cascade),
+        "n" => Ok(ForeignKeyAction::SetNull),
+        "r" => Ok(ForeignKeyAction::Restrict),
+        other => Err(RunnerBootstrapError::UnsupportedForeignKeyAction {
+            mapping_id: mapping.mapping_id.clone(),
+            database: mapping.connection.database().to_owned(),
+            table: table_name.label(),
+            action: other.to_owned(),
+        }),
+    }
+}
+
 struct MappingBootstrapPlan<'a> {
     mapping_id: String,
     connection: &'a PostgresConnectionConfig,
-    helper_tables: Vec<HelperTablePlan>,
+    selected_tables: Vec<QualifiedTableName>,
 }
 
 impl<'a> MappingBootstrapPlan<'a> {
-    fn from_mapping(mapping: &'a crate::config::MappingConfig) -> Self {
+    fn from_mapping(mapping: &'a MappingConfig) -> Self {
         Self {
             mapping_id: mapping.id().to_owned(),
             connection: mapping.destination().connection(),
-            helper_tables: mapping
+            selected_tables: mapping
                 .source()
                 .tables()
                 .iter()
-                .map(|table| HelperTablePlan::new(mapping.id(), QualifiedTableName::from_config(table)))
+                .map(|table| QualifiedTableName::from_config(table))
                 .collect(),
         }
-    }
-}
-
-struct HelperTablePlan {
-    source_table: QualifiedTableName,
-    helper_table_name: String,
-}
-
-impl HelperTablePlan {
-    fn new(mapping_id: &str, source_table: QualifiedTableName) -> Self {
-        let helper_table_name = format!(
-            "{mapping_id}__{}__{}",
-            source_table.schema().raw(),
-            source_table.table().raw()
-        );
-
-        Self {
-            source_table,
-            helper_table_name,
-        }
-    }
-
-    fn create_shadow_table_sql(&self) -> String {
-        format!(
-            "CREATE TABLE IF NOT EXISTS {}.{} (LIKE {}.{} INCLUDING DEFAULTS INCLUDING GENERATED)",
-            SqlIdentifier::new(HELPER_SCHEMA),
-            SqlIdentifier::new(&self.helper_table_name),
-            self.source_table.schema(),
-            self.source_table.table(),
-        )
-    }
-
-    fn create_primary_key_index_sql(&self, primary_key_columns: &[SqlIdentifier]) -> String {
-        let columns = primary_key_columns
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        format!(
-            "CREATE INDEX IF NOT EXISTS {} ON {}.{} ({columns})",
-            SqlIdentifier::new(&format!("{}__pk", self.helper_table_name)),
-            SqlIdentifier::new(HELPER_SCHEMA),
-            SqlIdentifier::new(&self.helper_table_name),
-        )
     }
 }

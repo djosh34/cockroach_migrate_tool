@@ -136,7 +136,23 @@ docker run --rm \
   render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
 ```
 
-6. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables, and adds the automatic minimal PK helper indexes when they are needed.
+6. Render the helper shadow-table plan and reconcile order for one validated mapping when you want explicit review artifacts before runtime bootstrap. The render command reuses semantic schema validation and writes `helper_tables.sql`, `reconcile_order.txt`, and a per-mapping `README.md`.
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  -v "$(pwd)/schema:/schema:ro" \
+  -v "$(pwd)/helper-plan:/work/helper-plan" \
+  cockroach-migrate-runner \
+  render-helper-plan \
+  --config /config/runner.yml \
+  --mapping app-a \
+  --cockroach-schema /schema/crdb_schema.txt \
+  --postgres-schema /schema/pg_schema.sql \
+  --output-dir /work/helper-plan
+```
+
+7. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables from the same helper-plan rules as `render-helper-plan`, and adds the automatic minimal PK helper indexes when they are needed.
 
 ```bash
 docker run --rm \
@@ -146,7 +162,7 @@ docker run --rm \
   run --config /config/runner.yml
 ```
 
-The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
+The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, `runner render-helper-plan --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
 ## Command Contract
 

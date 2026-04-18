@@ -355,6 +355,50 @@ fn run_adds_one_automatic_helper_index_for_primary_key_columns() {
 }
 
 #[test]
+fn run_helper_shadow_tables_drop_defaults_and_generated_expressions() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (
+            id bigint PRIMARY KEY,
+            email text NOT NULL DEFAULT 'friend@example.com',
+            email_length bigint GENERATED ALWAYS AS (char_length(email)) STORED
+        );",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path);
+
+    let mut command = AssertCommand::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["run", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success();
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT string_agg(
+                column_name || ':' || is_nullable || ':' || COALESCE(column_default, '<none>') || ':' || is_generated,
+                ',' ORDER BY ordinal_position
+             )
+             FROM information_schema.columns
+             WHERE table_schema = '_cockroach_migration_tool'
+               AND table_name = 'app-a__public__customers';",
+        ),
+        "id:NO:<none>:NEVER,email:NO:<none>:NEVER,email_length:YES:<none>:NEVER"
+    );
+}
+
+#[test]
 fn run_fails_loudly_when_a_mapped_destination_table_is_missing() {
     let postgres = TestPostgres::start();
     postgres.exec(

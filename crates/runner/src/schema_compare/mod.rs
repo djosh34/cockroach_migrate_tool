@@ -3,7 +3,7 @@ mod postgres_export;
 mod report;
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     fmt::{self, Display, Formatter},
     io,
     path::{Path, PathBuf},
@@ -14,6 +14,10 @@ use thiserror::Error;
 use crate::{
     config::LoadedRunnerConfig,
     sql_name::{QualifiedTableName, SqlIdentifier},
+    validated_schema::{
+        ColumnSchema, ForeignKeyAction, ForeignKeyShape, IndexColumnShape, IndexShape,
+        PrimaryKeyShape, SortDirection, TableSchema, UniqueConstraintShape, ValidatedSchema,
+    },
 };
 
 pub(crate) use report::SchemaMismatchError;
@@ -48,6 +52,26 @@ pub(crate) fn compare_mapping_exports(
     cockroach_schema_path: &Path,
     postgres_schema_path: &Path,
 ) -> Result<SchemaCompareSummary, SchemaCompareError> {
+    let validated = validate_mapping_exports(
+        loaded_config,
+        mapping_id,
+        cockroach_schema_path,
+        postgres_schema_path,
+    )?;
+
+    Ok(SchemaCompareSummary {
+        mapping_id: validated.mapping_id,
+        compared_tables: validated.selected_tables.len(),
+        ignored_tables: validated.ignored_tables,
+    })
+}
+
+pub(crate) fn validate_mapping_exports(
+    loaded_config: &LoadedRunnerConfig,
+    mapping_id: &str,
+    cockroach_schema_path: &Path,
+    postgres_schema_path: &Path,
+) -> Result<ValidatedMappingSchema, SchemaCompareError> {
     let mapping =
         loaded_config
             .config()
@@ -62,25 +86,27 @@ pub(crate) fn compare_mapping_exports(
         .tables()
         .iter()
         .map(|value| QualifiedTableName::from_config(value))
-        .collect::<BTreeSet<_>>();
+        .collect::<Vec<_>>();
+    let selected_table_set = selected_tables.iter().cloned().collect::<BTreeSet<_>>();
 
     let cockroach_schema = cockroach_export::parse_file(cockroach_schema_path)?;
     let postgres_schema = postgres_export::parse_file(postgres_schema_path)?;
-    compare_selected_tables(&selected_tables, &cockroach_schema, &postgres_schema)?;
+    compare_selected_tables(&selected_table_set, &cockroach_schema, &postgres_schema)?;
 
     let ignored_tables = cockroach_schema
-        .tables
+        .tables()
         .keys()
-        .chain(postgres_schema.tables.keys())
+        .chain(postgres_schema.tables().keys())
         .cloned()
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .filter(|table| !selected_tables.contains(table))
+        .filter(|table| !selected_table_set.contains(table))
         .count();
 
-    Ok(SchemaCompareSummary {
+    Ok(ValidatedMappingSchema {
         mapping_id: mapping_id.to_owned(),
-        compared_tables: selected_tables.len(),
+        selected_tables,
+        postgres_schema: postgres_schema.selected(&selected_table_set),
         ignored_tables,
     })
 }
@@ -101,68 +127,11 @@ impl Display for SchemaCompareSummary {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub(crate) struct ValidatedSchema {
-    tables: BTreeMap<QualifiedTableName, TableSchema>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(crate) struct TableSchema {
-    columns: Vec<ColumnSchema>,
-    primary_key: Option<PrimaryKeyShape>,
-    foreign_keys: Vec<ForeignKeyShape>,
-    unique_constraints: Vec<UniqueConstraintShape>,
-    indexes: Vec<IndexShape>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ColumnSchema {
-    name: SqlIdentifier,
-    raw_type: String,
-    nullable: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PrimaryKeyShape {
-    columns: Vec<SqlIdentifier>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct UniqueConstraintShape {
-    columns: Vec<SqlIdentifier>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct ForeignKeyShape {
-    columns: Vec<SqlIdentifier>,
-    referenced_table: QualifiedTableName,
-    referenced_columns: Vec<SqlIdentifier>,
-    on_delete: ForeignKeyAction,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum ForeignKeyAction {
-    NoAction,
-    Cascade,
-    SetNull,
-    Restrict,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct IndexShape {
-    columns: Vec<IndexColumnShape>,
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct IndexColumnShape {
-    name: SqlIdentifier,
-    direction: SortDirection,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) enum SortDirection {
-    Asc,
-    Desc,
+pub(crate) struct ValidatedMappingSchema {
+    pub(crate) mapping_id: String,
+    pub(crate) selected_tables: Vec<QualifiedTableName>,
+    pub(crate) postgres_schema: ValidatedSchema,
+    pub(crate) ignored_tables: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,12 +140,6 @@ enum TypeFamily {
     Integer,
     Boolean,
     TimestampWithTimeZone,
-}
-
-impl TableSchema {
-    fn column(&self, name: &SqlIdentifier) -> Option<&ColumnSchema> {
-        self.columns.iter().find(|column| column.name == *name)
-    }
 }
 
 pub(super) fn apply_statement(
@@ -256,10 +219,10 @@ fn apply_create_table(
             continue;
         }
 
-        table_schema.columns.push(parse_column(item));
+        table_schema.push_column(parse_column(item));
     }
 
-    schema.tables.insert(table_name, table_schema);
+    schema.insert_table(table_name, table_schema);
     Ok(())
 }
 
@@ -281,7 +244,7 @@ fn apply_alter_table(
 
     let table_name = QualifiedTableName::from_sql(rest[..index].trim());
     let (_, constraint_body) = split_first_token(rest[index + add_constraint.len()..].trim());
-    let table_schema = schema.tables.get_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
+    let table_schema = schema.table_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
         format,
         path: path.to_path_buf(),
         message: format!("constraint references missing table `{}`", table_name.label()),
@@ -327,17 +290,20 @@ fn apply_create_index(
         .trim();
     let table_name = QualifiedTableName::from_sql(table_name);
     let columns = parse_index_columns(&after_on[columns_start + 1..close]);
-    let table_schema = schema.tables.get_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
+    let table_schema = schema.table_mut(&table_name).ok_or_else(|| SchemaCompareError::ParseFile {
         format,
         path: path.to_path_buf(),
         message: format!("index references missing table `{}`", table_name.label()),
     })?;
     if is_unique {
-        table_schema.unique_constraints.push(UniqueConstraintShape {
-            columns: columns.into_iter().map(|column| column.name).collect(),
-        });
+        table_schema.push_unique_constraint(UniqueConstraintShape::new(
+            columns
+                .into_iter()
+                .map(|column| column.name().clone())
+                .collect(),
+        ));
     } else {
-        table_schema.indexes.push(IndexShape { columns });
+        table_schema.push_index(IndexShape::new(columns));
     }
     Ok(())
 }
@@ -353,9 +319,7 @@ fn apply_constraint_body(
         .strip_prefix("PRIMARY KEY ")
         .and_then(extract_parenthesized)
     {
-        table_schema.primary_key = Some(PrimaryKeyShape {
-            columns: parse_identifier_list(columns),
-        });
+        table_schema.set_primary_key(PrimaryKeyShape::new(parse_identifier_list(columns)));
         return Ok(());
     }
 
@@ -372,17 +336,13 @@ fn apply_constraint_body(
             path: path.to_path_buf(),
             message: format!("unterminated unique index columns on `{}`", table_name.label()),
         })?;
-        table_schema.unique_constraints.push(UniqueConstraintShape {
-            columns: parse_identifier_list(columns),
-        });
+        table_schema.push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
         return Ok(());
     }
 
     if let Some(columns) = constraint_body.strip_prefix("UNIQUE ").and_then(extract_parenthesized)
     {
-        table_schema.unique_constraints.push(UniqueConstraintShape {
-            columns: parse_identifier_list(columns),
-        });
+        table_schema.push_unique_constraint(UniqueConstraintShape::new(parse_identifier_list(columns)));
         return Ok(());
     }
 
@@ -399,9 +359,7 @@ fn apply_constraint_body(
             path: path.to_path_buf(),
             message: format!("unterminated index columns on `{}`", table_name.label()),
         })?;
-        table_schema.indexes.push(IndexShape {
-            columns: parse_index_columns(columns),
-        });
+        table_schema.push_index(IndexShape::new(parse_index_columns(columns)));
         return Ok(());
     }
 
@@ -444,12 +402,12 @@ fn apply_constraint_body(
         } else {
             ForeignKeyAction::NoAction
         };
-        table_schema.foreign_keys.push(ForeignKeyShape {
-            columns: parse_identifier_list(source_columns),
+        table_schema.push_foreign_key(ForeignKeyShape::new(
+            parse_identifier_list(source_columns),
             referenced_table,
-            referenced_columns: parse_identifier_list(referenced_columns),
+            parse_identifier_list(referenced_columns),
             on_delete,
-        });
+        ));
         return Ok(());
     }
 
@@ -459,19 +417,11 @@ fn apply_constraint_body(
 fn parse_column(value: &str) -> ColumnSchema {
     let (column_name, remainder) = split_first_token(value);
     let remainder = remainder.trim();
-    let (raw_type, nullable) = if let Some(raw_type) = remainder.strip_suffix(" NOT NULL") {
-        (raw_type.trim(), false)
-    } else if let Some(raw_type) = remainder.strip_suffix(" NULL") {
-        (raw_type.trim(), true)
-    } else {
-        (remainder, true)
-    };
+    let (raw_type, clauses) = split_column_type_and_clauses(remainder);
+    let clauses = clauses.to_ascii_uppercase();
+    let nullable = !clauses.contains("NOT NULL");
 
-    ColumnSchema {
-        name: SqlIdentifier::new(column_name),
-        raw_type: raw_type.to_owned(),
-        nullable,
-    }
+    ColumnSchema::new(SqlIdentifier::new(column_name), raw_type.to_owned(), nullable)
 }
 
 fn compare_selected_tables(
@@ -482,14 +432,14 @@ fn compare_selected_tables(
     let mut mismatches = Vec::new();
 
     for table in selected_tables {
-        let Some(cockroach_table) = cockroach_schema.tables.get(table) else {
+        let Some(cockroach_table) = cockroach_schema.table(table) else {
             mismatches.push(SchemaMismatch::MissingTable {
                 side: SchemaSide::Cockroach,
                 table: table.label(),
             });
             continue;
         };
-        let Some(postgres_table) = postgres_schema.tables.get(table) else {
+        let Some(postgres_table) = postgres_schema.table(table) else {
             mismatches.push(SchemaMismatch::MissingTable {
                 side: SchemaSide::Postgres,
                 table: table.label(),
@@ -498,10 +448,10 @@ fn compare_selected_tables(
         };
 
         let column_names = cockroach_table
-            .columns
+            .columns()
             .iter()
-            .map(|column| column.name.clone())
-            .chain(postgres_table.columns.iter().map(|column| column.name.clone()))
+            .map(|column| column.name().clone())
+            .chain(postgres_table.columns().iter().map(|column| column.name().clone()))
             .collect::<BTreeSet<_>>();
 
         for column_name in column_names {
@@ -523,43 +473,41 @@ fn compare_selected_tables(
             };
 
             match (
-                normalize_cockroach_type(&cockroach_column.raw_type),
-                normalize_postgres_type(&postgres_column.raw_type),
+                normalize_cockroach_type(cockroach_column.raw_type()),
+                normalize_postgres_type(postgres_column.raw_type()),
             ) {
                 (Some(cockroach_type), Some(postgres_type)) if cockroach_type == postgres_type => {}
                 (Some(_), Some(_)) => mismatches.push(SchemaMismatch::ColumnTypeMismatch {
                     table: table.label(),
                     column: column_name.raw().to_owned(),
-                    cockroach_type: cockroach_column.raw_type.clone(),
-                    postgres_type: postgres_column.raw_type.clone(),
+                    cockroach_type: cockroach_column.raw_type().to_owned(),
+                    postgres_type: postgres_column.raw_type().to_owned(),
                 }),
                 _ => mismatches.push(SchemaMismatch::UnsupportedTypePair {
                     table: table.label(),
                     column: column_name.raw().to_owned(),
-                    cockroach_type: cockroach_column.raw_type.clone(),
-                    postgres_type: postgres_column.raw_type.clone(),
+                    cockroach_type: cockroach_column.raw_type().to_owned(),
+                    postgres_type: postgres_column.raw_type().to_owned(),
                 }),
             }
 
-            if cockroach_column.nullable != postgres_column.nullable {
+            if cockroach_column.nullable() != postgres_column.nullable() {
                 mismatches.push(SchemaMismatch::NullabilityMismatch {
                     table: table.label(),
                     column: column_name.raw().to_owned(),
-                    cockroach_nullable: cockroach_column.nullable,
-                    postgres_nullable: postgres_column.nullable,
+                    cockroach_nullable: cockroach_column.nullable(),
+                    postgres_nullable: postgres_column.nullable(),
                 });
             }
         }
 
         let cockroach_primary_key = cockroach_table
-            .primary_key
-            .as_ref()
-            .map(|shape| render_identifier_columns(&shape.columns))
+            .primary_key()
+            .map(|shape| render_identifier_columns(shape.columns()))
             .unwrap_or_default();
         let postgres_primary_key = postgres_table
-            .primary_key
-            .as_ref()
-            .map(|shape| render_identifier_columns(&shape.columns))
+            .primary_key()
+            .map(|shape| render_identifier_columns(shape.columns()))
             .unwrap_or_default();
         if cockroach_primary_key != postgres_primary_key {
             mismatches.push(SchemaMismatch::PrimaryKeyMismatch {
@@ -569,8 +517,8 @@ fn compare_selected_tables(
             });
         }
 
-        let cockroach_unique = render_unique_constraints(&cockroach_table.unique_constraints);
-        let postgres_unique = render_unique_constraints(&postgres_table.unique_constraints);
+        let cockroach_unique = render_unique_constraints(cockroach_table.unique_constraints());
+        let postgres_unique = render_unique_constraints(postgres_table.unique_constraints());
         if cockroach_unique != postgres_unique {
             mismatches.push(SchemaMismatch::UniqueConstraintMismatch {
                 table: table.label(),
@@ -579,8 +527,8 @@ fn compare_selected_tables(
             });
         }
 
-        let cockroach_foreign_keys = render_foreign_keys(&cockroach_table.foreign_keys);
-        let postgres_foreign_keys = render_foreign_keys(&postgres_table.foreign_keys);
+        let cockroach_foreign_keys = render_foreign_keys(cockroach_table.foreign_keys());
+        let postgres_foreign_keys = render_foreign_keys(postgres_table.foreign_keys());
         if cockroach_foreign_keys != postgres_foreign_keys {
             mismatches.push(SchemaMismatch::ForeignKeyMismatch {
                 table: table.label(),
@@ -589,8 +537,8 @@ fn compare_selected_tables(
             });
         }
 
-        let cockroach_indexes = render_indexes(&cockroach_table.indexes);
-        let postgres_indexes = render_indexes(&postgres_table.indexes);
+        let cockroach_indexes = render_indexes(cockroach_table.indexes());
+        let postgres_indexes = render_indexes(postgres_table.indexes());
         if cockroach_indexes != postgres_indexes {
             mismatches.push(SchemaMismatch::IndexMismatch {
                 table: table.label(),
@@ -614,7 +562,7 @@ fn render_identifier_columns(columns: &[SqlIdentifier]) -> Vec<String> {
 fn render_unique_constraints(constraints: &[UniqueConstraintShape]) -> Vec<Vec<String>> {
     let mut rendered = constraints
         .iter()
-        .map(|constraint| render_identifier_columns(&constraint.columns))
+        .map(|constraint| render_identifier_columns(constraint.columns()))
         .collect::<Vec<_>>();
     rendered.sort();
     rendered
@@ -627,19 +575,19 @@ fn render_foreign_keys(foreign_keys: &[ForeignKeyShape]) -> Vec<String> {
             format!(
                 "({})->{}({}) on_delete={}",
                 foreign_key
-                    .columns
+                    .columns()
                     .iter()
                     .map(|value| value.raw())
                     .collect::<Vec<_>>()
                     .join(", "),
-                foreign_key.referenced_table.label(),
+                foreign_key.referenced_table().label(),
                 foreign_key
-                    .referenced_columns
+                    .referenced_columns()
                     .iter()
                     .map(|value| value.raw())
                     .collect::<Vec<_>>()
                     .join(", "),
-                match foreign_key.on_delete {
+                match foreign_key.on_delete() {
                     ForeignKeyAction::NoAction => "no_action",
                     ForeignKeyAction::Cascade => "cascade",
                     ForeignKeyAction::SetNull => "set_null",
@@ -657,11 +605,11 @@ fn render_indexes(indexes: &[IndexShape]) -> Vec<String> {
         .iter()
         .map(|index| {
             index
-                .columns
+                .columns()
                 .iter()
-                .map(|column| match column.direction {
-                    SortDirection::Asc => column.name.raw().to_owned(),
-                    SortDirection::Desc => format!("{} DESC", column.name.raw()),
+                .map(|column| match column.direction() {
+                    SortDirection::Asc => column.name().raw().to_owned(),
+                    SortDirection::Desc => format!("{} DESC", column.name().raw()),
                 })
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -725,6 +673,45 @@ fn split_top_level_csv(value: &str) -> Vec<&str> {
     parts
 }
 
+fn split_column_type_and_clauses(value: &str) -> (&str, &str) {
+    let uppercase = value.to_ascii_uppercase();
+    let split_at = find_first_top_level_keyword(
+        &uppercase,
+        &[
+            " NOT NULL",
+            " NULL",
+            " DEFAULT ",
+            " GENERATED ALWAYS AS ",
+            " PRIMARY KEY",
+            " UNIQUE",
+            " REFERENCES ",
+            " CHECK ",
+        ],
+    )
+    .unwrap_or(value.len());
+
+    (value[..split_at].trim(), value[split_at..].trim())
+}
+
+fn find_first_top_level_keyword(value: &str, keywords: &[&str]) -> Option<usize> {
+    let mut depth = 0i32;
+    for (index, character) in value.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            _ if depth == 0 => {
+                for keyword in keywords {
+                    if value[index..].starts_with(keyword) {
+                        return Some(index);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn parse_identifier_list(value: &str) -> Vec<SqlIdentifier> {
     split_top_level_csv(value)
         .into_iter()
@@ -743,10 +730,7 @@ fn parse_index_columns(value: &str) -> Vec<IndexColumnShape> {
                 Some(value) if value == "DESC" => SortDirection::Desc,
                 _ => SortDirection::Asc,
             };
-            IndexColumnShape {
-                name: SqlIdentifier::new(name),
-                direction,
-            }
+            IndexColumnShape::new(SqlIdentifier::new(name), direction)
         })
         .collect()
 }
