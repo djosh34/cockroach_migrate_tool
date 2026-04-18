@@ -124,7 +124,6 @@ main() {
           initial_scan = 'only',
           envelope = 'enriched',
           updated,
-          mvcc_timestamp,
           webhook_sink_config = '{\"Flush\":{\"Messages\":25,\"Frequency\":\"2s\"}}';
       " | tail -n 1
   )
