@@ -1,5 +1,6 @@
 mod persistence;
 mod routing;
+pub(crate) mod tracking;
 mod payload;
 
 use std::{collections::BTreeMap, fs, sync::Arc};
@@ -31,6 +32,7 @@ use crate::{
 use persistence::persist_row_batch;
 use payload::parse_webhook_request;
 use routing::RunnerWebhookPlan;
+use tracking::persist_resolved_watermark;
 
 pub(crate) async fn serve(
     loaded_config: &LoadedRunnerConfig,
@@ -168,12 +170,9 @@ async fn dispatch(
             persist_row_batch(*batch).await?;
             Ok(StatusCode::OK)
         }
-        routing::DispatchTarget::Resolved {
-            mapping_id,
-            resolved,
-        } => {
-            let _ = (mapping_id, resolved);
-            Err(RunnerIngressRequestError::ResolvedNotImplemented)
+        routing::DispatchTarget::Resolved(target) => {
+            persist_resolved_watermark(target).await?;
+            Ok(StatusCode::OK)
         }
     }
 }
@@ -186,10 +185,9 @@ impl IntoResponse for RunnerIngressRequestError {
             }
             Self::Payload(_) | Self::Routing(_) => StatusCode::BAD_REQUEST,
             Self::Persistence(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::ResolvedNotImplemented => StatusCode::NOT_IMPLEMENTED,
         };
         match self {
-            Self::Routing(_) | Self::Payload(_) | Self::Persistence(_) | Self::ResolvedNotImplemented => {
+            Self::Routing(_) | Self::Payload(_) | Self::Persistence(_) => {
                 (status, self.to_string()).into_response()
             }
         }

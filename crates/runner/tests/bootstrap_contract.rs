@@ -345,6 +345,127 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
 }
 
 #[test]
+fn run_seeds_tracking_rows_for_stream_and_each_mapped_table() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(
+        &config_path,
+        bind_port,
+        &["public.customers", "public.orders"],
+    );
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(
+        &format!("https://localhost:{bind_port}/healthz"),
+        &https_client(),
+    );
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT mapping_id || ':' || source_database || ':' || COALESCE(stream_status, '<null>')\n\
+             FROM _cockroach_migration_tool.stream_state;",
+        ),
+        "app-a:demo_a:bootstrap_pending"
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT string_agg(\n\
+                mapping_id || ':' || source_table_name || ':' || helper_table_name,\n\
+                ',' ORDER BY source_table_name\n\
+             )\n\
+             FROM _cockroach_migration_tool.table_sync_state;",
+        ),
+        "app-a:public.customers:app-a__public__customers,app-a:public.orders:app-a__public__orders"
+    );
+}
+
+#[test]
+fn run_preserves_existing_table_sync_progress_on_restart() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(
+        &config_path,
+        bind_port,
+        &["public.customers", "public.orders"],
+    );
+
+    {
+        let mut runner = RunnerProcess::start(&config_path);
+        runner.assert_healthy(
+            &format!("https://localhost:{bind_port}/healthz"),
+            &https_client(),
+        );
+    }
+
+    postgres.exec(
+        "app_a",
+        "UPDATE _cockroach_migration_tool.table_sync_state
+         SET last_successful_sync_watermark = '1776526353000000000.0000000000',
+             last_error = 'kept on restart'
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+    );
+
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(
+        &format!("https://localhost:{bind_port}/healthz"),
+        &https_client(),
+    );
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT string_agg(
+                source_table_name || ':' || helper_table_name || ':' ||
+                COALESCE(last_successful_sync_watermark, '<null>') || ':' ||
+                COALESCE(last_error, '<null>'),
+                ',' ORDER BY source_table_name
+             )
+             FROM _cockroach_migration_tool.table_sync_state
+             WHERE mapping_id = 'app-a';",
+        ),
+        "public.customers:app-a__public__customers:1776526353000000000.0000000000:kept on restart,public.orders:app-a__public__orders:<null>:<null>"
+    );
+}
+
+#[test]
 fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
     let postgres = TestPostgres::start();
     postgres.exec(

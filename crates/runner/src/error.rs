@@ -80,6 +80,12 @@ pub enum RunnerBootstrapError {
         database: String,
         source: sqlx::Error,
     },
+    #[error("failed to seed tracking state for mapping `{mapping_id}` in `{database}`: {source}")]
+    SeedTrackingState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
     #[error("failed to read destination table shape for mapping `{mapping_id}` in `{database}` table `{table}`: {source}")]
     ReadCatalog {
         mapping_id: String,
@@ -153,8 +159,6 @@ pub enum RunnerIngressRequestError {
     Routing(#[from] RunnerWebhookRoutingError),
     #[error(transparent)]
     Persistence(#[from] RunnerWebhookPersistenceError),
-    #[error("resolved watermark persistence is not implemented yet")]
-    ResolvedNotImplemented,
 }
 
 #[derive(Debug, Error)]
@@ -259,6 +263,14 @@ pub enum RunnerWebhookPersistenceError {
         helper_table: String,
         operation: &'static str,
     },
+    #[error("failed to update stream tracking state for mapping `{mapping_id}` in `{database}`: {source}")]
+    UpdateTrackingState {
+        mapping_id: String,
+        database: String,
+        source: sqlx::Error,
+    },
+    #[error("stream tracking state row is missing for mapping `{mapping_id}` in `{database}`")]
+    MissingTrackingState { mapping_id: String, database: String },
     #[error("failed to commit helper persistence transaction for mapping `{mapping_id}` in `{database}`: {source}")]
     Commit {
         mapping_id: String,

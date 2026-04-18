@@ -11,6 +11,7 @@ use crate::{
         ColumnSchema, ForeignKeyAction, ForeignKeyShape, PrimaryKeyShape, TableSchema,
         ValidatedSchema,
     },
+    webhook_runtime::tracking::seed_tracking_state,
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
@@ -133,9 +134,22 @@ async fn bootstrap_mapping(
                     mapping_id: mapping.mapping_id.clone(),
                     database: mapping.connection.database().to_owned(),
                     source,
-                })?;
+            })?;
         }
     }
+
+    seed_tracking_state(
+        &mut postgres,
+        &mapping.mapping_id,
+        &mapping.source_database,
+        helper_plan.helper_tables(),
+    )
+    .await
+    .map_err(|source| RunnerBootstrapError::SeedTrackingState {
+        mapping_id: mapping.mapping_id.clone(),
+        database: mapping.connection.database().to_owned(),
+        source,
+    })?;
 
     postgres
         .close()
@@ -418,6 +432,7 @@ fn parse_on_delete_action(
 
 struct MappingBootstrapPlan<'a> {
     mapping_id: String,
+    source_database: String,
     connection: &'a PostgresConnectionConfig,
     selected_tables: Vec<QualifiedTableName>,
 }
@@ -426,6 +441,7 @@ impl<'a> MappingBootstrapPlan<'a> {
     fn from_mapping(mapping: &'a MappingConfig) -> Self {
         Self {
             mapping_id: mapping.id().to_owned(),
+            source_database: mapping.source().database().to_owned(),
             connection: mapping.destination().connection(),
             selected_tables: mapping
                 .source()

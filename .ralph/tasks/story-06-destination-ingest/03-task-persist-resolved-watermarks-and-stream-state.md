@@ -1,4 +1,4 @@
-## Task: Persist resolved watermarks and stream state <status>not_started</status> <passes>false</passes>
+## Task: Persist resolved watermarks and stream state <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -24,11 +24,13 @@ This task must align with the selected minimal tracking model:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers resolved-message persistence, stream-state updates, and restart-state reads
-- [ ] Stream tracking state is durable and queryable in PostgreSQL helper tables
-- [ ] Resolved messages return `200` only after their tracking transaction commits
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers resolved-message persistence, stream-state updates, and restart-state reads
+- [x] Stream tracking state is durable and queryable in PostgreSQL helper tables
+- [x] Resolved messages return `200` only after their tracking transaction commits
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-06-destination-ingest/03-task-persist-resolved-watermarks-and-stream-state_plans/2026-04-18-resolved-watermark-and-stream-state-plan.md</plan>

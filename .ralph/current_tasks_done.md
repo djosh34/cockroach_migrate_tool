@@ -1,6 +1,17 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 10:32:12 PM CEST 2026
+Generated: Sat Apr 18 10:49:36 PM CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
+
+```
+## Bug: Webhook row-batch persistence contract fails with HTTP 501 instead of 200 <status>done</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+Detected on 2026-04-18 during a reporting audit by running `make test`.
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -105,6 +116,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Persist row batches idempotently into helper shadow tables <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/03-task-persist-resolved-watermarks-and-stream-state.md`
+
+```
+## Task: Persist resolved watermarks and stream state <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

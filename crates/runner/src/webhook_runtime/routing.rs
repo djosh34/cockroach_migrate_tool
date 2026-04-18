@@ -7,6 +7,7 @@ use crate::{
     webhook_runtime::{
         payload::{ResolvedRequest, RowBatchRequest, WebhookRequest},
         persistence::RowMutationBatch,
+        tracking::ResolvedTrackingTarget,
     },
 };
 
@@ -94,10 +95,11 @@ impl MappingWebhookRoute {
     }
 
     fn route_resolved(&self, resolved: ResolvedRequest) -> DispatchTarget {
-        DispatchTarget::Resolved {
+        DispatchTarget::Resolved(ResolvedTrackingTarget {
             mapping_id: self.mapping_id.clone(),
-            resolved: resolved.resolved().to_owned(),
-        }
+            connection: self.destination_connection.clone(),
+            resolved_watermark: resolved.resolved().to_owned(),
+        })
     }
 
     pub(crate) fn route_request(
@@ -166,8 +168,5 @@ impl MappingWebhookRoute {
 
 pub(crate) enum DispatchTarget {
     RowBatch(Box<RowMutationBatch>),
-    Resolved {
-        mapping_id: String,
-        resolved: String,
-    },
+    Resolved(ResolvedTrackingTarget),
 }

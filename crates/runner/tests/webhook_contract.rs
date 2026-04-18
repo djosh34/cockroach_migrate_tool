@@ -216,6 +216,56 @@ mappings:
         )
         .expect("runner config should be written");
     }
+
+    fn write_multi_mapping_runner_config(&self, path: &Path, bind_port: u16) {
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+verify:
+  molt:
+    command: molt
+    report_dir: /tmp/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: app_a
+        user: migration_user_a
+        password: runner-secret-a
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: app_b
+        user: migration_user_b
+        password: runner-secret-b
+"#,
+                bind_port = bind_port,
+                cert_path = fixture_path("certs/server.crt").display(),
+                key_path = fixture_path("certs/server.key").display(),
+                postgres_port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
+    }
 }
 
 impl Drop for TestPostgres {
@@ -415,9 +465,9 @@ fn run_distinguishes_malformed_json_from_supported_payload_shapes() {
     let resolved = runner.post(
         &format!("https://localhost:{bind_port}/ingest/app-a"),
         &client,
-        r#"{"resolved":"1776526353000000000.0000000000"}"#,
+        &resolved_body("1776526353000000000.0000000000"),
     );
-    assert_eq!(resolved.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(resolved.status(), StatusCode::OK);
 }
 
 #[test]
@@ -477,6 +527,214 @@ fn run_rejects_row_batches_that_do_not_match_mapping_source_contract() {
         &mixed_table_row_batch_body(),
     );
     assert_eq!(mixed_tables.status(), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn run_persists_resolved_watermarks_before_returning_200() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT COALESCE(latest_received_resolved_watermark, '<null>') \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        "<null>"
+    );
+
+    let resolved = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000000"),
+    );
+    let resolved_status = resolved.status();
+    let _resolved_body = resolved
+        .text()
+        .expect("resolved response body should be readable");
+    assert_eq!(resolved_status, StatusCode::OK);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        "1776526353000000000.0000000000"
+    );
+}
+
+#[test]
+fn run_preserves_resolved_watermark_across_restart() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    {
+        let mut runner = RunnerProcess::start(&config_path);
+        runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+        let resolved = runner.post(
+            &format!("https://localhost:{bind_port}/ingest/app-a"),
+            &client,
+            &resolved_body("1776526353000000000.0000000000"),
+        );
+        assert_eq!(resolved.status(), StatusCode::OK);
+    }
+
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        "1776526353000000000.0000000000"
+    );
+}
+
+#[test]
+fn run_keeps_resolved_watermarks_monotonic() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let first = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000001"),
+    );
+    assert_eq!(first.status(), StatusCode::OK);
+
+    let older = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000000"),
+    );
+    assert_eq!(older.status(), StatusCode::OK);
+
+    let duplicate = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000001"),
+    );
+    assert_eq!(duplicate.status(), StatusCode::OK);
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        "1776526353000000000.0000000001"
+    );
+}
+
+#[test]
+fn run_isolates_resolved_tracking_state_per_mapping_destination() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_b LOGIN PASSWORD 'runner-secret-b';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec("postgres", "CREATE DATABASE app_b OWNER migration_user_b;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec(
+        "app_b",
+        "CREATE TABLE public.invoices (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_multi_mapping_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let resolved = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000000"),
+    );
+    assert_eq!(resolved.status(), StatusCode::OK);
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT latest_received_resolved_watermark \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-a';",
+        ),
+        "1776526353000000000.0000000000"
+    );
+    assert_eq!(
+        postgres.query(
+            "app_b",
+            "SELECT COALESCE(latest_received_resolved_watermark, '<null>') \
+             FROM _cockroach_migration_tool.stream_state \
+             WHERE mapping_id = 'app-b';",
+        ),
+        "<null>"
+    );
 }
 
 #[test]
@@ -844,4 +1102,8 @@ fn partially_invalid_row_batch_body(source_database: &str, table_name: &str) -> 
     format!(
         r#"{{"length":2,"payload":[{{"after":{{"id":1,"email":"first@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}},{{"after":{{"id":2}},"before":null,"key":{{"id":2}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
     )
+}
+
+fn resolved_body(watermark: &str) -> String {
+    format!(r#"{{"resolved":"{watermark}"}}"#)
 }
