@@ -13,30 +13,11 @@ use crate::{
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
-pub(crate) struct PostgresBootstrapReport {
-    bootstrapped_mappings: usize,
-}
-
-impl PostgresBootstrapReport {
-    pub(crate) fn bootstrapped_mappings(&self) -> usize {
-        self.bootstrapped_mappings
-    }
-}
-
-pub(crate) fn bootstrap_postgres(
+pub(crate) async fn bootstrap_postgres(
     loaded_config: &LoadedRunnerConfig,
-) -> Result<PostgresBootstrapReport, RunnerBootstrapError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|source| RunnerBootstrapError::StartRuntime { source })?;
-
-    runtime.block_on(async move {
-        bootstrap_all_mappings(loaded_config.config()).await?;
-        Ok(PostgresBootstrapReport {
-            bootstrapped_mappings: loaded_config.config().mapping_count(),
-        })
-    })
+) -> Result<(), RunnerBootstrapError> {
+    bootstrap_all_mappings(loaded_config.config()).await?;
+    Ok(())
 }
 
 async fn bootstrap_all_mappings(config: &RunnerConfig) -> Result<(), RunnerBootstrapError> {

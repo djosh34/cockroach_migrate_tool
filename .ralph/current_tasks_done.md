@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 09:32:23 PM CEST 2026
+Generated: Sat Apr 18 10:05:41 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -83,6 +83,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Generate helper shadow DDL and dependency order from the validated schema <status>in_progress</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/01-task-build-https-webhook-server-and-routing.md`
+
+```
+## Task: Build the HTTPS webhook server and table-routing runtime <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

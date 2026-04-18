@@ -1,4 +1,5 @@
 use crate::config::{BootstrapConfig, SourceMapping};
+use ingest_contract::MappingIngestPath;
 
 pub(crate) struct RenderedScript {
     text: String,
@@ -11,7 +12,10 @@ impl RenderedScript {
             "set -euo pipefail".to_owned(),
             String::new(),
             format!("COCKROACH_URL={}", shell_quote(config.cockroach_url())),
-            format!("WEBHOOK_URL={}", shell_quote(config.webhook().url())),
+            format!(
+                "WEBHOOK_BASE_URL={}",
+                shell_quote(config.webhook().base_url())
+            ),
             String::new(),
             "cockroach sql --url \"$COCKROACH_URL\" --execute \"SET CLUSTER SETTING kv.rangefeed.enabled = true;\"".to_owned(),
             "START_CURSOR=$(cockroach sql --url \"$COCKROACH_URL\" --execute \"SELECT cluster_logical_timestamp();\" --format=csv | tail -n +2 | tr -d '\\r')".to_owned(),
@@ -52,7 +56,8 @@ fn render_mapping_block(config: &BootstrapConfig, mapping: &SourceMapping) -> Ve
         .collect::<Vec<_>>()
         .join(", ");
     let changefeed_sql = format!(
-        "CREATE CHANGEFEED FOR TABLE {table_list} INTO 'webhook-$WEBHOOK_URL' WITH cursor = '$START_CURSOR', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = {};",
+        "CREATE CHANGEFEED FOR TABLE {table_list} INTO 'webhook-$WEBHOOK_BASE_URL{}' WITH cursor = '$START_CURSOR', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = {};",
+        MappingIngestPath::new(mapping.id()),
         sql_literal(config.webhook().resolved()),
     );
 

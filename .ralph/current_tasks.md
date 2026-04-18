@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 09:32:23 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/01-task-build-https-webhook-server-and-routing.md`
-
-```
-## Task: Build the HTTPS webhook server and table-routing runtime <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 18 10:05:41 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-06-destination-ingest/02-task-persist-row-batches-into-helper-shadow-tables.md`
 

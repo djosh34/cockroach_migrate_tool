@@ -19,7 +19,7 @@ Example source bootstrap config:
 cockroach:
   url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
 webhook:
-  url: https://runner.example.internal:8443/events
+  base_url: https://runner.example.internal:8443
   resolved: 5s
 mappings:
   - id: app-a
@@ -48,6 +48,7 @@ The rendered script:
 - enables `kv.rangefeed.enabled`
 - captures `cluster_logical_timestamp()`
 - creates one webhook changefeed per configured source database
+- renders each mapping to its own HTTPS ingest path at `/ingest/<mapping_id>`
 - prints mapping id, source database, selected tables, starting cursor, and job id after each changefeed is created
 
 ## Docker Quick Start
@@ -152,7 +153,7 @@ docker run --rm \
   --output-dir /work/helper-plan
 ```
 
-7. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables from the same helper-plan rules as `render-helper-plan`, and adds the automatic minimal PK helper indexes when they are needed.
+7. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables from the same helper-plan rules as `render-helper-plan`, adds the automatic minimal PK helper indexes when they are needed, and then keeps serving HTTPS from the same process.
 
 ```bash
 docker run --rm \
@@ -161,6 +162,11 @@ docker run --rm \
   cockroach-migrate-runner \
   run --config /config/runner.yml
 ```
+
+After startup, the runtime serves:
+
+- `GET /healthz`
+- `POST /ingest/<mapping_id>`
 
 The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, `runner render-helper-plan --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 

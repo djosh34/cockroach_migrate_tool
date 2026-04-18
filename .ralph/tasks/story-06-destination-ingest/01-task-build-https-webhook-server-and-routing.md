@@ -1,4 +1,4 @@
-## Task: Build the HTTPS webhook server and table-routing runtime <status>not_started</status> <passes>false</passes>
+## Task: Build the HTTPS webhook server and table-routing runtime <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -23,12 +23,13 @@ This task must use an established HTTP/TLS library, not a hand-rolled server.
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers HTTPS startup, routing, and payload shape dispatch
-- [ ] The webhook path runs with real TLS
-- [ ] One destination binary in one container exposes the webhook endpoint for all configured streams
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers HTTPS startup, routing, and payload shape dispatch
+- [x] The webhook path runs with real TLS
+- [x] One destination binary in one container exposes the webhook endpoint for all configured streams
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-06-destination-ingest/01-task-build-https-webhook-server-and-routing_plans/2026-04-18-https-webhook-server-and-routing-plan.md</plan>

@@ -1,7 +1,7 @@
 cockroach:
   url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
 webhook:
-  url: https://runner.example.internal:8443/events
+  base_url: https://runner.example.internal:8443
   resolved: 5s
 mappings:
   - id: duplicate

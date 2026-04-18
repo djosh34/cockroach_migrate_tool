@@ -8,9 +8,7 @@ use std::{
     time::Duration,
 };
 
-use assert_cmd::Command as AssertCommand;
-use predicates::prelude::predicate;
-use reqwest::{Certificate, blocking::Client};
+use reqwest::{Certificate, StatusCode, blocking::Client};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -90,10 +88,6 @@ impl TestPostgres {
     }
 
     fn exec(&self, database: &str, sql: &str) {
-        self.exec_as("postgres", database, sql);
-    }
-
-    fn exec_as(&self, user: &str, database: &str, sql: &str) {
         run_command(
             Command::new("psql")
                 .env("PGPASSWORD", "")
@@ -103,7 +97,7 @@ impl TestPostgres {
                     "-p",
                     &self.port.to_string(),
                     "-U",
-                    user,
+                    "postgres",
                     "-d",
                     database,
                     "-v",
@@ -113,41 +107,6 @@ impl TestPostgres {
                 ]),
             "psql",
         );
-    }
-
-    fn query(&self, database: &str, sql: &str) -> String {
-        let output = Command::new("psql")
-            .env("PGPASSWORD", "")
-            .args([
-                "-h",
-                "127.0.0.1",
-                "-p",
-                &self.port.to_string(),
-                "-U",
-                "postgres",
-                "-d",
-                database,
-                "-v",
-                "ON_ERROR_STOP=1",
-                "-t",
-                "-A",
-                "-c",
-                sql,
-            ])
-            .output()
-            .expect("psql query should start");
-
-        assert!(
-            output.status.success(),
-            "psql query failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("psql query output should be utf-8")
-            .trim()
-            .to_owned()
     }
 
     fn wait_until_ready(&self) {
@@ -206,16 +165,15 @@ mappings:
     destination:
       connection:
         host: 127.0.0.1
-        port: {port}
+        port: {postgres_port}
         database: app_a
         user: migration_user_a
         password: runner-secret-a
 "#,
-                bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),
+                postgres_port = self.port,
                 tables_yaml = tables_yaml,
-                port = self.port,
             ),
         )
         .expect("runner config should be written");
@@ -272,12 +230,25 @@ impl RunnerProcess {
             }
 
             match client.get(url).send() {
-                Ok(response) if response.status().is_success() => return,
+                Ok(response) if response.status().is_success() => {
+                    let body = response.text().expect("healthz body should be readable");
+                    assert_eq!(body, "ok");
+                    return;
+                }
                 Ok(_) | Err(_) => thread::sleep(Duration::from_millis(100)),
             }
         }
 
         panic!("runner did not serve healthz at {url}");
+    }
+
+    fn post(&self, url: &str, client: &Client, body: &str) -> reqwest::blocking::Response {
+        client
+            .post(url)
+            .header("content-type", "application/json")
+            .body(body.to_owned())
+            .send()
+            .expect("ingest request should complete")
     }
 }
 
@@ -301,7 +272,7 @@ fn https_client() -> Client {
 }
 
 #[test]
-fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
+fn run_serves_healthz_over_real_tls_after_bootstrap() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
@@ -309,11 +280,6 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
     );
     postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
     postgres.exec(
-        "app_a",
-        "GRANT ALL PRIVILEGES ON DATABASE app_a TO migration_user_a;",
-    );
-    postgres.exec_as(
-        "migration_user_a",
         "app_a",
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
@@ -322,176 +288,161 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config(&config_path, bind_port);
+
     let mut runner = RunnerProcess::start(&config_path);
     runner.assert_healthy(
         &format!("https://localhost:{bind_port}/healthz"),
         &https_client(),
     );
-
-    assert_eq!(
-        postgres.query(
-            "app_a",
-            "SELECT EXISTS (\n  SELECT 1\n  FROM information_schema.schemata\n  WHERE schema_name = '_cockroach_migration_tool'\n);",
-        ),
-        "t"
-    );
-    assert_eq!(
-        postgres.query(
-            "app_a",
-            "SELECT string_agg(table_name, ',' ORDER BY table_name)\nFROM information_schema.tables\nWHERE table_schema = '_cockroach_migration_tool';",
-        ),
-        "app-a__public__customers,stream_state,table_sync_state"
-    );
 }
 
 #[test]
-fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
+fn run_exposes_mapping_scoped_ingest_paths_and_404s_unknown_mapping_ids() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
         "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
     postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
-    postgres.exec_as(
-        "migration_user_a",
+    postgres.exec(
         "app_a",
-        "CREATE TABLE public.customers (
-            id bigint PRIMARY KEY,
-            email text NOT NULL,
-            nickname text DEFAULT 'friend'
-        );",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
     let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
 
-    assert_eq!(
-        postgres.query(
-            "app_a",
-            "SELECT string_agg(column_name || ':' || data_type, ',' ORDER BY ordinal_position)
-             FROM information_schema.columns
-             WHERE table_schema = '_cockroach_migration_tool'
-               AND table_name = 'app-a__public__customers';",
-        ),
-        "id:bigint,email:text,nickname:text"
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    let health_url = format!("https://localhost:{bind_port}/healthz");
+    runner.assert_healthy(&health_url, &client);
+
+    let known_mapping_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        "{}",
     );
+    assert_ne!(known_mapping_response.status(), StatusCode::NOT_FOUND);
+
+    let unknown_mapping_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/missing"),
+        &client,
+        "{}",
+    );
+    assert_eq!(unknown_mapping_response.status(), StatusCode::NOT_FOUND);
 }
 
 #[test]
-fn run_adds_one_automatic_helper_index_for_primary_key_columns() {
+fn run_distinguishes_malformed_json_from_supported_payload_shapes() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
         "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
     postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
-    postgres.exec_as(
-        "migration_user_a",
-        "app_a",
-        "CREATE TABLE public.orders (
-            tenant_id bigint NOT NULL,
-            order_id bigint NOT NULL,
-            total_cents bigint NOT NULL,
-            PRIMARY KEY (tenant_id, order_id)
-        );",
-    );
-
-    let bind_port = pick_unused_port();
-    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
-    let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(&config_path, bind_port, &["public.orders"]);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
-
-    assert_eq!(
-        postgres.query(
-            "app_a",
-            "SELECT string_agg(indexdef, E'\\n' ORDER BY indexname)
-             FROM pg_indexes
-             WHERE schemaname = '_cockroach_migration_tool'
-               AND tablename = 'app-a__public__orders';",
-        ),
-        "CREATE INDEX \"app-a__public__orders__pk\" ON _cockroach_migration_tool.\"app-a__public__orders\" USING btree (tenant_id, order_id)"
-    );
-}
-
-#[test]
-fn run_helper_shadow_tables_drop_defaults_and_generated_expressions() {
-    let postgres = TestPostgres::start();
     postgres.exec(
-        "postgres",
-        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
-    );
-    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
-    postgres.exec_as(
-        "migration_user_a",
         "app_a",
-        "CREATE TABLE public.customers (
-            id bigint PRIMARY KEY,
-            email text NOT NULL DEFAULT 'friend@example.com',
-            email_length bigint GENERATED ALWAYS AS (char_length(email)) STORED
-        );",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
     let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
 
-    assert_eq!(
-        postgres.query(
-            "app_a",
-            "SELECT string_agg(
-                column_name || ':' || is_nullable || ':' || COALESCE(column_default, '<none>') || ':' || is_generated,
-                ',' ORDER BY ordinal_position
-             )
-             FROM information_schema.columns
-             WHERE table_schema = '_cockroach_migration_tool'
-               AND table_name = 'app-a__public__customers';",
-        ),
-        "id:NO:<none>:NEVER,email:NO:<none>:NEVER,email_length:YES:<none>:NEVER"
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let malformed = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        "{",
     );
+    assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+
+    let row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(row_batch.status(), StatusCode::NOT_IMPLEMENTED);
+
+    let resolved = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        r#"{"resolved":"1776526353000000000.0000000000"}"#,
+    );
+    assert_eq!(resolved.status(), StatusCode::NOT_IMPLEMENTED);
 }
 
 #[test]
-fn run_fails_loudly_when_a_mapped_destination_table_is_missing() {
+fn run_rejects_row_batches_that_do_not_match_mapping_source_contract() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
         "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
     postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
 
+    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config_with_tables(
         &config_path,
-        pick_unused_port(),
-        &["public.missing_table"],
+        bind_port,
+        &["public.customers", "public.orders"],
     );
 
-    let mut command = AssertCommand::cargo_bin("runner").expect("runner binary should exist");
-    command
-        .args(["run", "--config"])
-        .arg(&config_path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "postgres bootstrap: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
-        ));
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let missing_source = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        r#"{"length":1,"payload":[{"after":{"id":1},"before":null,"key":{"id":1},"op":"c","ts_ns":1}]}"#,
+    );
+    assert_eq!(missing_source.status(), StatusCode::BAD_REQUEST);
+
+    let wrong_database = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_b", "customers"),
+    );
+    assert_eq!(wrong_database.status(), StatusCode::BAD_REQUEST);
+
+    let wrong_table = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "invoices"),
+    );
+    assert_eq!(wrong_table.status(), StatusCode::BAD_REQUEST);
+
+    let mixed_tables = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &mixed_table_row_batch_body(),
+    );
+    assert_eq!(mixed_tables.status(), StatusCode::BAD_REQUEST);
+}
+
+fn row_batch_body(source_database: &str, table_name: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}}]}}"#
+    )
+}
+
+fn mixed_table_row_batch_body() -> String {
+    r#"{"length":2,"payload":[{"after":{"id":1,"email":"customer@example.com"},"before":null,"key":{"id":1},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"},"ts_ns":1},{"after":{"id":2,"total_cents":1500},"before":null,"key":{"id":2},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"orders"},"ts_ns":2}]}"#.to_owned()
 }

@@ -1,9 +1,12 @@
 use std::{
+    fs,
     path::PathBuf,
     process::Command,
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+use reqwest::{Certificate, blocking::Client};
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -46,6 +49,7 @@ struct DockerHarness {
     image_tag: String,
     network_name: String,
     postgres_container: String,
+    runner_container: String,
 }
 
 impl DockerHarness {
@@ -55,6 +59,7 @@ impl DockerHarness {
             image_tag: format!("cockroach-migrate-runner-test-{suffix}"),
             network_name: format!("cockroach-migrate-runner-net-{suffix}"),
             postgres_container: format!("cockroach-migrate-postgres-{suffix}"),
+            runner_container: format!("cockroach-migrate-runner-{suffix}"),
         }
     }
 
@@ -182,10 +187,52 @@ impl DockerHarness {
              CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
         );
     }
+
+    fn start_runner(&self, fixture_mount: &str) {
+        run_command(
+            Command::new("docker").args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                &self.runner_container,
+                "--network",
+                &self.network_name,
+                "-p",
+                "127.0.0.1::8443",
+                "-v",
+                fixture_mount,
+                &self.image_tag,
+                "run",
+                "--config",
+                "/config/container-runner-config.yml",
+            ]),
+            "docker run runner",
+        );
+    }
+
+    fn runner_host_port(&self) -> u16 {
+        let output = run_command(
+            Command::new("docker").args([
+                "port",
+                &self.runner_container,
+                "8443/tcp",
+            ]),
+            "docker port",
+        );
+        output
+            .trim()
+            .rsplit_once(':')
+            .and_then(|(_, port)| port.parse::<u16>().ok())
+            .expect("runner host port should parse")
+    }
 }
 
 impl Drop for DockerHarness {
     fn drop(&mut self) {
+        let _ = Command::new("docker")
+            .args(["rm", "-f", &self.runner_container])
+            .output();
         let _ = Command::new("docker")
             .args(["rm", "-f", &self.postgres_container])
             .output();
@@ -196,6 +243,33 @@ impl Drop for DockerHarness {
             .args(["image", "rm", "-f", &self.image_tag])
             .output();
     }
+}
+
+fn https_client() -> Client {
+    let certificate = Certificate::from_pem(
+        &fs::read(fixtures_dir().join("certs").join("server.crt"))
+            .expect("server certificate should be readable"),
+    )
+    .expect("server certificate should parse");
+
+    Client::builder()
+        .add_root_certificate(certificate)
+        .build()
+        .expect("https client should build")
+}
+
+fn wait_for_runner_health(client: &Client, port: u16) {
+    for _ in 0..60 {
+        match client
+            .get(format!("https://localhost:{port}/healthz"))
+            .send()
+        {
+            Ok(response) if response.status().is_success() => return,
+            Ok(_) | Err(_) => thread::sleep(Duration::from_secs(1)),
+        }
+    }
+
+    panic!("runner container did not serve https://localhost:{port}/healthz");
 }
 
 #[test]
@@ -248,26 +322,8 @@ fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image_against_real
     assert!(validate_stdout.contains("verify=molt@/work/molt"));
     assert!(validate_stdout.contains("tls=/config/certs/server.crt+/config/certs/server.key"));
 
-    let run_stdout = run_command(
-        Command::new("docker").args([
-            "run",
-            "--rm",
-            "--network",
-            &harness.network_name,
-            "-v",
-            &fixture_mount,
-            &harness.image_tag,
-            "run",
-            "--config",
-            "/config/container-runner-config.yml",
-        ]),
-        "docker run",
-    );
-    assert!(run_stdout.contains("runner ready:"));
-    assert!(run_stdout.contains("config=/config/container-runner-config.yml"));
-    assert!(run_stdout.contains("mappings=2"));
-    assert!(run_stdout.contains("bootstrapped=2"));
-    assert!(run_stdout.contains("webhook=0.0.0.0:8443"));
+    harness.start_runner(&fixture_mount);
+    wait_for_runner_health(&https_client(), harness.runner_host_port());
 
     let app_a_helper_tables = harness.exec_psql(
         "app_a",

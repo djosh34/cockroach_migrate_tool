@@ -63,14 +63,6 @@ impl RunnerConfig {
         self.mappings.iter().find(|mapping| mapping.id() == mapping_id)
     }
 
-    pub(crate) fn mapping_labels(&self) -> String {
-        self.mappings
-            .iter()
-            .map(MappingConfig::label)
-            .collect::<Vec<_>>()
-            .join(",")
-    }
-
     pub(crate) fn verify_label(&self) -> String {
         self.verify.molt.label()
     }
@@ -96,15 +88,6 @@ impl MappingConfig {
         &self.destination
     }
 
-    pub(crate) fn label(&self) -> String {
-        format!(
-            "{}={}({} tables)->{}",
-            self.id,
-            self.source.database,
-            self.source.tables.len(),
-            self.destination.connection.endpoint_label()
-        )
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +97,10 @@ pub(crate) struct SourceConfig {
 }
 
 impl SourceConfig {
+    pub(crate) fn database(&self) -> &str {
+        &self.database
+    }
+
     pub(crate) fn tables(&self) -> &[String] {
         &self.tables
     }
@@ -176,6 +163,10 @@ impl WebhookConfig {
         self.bind_addr
     }
 
+    pub(crate) fn tls(&self) -> &TlsConfig {
+        &self.tls
+    }
+
     pub(crate) fn tls_material_label(&self) -> String {
         self.tls.material_label()
     }
@@ -188,6 +179,14 @@ pub(crate) struct TlsConfig {
 }
 
 impl TlsConfig {
+    pub(crate) fn cert_path(&self) -> &Path {
+        &self.cert_path
+    }
+
+    pub(crate) fn key_path(&self) -> &Path {
+        &self.key_path
+    }
+
     pub(crate) fn material_label(&self) -> String {
         format!("{}+{}", self.cert_path.display(), self.key_path.display())
     }

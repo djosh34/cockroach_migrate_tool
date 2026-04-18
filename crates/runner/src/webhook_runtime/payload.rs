@@ -1,0 +1,140 @@
+use serde_json::Value;
+
+use crate::error::RunnerWebhookPayloadError;
+
+#[derive(Clone, Debug)]
+pub(crate) enum WebhookRequest {
+    RowBatch(RowBatchRequest),
+    Resolved(ResolvedRequest),
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RowBatchRequest {
+    rows: Vec<RowEvent>,
+}
+
+impl RowBatchRequest {
+    pub(crate) fn rows(&self) -> &[RowEvent] {
+        &self.rows
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RowEvent {
+    source: Option<SourceMetadata>,
+    raw: Value,
+}
+
+impl RowEvent {
+    pub(crate) fn source(&self) -> Option<&SourceMetadata> {
+        self.source.as_ref()
+    }
+
+    pub(crate) fn raw(&self) -> &Value {
+        &self.raw
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct SourceMetadata {
+    database_name: String,
+    schema_name: String,
+    table_name: String,
+}
+
+impl SourceMetadata {
+    pub(crate) fn database_name(&self) -> &str {
+        &self.database_name
+    }
+
+    pub(crate) fn table_label(&self) -> String {
+        format!("{}.{}", self.schema_name, self.table_name)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ResolvedRequest {
+    resolved: String,
+}
+
+impl ResolvedRequest {
+    pub(crate) fn resolved(&self) -> &str {
+        &self.resolved
+    }
+}
+
+pub(crate) fn parse_webhook_request(
+    body: &[u8],
+) -> Result<WebhookRequest, RunnerWebhookPayloadError> {
+    let value = serde_json::from_slice::<Value>(body)
+        .map_err(|source| RunnerWebhookPayloadError::InvalidJson { source })?;
+    let object = value
+        .as_object()
+        .ok_or(RunnerWebhookPayloadError::ExpectedObject)?;
+
+    if let Some(resolved) = object.get("resolved") {
+        let resolved = resolved
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or(RunnerWebhookPayloadError::InvalidResolved)?;
+        return Ok(WebhookRequest::Resolved(ResolvedRequest {
+            resolved: resolved.to_owned(),
+        }));
+    }
+
+    let Some(payload) = object.get("payload") else {
+        return Err(RunnerWebhookPayloadError::UnsupportedShape);
+    };
+    let payload = payload
+        .as_array()
+        .ok_or(RunnerWebhookPayloadError::MissingPayload)?;
+    let length = object
+        .get("length")
+        .and_then(Value::as_u64)
+        .ok_or(RunnerWebhookPayloadError::MissingLength)?;
+    if length as usize != payload.len() {
+        return Err(RunnerWebhookPayloadError::LengthMismatch);
+    }
+
+    let mut rows = Vec::with_capacity(payload.len());
+    for row in payload {
+        rows.push(parse_row_event(row.clone())?);
+    }
+    Ok(WebhookRequest::RowBatch(RowBatchRequest { rows }))
+}
+
+fn parse_row_event(value: Value) -> Result<RowEvent, RunnerWebhookPayloadError> {
+    let object = value
+        .as_object()
+        .ok_or(RunnerWebhookPayloadError::InvalidRowEvent)?;
+    let source = match object.get("source") {
+        Some(source) => Some(parse_source_metadata(source)?),
+        None => None,
+    };
+    Ok(RowEvent { source, raw: value })
+}
+
+fn parse_source_metadata(value: &Value) -> Result<SourceMetadata, RunnerWebhookPayloadError> {
+    let object = value
+        .as_object()
+        .ok_or(RunnerWebhookPayloadError::InvalidSource)?;
+    Ok(SourceMetadata {
+        database_name: required_string_field(object, "database_name")?,
+        schema_name: required_string_field(object, "schema_name")?,
+        table_name: required_string_field(object, "table_name")?,
+    })
+}
+
+fn required_string_field(
+    object: &serde_json::Map<String, Value>,
+    field: &'static str,
+) -> Result<String, RunnerWebhookPayloadError> {
+    object
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or(RunnerWebhookPayloadError::MissingSourceField { field })
+}

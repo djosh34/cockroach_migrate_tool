@@ -29,16 +29,16 @@ pub(super) fn validate(raw: RawBootstrapConfig) -> Result<BootstrapConfig, Boots
 }
 
 fn validate_webhook(raw: RawWebhookConfig) -> Result<WebhookConfig, BootstrapConfigError> {
-    let url = validate_text(raw.url, "webhook.url")?;
-    if !url.starts_with("https://") {
+    let base_url = validate_text(raw.base_url, "webhook.base_url")?;
+    if !base_url.starts_with("https://") {
         return Err(BootstrapConfigError::InvalidField {
-            field: "webhook.url",
+            field: "webhook.base_url",
             message: "must start with https://",
         });
     }
 
     Ok(WebhookConfig {
-        url,
+        base_url,
         resolved: validate_text(raw.resolved, "webhook.resolved")?,
     })
 }
@@ -159,7 +159,7 @@ struct RawCockroachConfig {
 
 #[derive(Debug, Deserialize)]
 struct RawWebhookConfig {
-    url: String,
+    base_url: String,
     resolved: String,
 }
 

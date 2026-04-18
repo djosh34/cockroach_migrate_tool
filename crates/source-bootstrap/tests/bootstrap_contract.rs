@@ -40,7 +40,15 @@ fn render_bootstrap_script_emits_a_shell_script_for_configured_mappings() {
         .stdout(predicate::str::contains(
             "CREATE CHANGEFEED FOR TABLE public.invoices",
         ))
-        .stdout(predicate::str::contains("INTO 'webhook-$WEBHOOK_URL'"))
+        .stdout(predicate::str::contains(
+            "WEBHOOK_BASE_URL='https://runner.example.internal:8443'",
+        ))
+        .stdout(predicate::str::contains(
+            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-a'",
+        ))
+        .stdout(predicate::str::contains(
+            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-b'",
+        ))
         .stdout(predicate::str::contains("cursor = '$START_CURSOR'"))
         .stdout(predicate::str::contains("initial_scan = 'yes'"))
         .stdout(predicate::str::contains("envelope = 'enriched'"))

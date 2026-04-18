@@ -6,6 +6,7 @@ mod postgres_setup;
 mod schema_compare;
 mod sql_name;
 mod validated_schema;
+mod webhook_runtime;
 
 use std::path::PathBuf;
 
@@ -14,9 +15,10 @@ use clap::{Parser, Subcommand};
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
 use helper_plan::{HelperPlanArtifacts, render_helper_plan};
-use postgres_bootstrap::{PostgresBootstrapReport, bootstrap_postgres};
+use postgres_bootstrap::bootstrap_postgres;
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 use schema_compare::{SchemaCompareSummary, compare_mapping_exports};
+use webhook_runtime::serve as serve_webhook_runtime;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -68,17 +70,17 @@ enum Command {
     },
 }
 
-pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
+pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
     match cli.command {
         Command::ValidateConfig { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(CommandOutput::Validated(ValidatedConfig::from(&config)))
+            Ok(Some(CommandOutput::Validated(ValidatedConfig::from(&config))))
         }
         Command::RenderPostgresSetup { config, output_dir } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(CommandOutput::PostgresSetupArtifacts(
+            Ok(Some(CommandOutput::PostgresSetupArtifacts(
                 render_postgres_setup(&config, &output_dir)?,
-            ))
+            )))
         }
         Command::CompareSchema {
             config,
@@ -87,12 +89,12 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
             postgres_schema,
         } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(CommandOutput::SchemaCompare(compare_mapping_exports(
+            Ok(Some(CommandOutput::SchemaCompare(compare_mapping_exports(
                 &config,
                 &mapping,
                 &cockroach_schema,
                 &postgres_schema,
-            )?))
+            )?)))
         }
         Command::RenderHelperPlan {
             config,
@@ -102,21 +104,19 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
             output_dir,
         } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(CommandOutput::HelperPlanArtifacts(render_helper_plan(
+            Ok(Some(CommandOutput::HelperPlanArtifacts(render_helper_plan(
                 &config,
                 &mapping,
                 &cockroach_schema,
                 &postgres_schema,
                 &output_dir,
-            )?))
+            )?)))
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            let bootstrap = bootstrap_postgres(&config)?;
-            Ok(CommandOutput::Startup(RunnerStartupSummary::new(
-                &config,
-                &bootstrap,
-            )))
+            bootstrap_postgres(&config).await?;
+            serve_webhook_runtime(&config).await?;
+            Ok(None)
         }
     }
 }
@@ -126,7 +126,6 @@ pub enum CommandOutput {
     PostgresSetupArtifacts(PostgresSetupArtifacts),
     SchemaCompare(SchemaCompareSummary),
     HelperPlanArtifacts(HelperPlanArtifacts),
-    Startup(RunnerStartupSummary),
 }
 
 impl std::fmt::Display for CommandOutput {
@@ -136,7 +135,6 @@ impl std::fmt::Display for CommandOutput {
             Self::PostgresSetupArtifacts(summary) => summary.fmt(f),
             Self::SchemaCompare(summary) => summary.fmt(f),
             Self::HelperPlanArtifacts(summary) => summary.fmt(f),
-            Self::Startup(summary) => summary.fmt(f),
         }
     }
 }
@@ -173,54 +171,6 @@ impl std::fmt::Display for ValidatedConfig {
             self.verify,
             self.webhook_bind_addr,
             self.webhook_tls_files
-        )
-    }
-}
-
-pub struct RunnerStartupSummary {
-    config_path: String,
-    mappings: usize,
-    mapping_labels: String,
-    verify: String,
-    webhook_bind_addr: std::net::SocketAddr,
-    webhook_tls_files: String,
-    reconcile_interval: std::time::Duration,
-    bootstrapped_mappings: usize,
-}
-
-impl RunnerStartupSummary {
-    fn new(
-        loaded_config: &LoadedRunnerConfig,
-        bootstrap: &PostgresBootstrapReport,
-    ) -> Self {
-        let config = loaded_config.config();
-
-        Self {
-            config_path: loaded_config.path().display().to_string(),
-            mappings: config.mapping_count(),
-            mapping_labels: config.mapping_labels(),
-            verify: config.verify_label(),
-            webhook_bind_addr: config.webhook().bind_addr(),
-            webhook_tls_files: config.webhook().tls_material_label(),
-            reconcile_interval: std::time::Duration::from_secs(config.reconcile().interval_secs()),
-            bootstrapped_mappings: bootstrap.bootstrapped_mappings(),
-        }
-    }
-}
-
-impl std::fmt::Display for RunnerStartupSummary {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "runner ready: config={} mappings={} bootstrapped={} labels={} verify={} webhook={} tls={} reconcile={}s",
-            self.config_path,
-            self.mappings,
-            self.bootstrapped_mappings,
-            self.mapping_labels,
-            self.verify,
-            self.webhook_bind_addr,
-            self.webhook_tls_files,
-            self.reconcile_interval.as_secs()
         )
     }
 }

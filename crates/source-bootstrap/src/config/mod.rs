@@ -31,13 +31,13 @@ impl BootstrapConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct WebhookConfig {
-    url: String,
+    base_url: String,
     resolved: String,
 }
 
 impl WebhookConfig {
-    pub(crate) fn url(&self) -> &str {
-        &self.url
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
     }
 
     pub(crate) fn resolved(&self) -> &str {

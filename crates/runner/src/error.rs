@@ -1,6 +1,7 @@
 use std::{io, net::AddrParseError, path::PathBuf};
 
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::schema_compare::SchemaCompareError;
 
@@ -14,6 +15,10 @@ pub enum RunnerError {
     HelperPlan(#[from] RunnerHelperPlanError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
+    #[error("webhook runtime: {0}")]
+    WebhookRuntime(#[from] RunnerWebhookRuntimeError),
+    #[error("webhook request: {0}")]
+    WebhookRequest(#[from] RunnerIngressRequestError),
     #[error(transparent)]
     SchemaCompare(#[from] SchemaCompareError),
 }
@@ -63,8 +68,6 @@ pub enum RunnerHelperPlanError {
 
 #[derive(Debug, Error)]
 pub enum RunnerBootstrapError {
-    #[error("failed to start async runtime")]
-    StartRuntime { source: io::Error },
     #[error("failed to connect mapping `{mapping_id}` to `{endpoint}`: {source}")]
     Connect {
         mapping_id: String,
@@ -108,5 +111,96 @@ pub enum RunnerBootstrapError {
         mapping_id: String,
         database: String,
         table: String,
+    },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerWebhookRuntimeError {
+    #[error("failed to bind webhook listener on `{addr}`")]
+    Bind {
+        addr: std::net::SocketAddr,
+        source: io::Error,
+    },
+    #[error("failed to accept webhook connection")]
+    Accept { source: io::Error },
+    #[error("failed to install the rustls ring crypto provider")]
+    InstallCryptoProvider,
+    #[error("failed to read tls certificate `{path}`")]
+    ReadTlsCertificate { path: PathBuf, source: io::Error },
+    #[error("failed to read tls private key `{path}`")]
+    ReadTlsPrivateKey { path: PathBuf, source: io::Error },
+    #[error("tls certificate file `{path}` did not contain any certificates")]
+    MissingTlsCertificate { path: PathBuf },
+    #[error("tls private key file `{path}` did not contain a private key")]
+    MissingTlsPrivateKey { path: PathBuf },
+    #[error("failed to build rustls server config")]
+    BuildTlsConfig { source: rustls::Error },
+    #[error("failed tls handshake for webhook connection")]
+    TlsHandshake { source: io::Error },
+    #[error("failed to serve webhook connection")]
+    ServeConnection {
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+    #[error("webhook connection task failed")]
+    ConnectionTask { source: JoinError },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerIngressRequestError {
+    #[error(transparent)]
+    Payload(#[from] RunnerWebhookPayloadError),
+    #[error(transparent)]
+    Routing(#[from] RunnerWebhookRoutingError),
+    #[error("durable webhook persistence is not implemented yet")]
+    PersistenceNotImplemented,
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerWebhookPayloadError {
+    #[error("request body is not valid json")]
+    InvalidJson { source: serde_json::Error },
+    #[error("request body must be a json object")]
+    ExpectedObject,
+    #[error("request body must match the supported row-batch or resolved shape")]
+    UnsupportedShape,
+    #[error("row-batch request must include integer `length`")]
+    MissingLength,
+    #[error("row-batch request `length` must match payload size")]
+    LengthMismatch,
+    #[error("row-batch request must include array `payload`")]
+    MissingPayload,
+    #[error("row-batch event must be a json object")]
+    InvalidRowEvent,
+    #[error("row-batch event `source` must be a json object when present")]
+    InvalidSource,
+    #[error("row-batch event source is missing `{field}`")]
+    MissingSourceField { field: &'static str },
+    #[error("resolved request must include non-empty `resolved`")]
+    InvalidResolved,
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerWebhookRoutingError {
+    #[error("unknown mapping `{mapping_id}`")]
+    UnknownMapping { mapping_id: String },
+    #[error("row-batch event is missing source metadata for mapping `{mapping_id}`")]
+    MissingSource { mapping_id: String },
+    #[error(
+        "row-batch source database `{database}` does not match mapping `{mapping_id}` expected `{expected}`"
+    )]
+    SourceDatabaseMismatch {
+        mapping_id: String,
+        expected: String,
+        database: String,
+    },
+    #[error("row-batch source table `{table}` is not selected by mapping `{mapping_id}`")]
+    SourceTableNotMapped { mapping_id: String, table: String },
+    #[error(
+        "row-batch spans multiple source tables for mapping `{mapping_id}`: `{first}` and `{second}`"
+    )]
+    MixedSourceTables {
+        mapping_id: String,
+        first: String,
+        second: String,
     },
 }
