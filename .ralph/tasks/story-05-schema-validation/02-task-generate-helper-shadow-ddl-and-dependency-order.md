@@ -1,0 +1,37 @@
+## Task: Generate helper shadow DDL and dependency order from the validated schema <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+
+
+**Goal:** Generate the helper shadow table shape and the dependency order needed for continuous reconcile. The higher order goal is to make the selected design deterministic and automatic instead of hand-maintained.
+
+In scope:
+- derive helper shadow tables from validated real tables
+- strip serving-oriented structure from shadow tables
+- compute parent-before-child and child-before-parent orders
+- support composite PKs
+- support multiple destination databases
+
+Out of scope:
+- webhook runtime
+- reconcile execution itself
+
+This task must encode:
+- shadow tables keep the data columns
+- shadow tables do not keep FKs or secondary indexes
+- minimal PK index is allowed only as an automatic runner decision
+
+</description>
+
+
+<acceptance_criteria>
+- [ ] Red/green TDD covers helper DDL generation, dependency ordering, and composite-key support
+- [ ] Generated helper DDL matches the selected shadow-table design rules
+- [ ] Dependency ordering is explicit and reusable by later reconcile tasks
+- [ ] `make check` — passes cleanly
+- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [ ] `make lint` — passes cleanly
+- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+</acceptance_criteria>
+
