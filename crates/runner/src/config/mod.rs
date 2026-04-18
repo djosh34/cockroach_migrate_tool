@@ -142,8 +142,24 @@ impl PostgresConnectionConfig {
         format!("{}:{}/{}", self.host, self.port, self.database)
     }
 
+    pub(crate) fn same_connection_contract(&self, other: &Self) -> bool {
+        self.host == other.host
+            && self.port == other.port
+            && self.database == other.database
+            && self.user == other.user
+            && self.password == other.password
+    }
+
     pub(crate) fn database(&self) -> &str {
         &self.database
+    }
+
+    pub(crate) fn host(&self) -> &str {
+        &self.host
+    }
+
+    pub(crate) fn port(&self) -> u16 {
+        self.port
     }
 
     pub(crate) fn user(&self) -> &str {

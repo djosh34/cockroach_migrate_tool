@@ -21,7 +21,7 @@ use helper_plan::{HelperPlanArtifacts, render_helper_plan};
 use postgres_bootstrap::bootstrap_postgres;
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 use reconcile_runtime::serve as serve_reconcile_runtime;
-use runtime_plan::RunnerRuntimePlan;
+use runtime_plan::{RunnerRuntimePlan, RunnerStartupPlan};
 use schema_compare::{SchemaCompareSummary, compare_mapping_exports};
 use webhook_runtime::serve as serve_webhook_runtime;
 
@@ -119,8 +119,9 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            let helper_plans = bootstrap_postgres(&config).await?;
-            let runtime = RunnerRuntimePlan::from_config(config.config(), helper_plans)?;
+            let startup_plan = RunnerStartupPlan::from_config(config.config())?;
+            let helper_plans = bootstrap_postgres(&startup_plan).await?;
+            let runtime = RunnerRuntimePlan::from_startup_plan(startup_plan, helper_plans)?;
             let runtime = std::sync::Arc::new(runtime);
             tokio::try_join!(
                 async {

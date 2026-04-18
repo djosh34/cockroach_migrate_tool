@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 11:52:44 PM CEST 2026
+Generated: Sun Apr 19 12:20:13 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -160,6 +160,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Track reconciled watermarks and repeatable sync state <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-08-multi-db-orchestration/01-task-run-multiple-db-mappings-from-one-destination-container.md`
+
+```
+## Task: Run multiple database mappings from one destination container <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

@@ -1,4 +1,4 @@
-## Task: Run multiple database mappings from one destination container <status>not_started</status> <passes>false</passes>
+## Task: Run multiple database mappings from one destination container <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -20,12 +20,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers multiple configured database mappings in one runtime
-- [ ] One destination container can ingest and reconcile more than one source-to-destination mapping safely
-- [ ] Helper state remains isolated per destination database
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers multiple configured database mappings in one runtime
+- [x] One destination container can ingest and reconcile more than one source-to-destination mapping safely
+- [x] Helper state remains isolated per destination database
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-08-multi-db-orchestration/01-task-run-multiple-db-mappings-from-one-destination-container_plans/2026-04-18-multi-db-orchestration-plan.md</plan>

@@ -58,3 +58,4 @@
 .ralph/tasks/story-07-reconcile/01-task-build-continuous-upsert-reconcile-loop.md
 .ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass.md
 .ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md
+.ralph/tasks/story-08-multi-db-orchestration/01-task-run-multiple-db-mappings-from-one-destination-container.md

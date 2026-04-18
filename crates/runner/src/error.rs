@@ -126,6 +126,23 @@ pub enum RunnerBootstrapError {
 
 #[derive(Debug, Error)]
 pub enum RunnerRuntimePlanError {
+    #[error(
+        "destination database `{destination}` has conflicting connection contracts for mappings `{first_mapping_id}` and `{second_mapping_id}`"
+    )]
+    InconsistentDestinationConnection {
+        destination: String,
+        first_mapping_id: String,
+        second_mapping_id: String,
+    },
+    #[error(
+        "destination database `{destination}` table `{table}` is claimed by both mappings `{first_mapping_id}` and `{second_mapping_id}`"
+    )]
+    OverlappingDestinationTable {
+        destination: String,
+        table: String,
+        first_mapping_id: String,
+        second_mapping_id: String,
+    },
     #[error("bootstrap output is missing helper metadata for mapping `{mapping_id}`")]
     MissingHelperPlan { mapping_id: String },
     #[error(

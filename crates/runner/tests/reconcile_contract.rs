@@ -209,9 +209,11 @@ mappings:
         user: migration_user_a
         password: runner-secret-a
 "#,
+                bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),
                 postgres_port = self.port,
+                reconcile_interval_secs = reconcile_interval_secs,
             ),
         )
         .expect("runner config should be written");
@@ -262,6 +264,60 @@ mappings:
         database: app_b
         user: migration_user_b
         password: runner-secret-b
+"#,
+                cert_path = fixture_path("certs/server.crt").display(),
+                key_path = fixture_path("certs/server.key").display(),
+                postgres_port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
+    }
+
+    fn write_shared_destination_runner_config(
+        &self,
+        path: &Path,
+        bind_port: u16,
+        reconcile_interval_secs: u64,
+    ) {
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: {reconcile_interval_secs}
+verify:
+  molt:
+    command: molt
+    report_dir: /tmp/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: shared_app
+        user: migration_user_shared
+        password: runner-secret-shared
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: shared_app
+        user: migration_user_shared
+        password: runner-secret-shared
 "#,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),
@@ -844,6 +900,69 @@ fn run_reconciles_each_mapping_into_only_its_own_destination_database() {
         "app_b",
         "SELECT COALESCE(amount_cents::text, '<null>') FROM public.invoices WHERE id = 22;",
         "4200",
+    );
+}
+
+#[test]
+fn run_reconciles_each_mapping_into_only_its_own_tables_inside_a_shared_destination_database() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared LOGIN PASSWORD 'runner-secret-shared';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared;",
+    );
+    postgres.exec(
+        "shared_app",
+        "SET ROLE migration_user_shared;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_shared_destination_runner_config(&config_path, bind_port, 1);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "shared@example.com"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+
+    let invoice_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-b"),
+        &client,
+        &invoice_row_batch_body("demo_b", 4200),
+    );
+    assert_eq!(invoice_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "shared_app",
+        "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        "shared@example.com",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "shared_app",
+        "SELECT COALESCE(amount_cents::text, '<null>') FROM public.invoices WHERE id = 22;",
+        "4200",
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(mapping_id || ':' || source_table_name, ',' ORDER BY mapping_id)
+             FROM _cockroach_migration_tool.table_sync_state;",
+        ),
+        "app-a:public.customers,app-b:public.invoices"
     );
 }
 

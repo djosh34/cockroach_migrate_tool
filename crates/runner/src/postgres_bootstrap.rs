@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use sqlx::{Connection, Executor, PgConnection, Row};
 
 use crate::{
-    config::{LoadedRunnerConfig, MappingConfig, PostgresConnectionConfig, RunnerConfig},
+    config::PostgresConnectionConfig,
     error::RunnerBootstrapError,
     helper_plan::MappingHelperPlan,
+    runtime_plan::{ConfiguredMappingPlan, DestinationGroupPlan, RunnerStartupPlan},
     sql_name::{QualifiedTableName, SqlIdentifier},
     tracking_state::seed_tracking_state,
     validated_schema::{
@@ -17,46 +18,68 @@ use crate::{
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(crate) async fn bootstrap_postgres(
-    loaded_config: &LoadedRunnerConfig,
+    startup_plan: &RunnerStartupPlan,
 ) -> Result<BTreeMap<String, MappingHelperPlan>, RunnerBootstrapError> {
-    bootstrap_all_mappings(loaded_config.config()).await
+    bootstrap_all_mappings(startup_plan).await
 }
 
 async fn bootstrap_all_mappings(
-    config: &RunnerConfig,
+    startup_plan: &RunnerStartupPlan,
 ) -> Result<BTreeMap<String, MappingHelperPlan>, RunnerBootstrapError> {
     let mut helper_plans = BTreeMap::new();
 
-    for mapping in config
-        .mappings()
-        .iter()
-        .map(MappingBootstrapPlan::from_mapping)
-    {
-        let helper_plan = bootstrap_mapping(&mapping).await?;
-        helper_plans.insert(mapping.mapping_id.clone(), helper_plan);
+    for destination_group in startup_plan.destination_groups() {
+        bootstrap_destination_group(destination_group, &mut helper_plans).await?;
     }
 
     Ok(helper_plans)
 }
 
-async fn bootstrap_mapping(
-    mapping: &MappingBootstrapPlan<'_>,
-) -> Result<MappingHelperPlan, RunnerBootstrapError> {
-    let endpoint = mapping.connection.endpoint_label();
-    let mut postgres = PgConnection::connect_with(&mapping.connection.connect_options())
+async fn bootstrap_destination_group(
+    destination_group: &DestinationGroupPlan,
+    helper_plans: &mut BTreeMap<String, MappingHelperPlan>,
+) -> Result<(), RunnerBootstrapError> {
+    let first_mapping = destination_group
+        .mappings()
+        .first()
+        .unwrap_or_else(|| panic!("destination group should contain at least one mapping"));
+    let mut postgres = PgConnection::connect_with(&destination_group.connection().connect_options())
         .await
         .map_err(|source| RunnerBootstrapError::Connect {
-            mapping_id: mapping.mapping_id.clone(),
-            endpoint,
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            endpoint: destination_group.connection().endpoint_label(),
+            source,
+        })?;
+    bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.connection()).await?;
+
+    for mapping in destination_group.mappings().iter().map(MappingBootstrapPlan::from_mapping) {
+        let helper_plan = bootstrap_mapping(&mut postgres, &mapping).await?;
+        helper_plans.insert(mapping.mapping_id.clone(), helper_plan);
+    }
+
+    postgres
+        .close()
+        .await
+        .map_err(|source| RunnerBootstrapError::Connect {
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            endpoint: destination_group.connection().endpoint_label(),
             source,
         })?;
 
+    Ok(())
+}
+
+async fn bootstrap_destination_scaffold(
+    postgres: &mut PgConnection,
+    first_mapping: &ConfiguredMappingPlan,
+    connection: &PostgresConnectionConfig,
+) -> Result<(), RunnerBootstrapError> {
     postgres
         .execute(format!("CREATE SCHEMA IF NOT EXISTS {HELPER_SCHEMA}").as_str())
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
-            mapping_id: mapping.mapping_id.clone(),
-            database: mapping.connection.database().to_owned(),
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            database: connection.database().to_owned(),
             source,
         })?;
 
@@ -77,8 +100,8 @@ async fn bootstrap_mapping(
         )
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
-            mapping_id: mapping.mapping_id.clone(),
-            database: mapping.connection.database().to_owned(),
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            database: connection.database().to_owned(),
             source,
         })?;
 
@@ -99,12 +122,21 @@ async fn bootstrap_mapping(
         )
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
-            mapping_id: mapping.mapping_id.clone(),
-            database: mapping.connection.database().to_owned(),
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            database: connection.database().to_owned(),
             source,
         })?;
 
-    let destination_schema = load_destination_schema(&mut postgres, mapping).await?;
+    Ok(())
+}
+
+async fn bootstrap_mapping(
+    postgres: &mut PgConnection,
+    mapping: &MappingBootstrapPlan<'_>,
+) -> Result<MappingHelperPlan, RunnerBootstrapError> {
+    let database = mapping.connection.database().to_owned();
+
+    let destination_schema = load_destination_schema(postgres, mapping).await?;
     let helper_plan = MappingHelperPlan::from_validated_schema(
         &mapping.mapping_id,
         &mapping.selected_tables,
@@ -112,7 +144,7 @@ async fn bootstrap_mapping(
     )
     .map_err(|source| RunnerBootstrapError::HelperPlan {
         mapping_id: mapping.mapping_id.clone(),
-        database: mapping.connection.database().to_owned(),
+        database: database.clone(),
         source,
     })?;
 
@@ -122,7 +154,7 @@ async fn bootstrap_mapping(
             .await
             .map_err(|source| RunnerBootstrapError::ExecuteDdl {
                 mapping_id: mapping.mapping_id.clone(),
-                database: mapping.connection.database().to_owned(),
+                database: database.clone(),
                 source,
             })?;
 
@@ -132,14 +164,14 @@ async fn bootstrap_mapping(
                 .await
                 .map_err(|source| RunnerBootstrapError::ExecuteDdl {
                     mapping_id: mapping.mapping_id.clone(),
-                    database: mapping.connection.database().to_owned(),
+                    database: database.clone(),
                     source,
             })?;
         }
     }
 
     seed_tracking_state(
-        &mut postgres,
+        postgres,
         &mapping.mapping_id,
         &mapping.source_database,
         helper_plan.helper_tables(),
@@ -147,18 +179,9 @@ async fn bootstrap_mapping(
     .await
     .map_err(|source| RunnerBootstrapError::SeedTrackingState {
         mapping_id: mapping.mapping_id.clone(),
-        database: mapping.connection.database().to_owned(),
+        database,
         source,
     })?;
-
-    postgres
-        .close()
-        .await
-        .map_err(|source| RunnerBootstrapError::Connect {
-            mapping_id: mapping.mapping_id.clone(),
-            endpoint: mapping.connection.endpoint_label(),
-            source,
-        })?;
 
     Ok(helper_plan)
 }
@@ -440,17 +463,12 @@ struct MappingBootstrapPlan<'a> {
 }
 
 impl<'a> MappingBootstrapPlan<'a> {
-    fn from_mapping(mapping: &'a MappingConfig) -> Self {
+    fn from_mapping(mapping: &'a ConfiguredMappingPlan) -> Self {
         Self {
-            mapping_id: mapping.id().to_owned(),
-            source_database: mapping.source().database().to_owned(),
-            connection: mapping.destination().connection(),
-            selected_tables: mapping
-                .source()
-                .tables()
-                .iter()
-                .map(|table| QualifiedTableName::from_config(table))
-                .collect(),
+            mapping_id: mapping.mapping_id().to_owned(),
+            source_database: mapping.source_database().to_owned(),
+            connection: mapping.destination_connection(),
+            selected_tables: mapping.selected_tables().to_vec(),
         }
     }
 }

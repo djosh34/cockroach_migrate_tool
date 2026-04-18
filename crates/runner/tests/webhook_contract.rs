@@ -266,6 +266,56 @@ mappings:
         )
         .expect("runner config should be written");
     }
+
+    fn write_shared_destination_runner_config(&self, path: &Path, bind_port: u16) {
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+verify:
+  molt:
+    command: molt
+    report_dir: /tmp/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: shared_app
+        user: migration_user_shared
+        password: runner-secret-shared
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {postgres_port}
+        database: shared_app
+        user: migration_user_shared
+        password: runner-secret-shared
+"#,
+                bind_port = bind_port,
+                cert_path = fixture_path("certs/server.crt").display(),
+                key_path = fixture_path("certs/server.key").display(),
+                postgres_port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
+    }
 }
 
 impl Drop for TestPostgres {
@@ -738,6 +788,87 @@ fn run_isolates_resolved_tracking_state_per_mapping_destination() {
 }
 
 #[test]
+fn run_isolates_webhook_helper_state_per_mapping_in_a_shared_destination_database() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared LOGIN PASSWORD 'runner-secret-shared';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared;",
+    );
+    postgres.exec(
+        "shared_app",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.invoices (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_shared_destination_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+
+    let invoice_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-b"),
+        &client,
+        &invoice_row_batch_body("demo_b", 4200),
+    );
+    assert_eq!(invoice_response.status(), StatusCode::OK);
+
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-b"),
+        &client,
+        &resolved_body("1776526353000000000.0000000000"),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT count(*)::text FROM _cockroach_migration_tool.\"app-a__public__customers\";",
+        ),
+        "1"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT count(*)::text FROM _cockroach_migration_tool.\"app-b__public__invoices\";",
+        ),
+        "1"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT COALESCE(latest_received_resolved_watermark, '<null>')
+             FROM _cockroach_migration_tool.stream_state
+             WHERE mapping_id = 'app-a';",
+        ),
+        "<null>"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT latest_received_resolved_watermark
+             FROM _cockroach_migration_tool.stream_state
+             WHERE mapping_id = 'app-b';",
+        ),
+        "1776526353000000000.0000000000"
+    );
+}
+
+#[test]
 fn run_persists_insert_row_batches_before_returning_200() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -1077,6 +1208,12 @@ fn delete_row_batch_body(source_database: &str, table_name: &str) -> String {
 fn update_row_batch_body(source_database: &str, table_name: &str, email: &str) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"{email}"}},"before":{{"id":1,"email":"customer@example.com"}},"key":{{"id":1}},"op":"u","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
+}
+
+fn invoice_row_batch_body(source_database: &str, total_cents: i64) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"id":22,"total_cents":{total_cents}}},"before":null,"key":{{"id":22}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"invoices"}},"ts_ns":3}}]}}"#
     )
 }
 

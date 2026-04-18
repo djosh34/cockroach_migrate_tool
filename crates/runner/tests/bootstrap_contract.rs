@@ -8,8 +8,7 @@ use std::{
     time::Duration,
 };
 
-use assert_cmd::Command as AssertCommand;
-use predicates::prelude::predicate;
+use predicates::prelude::{PredicateBooleanExt, predicate};
 use reqwest::{Certificate, blocking::Client};
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -220,6 +219,98 @@ mappings:
         )
         .expect("runner config should be written");
     }
+
+    fn write_shared_destination_runner_config(
+        &self,
+        path: &Path,
+        bind_port: u16,
+        app_a_tables: &[&str],
+        app_b_tables: &[&str],
+    ) {
+        self.write_shared_destination_runner_config_with_credentials(
+            path,
+            bind_port,
+            app_a_tables,
+            ("migration_user_shared", "runner-secret-shared"),
+            app_b_tables,
+            ("migration_user_shared", "runner-secret-shared"),
+        );
+    }
+
+    fn write_shared_destination_runner_config_with_credentials(
+        &self,
+        path: &Path,
+        bind_port: u16,
+        app_a_tables: &[&str],
+        app_a_credentials: (&str, &str),
+        app_b_tables: &[&str],
+        app_b_credentials: (&str, &str),
+    ) {
+        let app_a_tables_yaml = app_a_tables
+            .iter()
+            .map(|table| format!("        - {table}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let app_b_tables_yaml = app_b_tables
+            .iter()
+            .map(|table| format!("        - {table}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+verify:
+  molt:
+    command: molt
+    report_dir: /tmp/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+{app_a_tables_yaml}
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {port}
+        database: shared_app
+        user: {app_a_user}
+        password: {app_a_password}
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+{app_b_tables_yaml}
+    destination:
+      connection:
+        host: 127.0.0.1
+        port: {port}
+        database: shared_app
+        user: {app_b_user}
+        password: {app_b_password}
+"#,
+                bind_port = bind_port,
+                cert_path = fixture_path("certs/server.crt").display(),
+                key_path = fixture_path("certs/server.key").display(),
+                app_a_tables_yaml = app_a_tables_yaml,
+                app_b_tables_yaml = app_b_tables_yaml,
+                app_a_user = app_a_credentials.0,
+                app_a_password = app_a_credentials.1,
+                app_b_user = app_b_credentials.0,
+                app_b_password = app_b_credentials.1,
+                port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
+    }
 }
 
 impl Drop for TestPostgres {
@@ -278,6 +369,49 @@ impl RunnerProcess {
         }
 
         panic!("runner did not serve healthz at {url}");
+    }
+
+    fn assert_exits_failure(
+        mut self,
+        stderr_predicate: impl predicates::Predicate<str>,
+    ) {
+        for _ in 0..50 {
+            if let Some(status) = self
+                .child
+                .try_wait()
+                .expect("runner child status should be readable")
+            {
+                assert!(
+                    !status.success(),
+                    "runner unexpectedly exited successfully with status {status}"
+                );
+
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                self.child
+                    .stdout
+                    .as_mut()
+                    .expect("runner stdout pipe should exist")
+                    .read_to_string(&mut stdout)
+                    .expect("runner stdout should be readable");
+                self.child
+                    .stderr
+                    .as_mut()
+                    .expect("runner stderr pipe should exist")
+                    .read_to_string(&mut stderr)
+                    .expect("runner stderr should be readable");
+
+                assert!(
+                    stderr_predicate.eval(&stderr),
+                    "runner stderr did not match expectation\nstdout:\n{stdout}\nstderr:\n{stderr}"
+                );
+                return;
+            }
+
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        panic!("runner stayed up instead of failing during startup");
     }
 }
 
@@ -547,6 +681,70 @@ fn run_preserves_existing_stream_and_table_tracking_progress_on_restart() {
 }
 
 #[test]
+fn run_bootstraps_shared_destination_helper_state_per_mapping() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared LOGIN PASSWORD 'runner-secret-shared';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared;",
+    );
+    postgres.exec_as(
+        "migration_user_shared",
+        "shared_app",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_shared_destination_runner_config(
+        &config_path,
+        bind_port,
+        &["public.customers"],
+        &["public.orders"],
+    );
+
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(
+        &format!("https://localhost:{bind_port}/healthz"),
+        &https_client(),
+    );
+
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(table_name, ',' ORDER BY table_name)
+             FROM information_schema.tables
+             WHERE table_schema = '_cockroach_migration_tool';",
+        ),
+        "app-a__public__customers,app-b__public__orders,stream_state,table_sync_state"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(mapping_id || ':' || source_database, ',' ORDER BY mapping_id)
+             FROM _cockroach_migration_tool.stream_state;",
+        ),
+        "app-a:demo_a,app-b:demo_b"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(
+                mapping_id || ':' || source_table_name || ':' || helper_table_name,
+                ',' ORDER BY mapping_id
+             )
+             FROM _cockroach_migration_tool.table_sync_state;",
+        ),
+        "app-a:public.customers:app-a__public__customers,app-b:public.orders:app-b__public__orders"
+    );
+}
+
+#[test]
 fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -687,13 +885,91 @@ fn run_fails_loudly_when_a_mapped_destination_table_is_missing() {
         &["public.missing_table"],
     );
 
-    let mut command = AssertCommand::cargo_bin("runner").expect("runner binary should exist");
-    command
-        .args(["run", "--config"])
-        .arg(&config_path)
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains(
-            "postgres bootstrap: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
-        ));
+    RunnerProcess::start(&config_path).assert_exits_failure(predicate::str::contains(
+        "postgres bootstrap: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
+    ));
+}
+
+#[test]
+fn run_fails_loudly_when_two_mappings_share_one_destination_table() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared LOGIN PASSWORD 'runner-secret-shared';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared;",
+    );
+    postgres.exec_as(
+        "migration_user_shared",
+        "shared_app",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_shared_destination_runner_config(
+        &config_path,
+        pick_unused_port(),
+        &["public.customers"],
+        &["public.customers"],
+    );
+
+    RunnerProcess::start(&config_path).assert_exits_failure(
+        predicate::str::contains("destination database `127.0.0.1:")
+            .and(predicate::str::contains(
+                "`public.customers` is claimed by both mappings `app-a` and `app-b`",
+            )),
+    );
+}
+
+#[test]
+fn run_fails_loudly_when_two_mappings_share_one_destination_with_conflicting_credentials() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared_a LOGIN PASSWORD 'runner-secret-shared-a';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared_b LOGIN PASSWORD 'runner-secret-shared-b';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared_a;",
+    );
+    postgres.exec(
+        "shared_app",
+        "GRANT ALL PRIVILEGES ON DATABASE shared_app TO migration_user_shared_b;",
+    );
+    postgres.exec_as(
+        "migration_user_shared_a",
+        "shared_app",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+    postgres.exec(
+        "shared_app",
+        "GRANT USAGE ON SCHEMA public TO migration_user_shared_b;
+         GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO migration_user_shared_b;",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_shared_destination_runner_config_with_credentials(
+        &config_path,
+        pick_unused_port(),
+        &["public.customers"],
+        ("migration_user_shared_a", "runner-secret-shared-a"),
+        &["public.orders"],
+        ("migration_user_shared_b", "runner-secret-shared-b"),
+    );
+
+    RunnerProcess::start(&config_path).assert_exits_failure(
+        predicate::str::contains("destination database `127.0.0.1:")
+            .and(predicate::str::contains(
+                "has conflicting connection contracts for mappings `app-a` and `app-b`",
+            )),
+    );
 }

@@ -19,9 +19,11 @@ pub(crate) async fn serve(
 ) -> Result<(), RunnerReconcileRuntimeError> {
     let mut workers = JoinSet::new();
 
-    for mapping in runtime.mappings().cloned() {
-        let interval = runtime.reconcile_interval();
-        workers.spawn(async move { run_mapping_loop(mapping, interval).await });
+    for destination_group in runtime.destination_groups() {
+        for mapping in destination_group.mappings().iter().cloned() {
+            let interval = runtime.reconcile_interval();
+            workers.spawn(async move { run_mapping_loop(mapping, interval).await });
+        }
     }
 
     match workers.join_next().await {
