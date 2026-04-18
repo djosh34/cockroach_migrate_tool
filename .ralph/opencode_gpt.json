@@ -19,8 +19,7 @@
     "doom_loop": "deny",
     "skill": "allow",
     "external_directory": {
-      "/tmp/**": "allow",
-      "/home/joshazimullah.linux/work_mounts/patroni_rewrite/patroni_to_ts/patroni/**": "allow"
+      "/tmp/**": "allow"
     }
   },
   "provider": {

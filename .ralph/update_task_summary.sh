@@ -1,8 +1,11 @@
 #!/bin/bash
 
-TASKS_DIR=".ralph/tasks"
-CURRENT_OUTPUT_FILE=".ralph/current_tasks.md"
-DONE_OUTPUT_FILE=".ralph/current_tasks_done.md"
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TASKS_DIR="$SCRIPT_DIR/tasks"
+CURRENT_OUTPUT_FILE="$SCRIPT_DIR/current_tasks.md"
+DONE_OUTPUT_FILE="$SCRIPT_DIR/current_tasks_done.md"
 PREVIEW_LINES=5
 
 render_preview() {

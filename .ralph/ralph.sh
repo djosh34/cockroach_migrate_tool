@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 WORK_DIR="$(dirname "$SCRIPT_DIR")"
 SYSTEMD_USER_DIR="$HOME/.config/systemd/user"
-UNIT_NAME="ralph-worker.service"
+UNIT_NAME="$(/bin/bash "$SCRIPT_DIR/ralph-unit-name.sh")"
 UNIT_PATH="$SYSTEMD_USER_DIR/$UNIT_NAME"
 DEFAULT_MODE="codex"
 MODE="$DEFAULT_MODE"
@@ -129,6 +129,7 @@ stop_service() {
 
 show_status() {
   write_unit_file
+  echo "Unit: $UNIT_NAME"
   systemctl --user status "$UNIT_NAME" --no-pager || true
 }
 

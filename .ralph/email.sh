@@ -6,6 +6,16 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RALPH_DIR="$SCRIPT_DIR"
+WORK_DIR="$(dirname "$SCRIPT_DIR")"
+
+resolve_repo_path() {
+    local repo_path="$1"
+    if [[ "$repo_path" == /* ]]; then
+        printf '%s\n' "$repo_path"
+        return
+    fi
+    printf '%s/%s\n' "$WORK_DIR" "$repo_path"
+}
 
 # Check for finish argument
 FINISH_MODE=false
@@ -94,9 +104,13 @@ CURRENT_TASK_CONTENT=""
 
 if [[ -f "$RALPH_DIR/current_task.txt" ]]; then
     CURRENT_TASK_PATH=$(cat "$RALPH_DIR/current_task.txt")
-    if [[ -n "$CURRENT_TASK_PATH" && -f "$CURRENT_TASK_PATH" ]]; then
+    CURRENT_TASK_FILE=""
+    if [[ -n "$CURRENT_TASK_PATH" ]]; then
+        CURRENT_TASK_FILE="$(resolve_repo_path "$CURRENT_TASK_PATH")"
+    fi
+    if [[ -n "$CURRENT_TASK_FILE" && -f "$CURRENT_TASK_FILE" ]]; then
         CURRENT_TASK_NAME=$(basename "$CURRENT_TASK_PATH" .md)
-        CURRENT_TASK_CONTENT=$(cat "$CURRENT_TASK_PATH")
+        CURRENT_TASK_CONTENT=$(cat "$CURRENT_TASK_FILE")
     fi
 fi
 

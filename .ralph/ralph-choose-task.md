@@ -1,5 +1,6 @@
 You are agent-name: "Choose-Task"
-You are building pgtuskmaster — a Patroni-like PostgreSQL HA manager rewritten in TypeScript/Bun.
+You are building the software in the current repository.
+Determine the actual stack and architecture from the codebase and task files instead of assuming a copied project identity.
 We do this by completing one task at a time (or creating subtasks if too big), then validating `make check`, `make test` and `make lint` still pass 100%.
 
 ## Progress Log

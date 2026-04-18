@@ -5,10 +5,20 @@
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORK_DIR="$(dirname "$SCRIPT_DIR")"
 
 EXIT_CODE="${1:-unknown}"
 LAST_LINES="${2:-<no output captured>}"
 BACKOFF_STATUS="${3:-}"
+
+resolve_repo_path() {
+    local repo_path="$1"
+    if [[ "$repo_path" == /* ]]; then
+        printf '%s\n' "$repo_path"
+        return
+    fi
+    printf '%s/%s\n' "$WORK_DIR" "$repo_path"
+}
 
 # Read email addresses
 SEND_FROM=$(cat ~/send_from 2>/dev/null) || { echo "Error: ~/send_from not found"; exit 1; }
@@ -21,7 +31,11 @@ ITERATION_NUMBER=$("$SCRIPT_DIR/email_get_iteration.sh" 2>/dev/null) || true
 CURRENT_TASK_NAME=""
 if [[ -f "$SCRIPT_DIR/current_task.txt" ]]; then
     CURRENT_TASK_PATH=$(cat "$SCRIPT_DIR/current_task.txt")
-    if [[ -n "$CURRENT_TASK_PATH" && -f "$CURRENT_TASK_PATH" ]]; then
+    CURRENT_TASK_FILE=""
+    if [[ -n "$CURRENT_TASK_PATH" ]]; then
+        CURRENT_TASK_FILE="$(resolve_repo_path "$CURRENT_TASK_PATH")"
+    fi
+    if [[ -n "$CURRENT_TASK_FILE" && -f "$CURRENT_TASK_FILE" ]]; then
         CURRENT_TASK_NAME=$(basename "$CURRENT_TASK_PATH" .md)
     fi
 fi

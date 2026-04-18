@@ -1,0 +1,41 @@
+services:
+  cockroach:
+    image: cockroachdb/cockroach:v26.1.2
+    command:
+      - start-single-node
+      - --insecure
+      - --listen-addr=localhost:26257
+      - --http-addr=0.0.0.0:8080
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "26257:26257"
+      - "8080:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - cockroach sql --insecure --host=localhost:26257 -e 'select 1'
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  receiver:
+    build:
+      context: ./receiver
+    environment:
+      PORT: "8443"
+      CERT_FILE: /certs/server.crt
+      KEY_FILE: /certs/server.key
+      OUTPUT_DIR: /data/requests
+    volumes:
+      - ./certs:/certs:ro
+      - ./output/requests:/data/requests
+    ports:
+      - "8443:8443"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import ssl, urllib.request; ctx = ssl.create_default_context(cafile='/certs/ca.crt'); print(urllib.request.urlopen('https://localhost:8443/healthz', context=ctx, timeout=3).read().decode())"
+      interval: 5s
+      timeout: 5s
+      retries: 30

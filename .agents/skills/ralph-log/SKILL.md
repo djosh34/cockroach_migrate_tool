@@ -27,14 +27,15 @@ Use the Ralph launcher status command:
 /bin/bash .ralph/ralph.sh --status
 ```
 
-Report clearly whether `ralph-worker.service` is active/running, inactive, or not found.
+Report clearly whether the repo-specific Ralph unit is active/running, inactive, or not found.
 
 ### 3. If Ralph is running, inspect recent logs
 
 Read the most recent unit logs:
 
 ```bash
-journalctl --user -u ralph-worker.service -n 50 --output=short-iso --no-pager
+UNIT_NAME=$(/bin/bash .ralph/ralph-unit-name.sh)
+journalctl --user -u "$UNIT_NAME" -n 50 --output=short-iso --no-pager
 ```
 
 Summarize what the worker appears to be doing right now.
@@ -44,9 +45,10 @@ Summarize what the worker appears to be doing right now.
 Start with one short comparison:
 
 ```bash
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+UNIT_NAME=$(/bin/bash .ralph/ralph-unit-name.sh)
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 sleep 5
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 ```
 
 Treat logs as moving immediately if there is fresh output in the second snapshot that was not present in the first one. Use timestamps and changed lines in the explanation.
@@ -56,9 +58,10 @@ If nothing changed after 5 seconds, do not call it stuck yet. Instead, wait 30 s
 Use this command shape for each retry:
 
 ```bash
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+UNIT_NAME=$(/bin/bash .ralph/ralph-unit-name.sh)
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 sleep 30
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 ```
 
 Stop as soon as you observe fresh output and report that logs are moving.

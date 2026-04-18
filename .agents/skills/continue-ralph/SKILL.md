@@ -85,9 +85,10 @@ After restarting, confirm the service is active:
 Then check whether fresh logs are appearing by comparing two short snapshots a few seconds apart:
 
 ```bash
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+UNIT_NAME=$(/bin/bash .ralph/ralph-unit-name.sh)
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 sleep 5
-journalctl --user -u ralph-worker.service -n 5 --output=short-iso --no-pager
+journalctl --user -u "$UNIT_NAME" -n 5 --output=short-iso --no-pager
 ```
 
 Treat logs as moving only if the second snapshot contains fresh output that was not present in the first one.
@@ -95,5 +96,5 @@ Treat logs as moving only if the second snapshot contains fresh output that was 
 ### 7. Report
 
 Tell the user that Ralph has been continued and the task has been switched. Also report:
-- whether `ralph-worker.service` is running
+- whether the repo-specific Ralph unit is running
 - whether the logs appear to be moving

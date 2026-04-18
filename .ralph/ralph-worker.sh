@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ralph-worker.sh — the actual iteration loop.
-# Not meant to be run directly. Use ralph.sh or the ralph-pgtuskmaster systemd service.
+# Not meant to be run directly. Use ralph.sh or the repo-specific Ralph systemd service.
 
 set -euo pipefail
 
@@ -11,6 +11,7 @@ MODEL_PROFILE_FILE="model.txt"
 
 SOURCE_PATH="${BASH_SOURCE[0]}"
 SCRIPT_DIR="$(cd -P "$( dirname "$SOURCE_PATH" )" >/dev/null 2>&1 && pwd)"
+WORK_DIR="$(dirname "$SCRIPT_DIR")"
 echo "Running from $SCRIPT_DIR"
 
 
@@ -42,9 +43,7 @@ echo "Starting from iteration $START (last completed: $LAST_ITERATION)"
 export CLAUDE_CODE_ENABLE_TELEMETRY=1
 
 # Codex OpenTelemetry settings are configured in .codex/config.toml.
-
-
-export OPENCODE_CONFIG="$SCRIPT_DIR/.ralph/opencode_gpt.json"
+export OPENCODE_CONFIG="$SCRIPT_DIR/opencode_gpt.json"
 
 STOP_FOUND=0
 
