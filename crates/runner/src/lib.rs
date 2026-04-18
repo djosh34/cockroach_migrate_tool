@@ -2,6 +2,8 @@ mod config;
 mod error;
 mod postgres_bootstrap;
 mod postgres_setup;
+mod schema_compare;
+mod sql_name;
 
 use std::path::PathBuf;
 
@@ -11,6 +13,7 @@ use config::LoadedRunnerConfig;
 pub use error::RunnerError;
 use postgres_bootstrap::{PostgresBootstrapReport, bootstrap_postgres};
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
+use schema_compare::{SchemaCompareSummary, compare_mapping_exports};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -34,6 +37,16 @@ enum Command {
         #[arg(long)]
         output_dir: PathBuf,
     },
+    CompareSchema {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        mapping: String,
+        #[arg(long)]
+        cockroach_schema: PathBuf,
+        #[arg(long)]
+        postgres_schema: PathBuf,
+    },
     Run {
         #[arg(long)]
         config: PathBuf,
@@ -52,6 +65,20 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
                 render_postgres_setup(&config, &output_dir)?,
             ))
         }
+        Command::CompareSchema {
+            config,
+            mapping,
+            cockroach_schema,
+            postgres_schema,
+        } => {
+            let config = LoadedRunnerConfig::load(&config)?;
+            Ok(CommandOutput::SchemaCompare(compare_mapping_exports(
+                &config,
+                &mapping,
+                &cockroach_schema,
+                &postgres_schema,
+            )?))
+        }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             let bootstrap = bootstrap_postgres(&config)?;
@@ -66,6 +93,7 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
 pub enum CommandOutput {
     Validated(ValidatedConfig),
     PostgresSetupArtifacts(PostgresSetupArtifacts),
+    SchemaCompare(SchemaCompareSummary),
     Startup(RunnerStartupSummary),
 }
 
@@ -74,6 +102,7 @@ impl std::fmt::Display for CommandOutput {
         match self {
             Self::Validated(config) => config.fmt(f),
             Self::PostgresSetupArtifacts(summary) => summary.fmt(f),
+            Self::SchemaCompare(summary) => summary.fmt(f),
             Self::Startup(summary) => summary.fmt(f),
         }
     }

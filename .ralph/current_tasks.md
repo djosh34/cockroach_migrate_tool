@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 08:38:01 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-05-schema-validation/01-task-compare-schema-exports-semantically.md`
-
-```
-## Task: Compare Cockroach and PostgreSQL schema exports semantically <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 18 09:03:53 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-05-schema-validation/02-task-generate-helper-shadow-ddl-and-dependency-order.md`
 

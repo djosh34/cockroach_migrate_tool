@@ -50,3 +50,4 @@
 .ralph/tasks/story-03-operator-ux-config/02-task-generate-postgresql-grant-sql-and-operator-artifacts.md
 .ralph/tasks/story-04-source-bootstrap/01-task-build-cockroach-bootstrap-command-and-script-output.md
 .ralph/tasks/story-04-source-bootstrap/02-task-apply-postgresql-helper-bootstrap-automatically.md
+.ralph/tasks/story-05-schema-validation/01-task-compare-schema-exports-semantically.md

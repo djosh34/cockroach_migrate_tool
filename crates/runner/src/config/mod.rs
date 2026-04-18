@@ -59,6 +59,10 @@ impl RunnerConfig {
         &self.mappings
     }
 
+    pub(crate) fn mapping(&self, mapping_id: &str) -> Option<&MappingConfig> {
+        self.mappings.iter().find(|mapping| mapping.id() == mapping_id)
+    }
+
     pub(crate) fn mapping_labels(&self) -> String {
         self.mappings
             .iter()

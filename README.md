@@ -112,7 +112,21 @@ docker run --rm \
   validate-config --config /config/runner.yml
 ```
 
-4. Render the PostgreSQL grant artifacts and review the generated `README.md` plus per-mapping `grants.sql` files. These grants stay manual and explicit; no superuser role is assumed.
+4. Validate the exported CockroachDB and PostgreSQL schemas semantically before starting the runtime. The compare command uses the selected mapping’s table list as the filter, ignores unrelated tables, and rejects structural mismatches without relying on a raw text diff.
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  -v "$(pwd)/schema:/schema:ro" \
+  cockroach-migrate-runner \
+  compare-schema \
+  --config /config/runner.yml \
+  --mapping app-a \
+  --cockroach-schema /schema/crdb_schema.txt \
+  --postgres-schema /schema/pg_schema.sql
+```
+
+5. Render the PostgreSQL grant artifacts and review the generated `README.md` plus per-mapping `grants.sql` files. These grants stay manual and explicit; no superuser role is assumed.
 
 ```bash
 docker run --rm \
@@ -122,7 +136,7 @@ docker run --rm \
   render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
 ```
 
-5. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables, and adds the automatic minimal PK helper indexes when they are needed.
+6. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables, and adds the automatic minimal PK helper indexes when they are needed.
 
 ```bash
 docker run --rm \
@@ -132,7 +146,7 @@ docker run --rm \
   run --config /config/runner.yml
 ```
 
-The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
+The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
 ## Command Contract
 

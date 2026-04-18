@@ -3,6 +3,7 @@ use sqlx::{Connection, Executor, PgConnection, Row, postgres::PgConnectOptions};
 use crate::{
     config::{LoadedRunnerConfig, PostgresConnectionConfig, RunnerConfig},
     error::RunnerBootstrapError,
+    sql_name::{QualifiedTableName, SqlIdentifier},
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
@@ -170,8 +171,8 @@ async fn ensure_source_table_exists(
         ) AS table_exists
         "#,
     )
-    .bind(helper_table.source_table.schema.raw())
-    .bind(helper_table.source_table.table.raw())
+    .bind(helper_table.source_table.schema().raw())
+    .bind(helper_table.source_table.table().raw())
     .fetch_one(postgres)
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
@@ -216,8 +217,8 @@ async fn load_primary_key_columns(
         ORDER BY key_columns.ordinality
         "#,
     )
-    .bind(helper_table.source_table.schema.raw())
-    .bind(helper_table.source_table.table.raw())
+    .bind(helper_table.source_table.schema().raw())
+    .bind(helper_table.source_table.table().raw())
     .fetch_all(postgres)
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
@@ -263,8 +264,8 @@ impl HelperTablePlan {
     fn new(mapping_id: &str, source_table: QualifiedTableName) -> Self {
         let helper_table_name = format!(
             "{mapping_id}__{}__{}",
-            source_table.schema.raw(),
-            source_table.table.raw()
+            source_table.schema().raw(),
+            source_table.table().raw()
         );
 
         Self {
@@ -278,8 +279,8 @@ impl HelperTablePlan {
             "CREATE TABLE IF NOT EXISTS {}.{} (LIKE {}.{} INCLUDING DEFAULTS INCLUDING GENERATED)",
             SqlIdentifier::new(HELPER_SCHEMA),
             SqlIdentifier::new(&self.helper_table_name),
-            self.source_table.schema,
-            self.source_table.table,
+            self.source_table.schema(),
+            self.source_table.table(),
         )
     }
 
@@ -296,50 +297,5 @@ impl HelperTablePlan {
             SqlIdentifier::new(HELPER_SCHEMA),
             SqlIdentifier::new(&self.helper_table_name),
         )
-    }
-}
-
-struct QualifiedTableName {
-    schema: SqlIdentifier,
-    table: SqlIdentifier,
-}
-
-impl QualifiedTableName {
-    fn from_config(value: &str) -> Self {
-        let (schema, table) = value
-            .split_once('.')
-            .expect("validated config should only contain schema-qualified tables");
-
-        Self {
-            schema: SqlIdentifier::new(schema),
-            table: SqlIdentifier::new(table),
-        }
-    }
-
-    fn label(&self) -> String {
-        format!("{}.{}", self.schema.raw(), self.table.raw())
-    }
-}
-
-#[derive(Clone)]
-struct SqlIdentifier {
-    raw: String,
-}
-
-impl SqlIdentifier {
-    fn new(value: &str) -> Self {
-        Self {
-            raw: value.to_owned(),
-        }
-    }
-
-    fn raw(&self) -> &str {
-        &self.raw
-    }
-}
-
-impl std::fmt::Display for SqlIdentifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\"{}\"", self.raw.replace('"', "\"\""))
     }
 }

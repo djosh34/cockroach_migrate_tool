@@ -2,6 +2,8 @@ use std::{io, net::AddrParseError, path::PathBuf};
 
 use thiserror::Error;
 
+use crate::schema_compare::SchemaCompareError;
+
 #[derive(Debug, Error)]
 pub enum RunnerError {
     #[error("config: {0}")]
@@ -10,6 +12,8 @@ pub enum RunnerError {
     PostgresSetupArtifacts(#[from] RunnerArtifactError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
+    #[error(transparent)]
+    SchemaCompare(#[from] SchemaCompareError),
 }
 
 #[derive(Debug, Error)]

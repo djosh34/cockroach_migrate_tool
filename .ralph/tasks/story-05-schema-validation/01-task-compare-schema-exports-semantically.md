@@ -1,4 +1,4 @@
-## Task: Compare Cockroach and PostgreSQL schema exports semantically <status>not_started</status> <passes>false</passes>
+## Task: Compare Cockroach and PostgreSQL schema exports semantically <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -23,12 +23,13 @@ This task must reflect the investigation result that raw text diff is too noisy 
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers matching and mismatching schema cases across Cockroach and PostgreSQL exports
-- [ ] The comparison is semantic rather than raw text diff
-- [ ] Excluded tables are supported cleanly
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers matching and mismatching schema cases across Cockroach and PostgreSQL exports
+- [x] The comparison is semantic rather than raw text diff
+- [x] Excluded tables are supported cleanly
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-05-schema-validation/01-task-compare-schema-exports-semantically_plans/2026-04-18-schema-compare-semantic-plan.md</plan>

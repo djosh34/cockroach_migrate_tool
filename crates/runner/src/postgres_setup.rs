@@ -7,6 +7,7 @@ use std::{
 use crate::{
     config::{LoadedRunnerConfig, MappingConfig, RunnerConfig},
     error::RunnerArtifactError,
+    sql_name::{QualifiedTableName, SqlIdentifier},
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
@@ -224,54 +225,6 @@ impl Display for GrantSql<'_> {
         }
 
         Ok(())
-    }
-}
-
-#[derive(Clone)]
-struct QualifiedTableName {
-    schema: SqlIdentifier,
-    table: SqlIdentifier,
-}
-
-impl QualifiedTableName {
-    fn from_config(value: &str) -> Self {
-        let (schema, table) = value
-            .split_once('.')
-            .expect("validated config should only contain schema-qualified tables");
-
-        Self {
-            schema: SqlIdentifier::new(schema),
-            table: SqlIdentifier::new(table),
-        }
-    }
-}
-
-impl Display for QualifiedTableName {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", self.schema, self.table)
-    }
-}
-
-#[derive(Clone)]
-struct SqlIdentifier {
-    raw: String,
-}
-
-impl SqlIdentifier {
-    fn new(value: &str) -> Self {
-        Self {
-            raw: value.to_owned(),
-        }
-    }
-
-    fn raw(&self) -> &str {
-        &self.raw
-    }
-}
-
-impl Display for SqlIdentifier {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "\"{}\"", self.raw.replace('"', "\"\""))
     }
 }
 
