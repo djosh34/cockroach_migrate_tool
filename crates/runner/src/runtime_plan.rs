@@ -87,7 +87,8 @@ pub(crate) struct MappingRuntimePlan {
     source_database: String,
     destination_connection: PostgresConnectionConfig,
     helper_tables: BTreeMap<String, HelperShadowTablePlan>,
-    reconcile_tables: Vec<HelperShadowTablePlan>,
+    reconcile_upsert_tables: Vec<HelperShadowTablePlan>,
+    reconcile_delete_tables: Vec<HelperShadowTablePlan>,
 }
 
 impl MappingRuntimePlan {
@@ -103,26 +104,18 @@ impl MappingRuntimePlan {
             .cloned()
             .map(|table| (table.source_table().label(), table))
             .collect::<BTreeMap<_, _>>();
-        let reconcile_tables = helper_plan
-            .reconcile_upsert_order()
-            .iter()
-            .map(|table_name| {
-                helper_tables
-                    .get(&table_name.label())
-                    .cloned()
-                    .ok_or_else(|| RunnerRuntimePlanError::MissingReconcileTable {
-                        mapping_id: mapping_id.to_owned(),
-                        table: table_name.label(),
-                    })
-            })
-            .collect::<Result<Vec<_>, RunnerRuntimePlanError>>()?;
+        let reconcile_upsert_tables =
+            build_reconcile_tables(mapping_id, &helper_tables, helper_plan.reconcile_upsert_order())?;
+        let reconcile_delete_tables =
+            build_reconcile_tables(mapping_id, &helper_tables, helper_plan.reconcile_delete_order())?;
 
         Ok(Self {
             mapping_id: mapping_id.to_owned(),
             source_database: source_database.to_owned(),
             destination_connection,
             helper_tables,
-            reconcile_tables,
+            reconcile_upsert_tables,
+            reconcile_delete_tables,
         })
     }
 
@@ -142,7 +135,30 @@ impl MappingRuntimePlan {
         self.helper_tables.get(table_label)
     }
 
-    pub(crate) fn reconcile_tables(&self) -> &[HelperShadowTablePlan] {
-        &self.reconcile_tables
+    pub(crate) fn reconcile_upsert_tables(&self) -> &[HelperShadowTablePlan] {
+        &self.reconcile_upsert_tables
     }
+
+    pub(crate) fn reconcile_delete_tables(&self) -> &[HelperShadowTablePlan] {
+        &self.reconcile_delete_tables
+    }
+}
+
+fn build_reconcile_tables(
+    mapping_id: &str,
+    helper_tables: &BTreeMap<String, HelperShadowTablePlan>,
+    table_order: &[crate::sql_name::QualifiedTableName],
+) -> Result<Vec<HelperShadowTablePlan>, RunnerRuntimePlanError> {
+    table_order
+        .iter()
+        .map(|table_name| {
+            helper_tables
+                .get(&table_name.label())
+                .cloned()
+                .ok_or_else(|| RunnerRuntimePlanError::MissingReconcileTable {
+                    mapping_id: mapping_id.to_owned(),
+                    table: table_name.label(),
+                })
+        })
+        .collect()
 }

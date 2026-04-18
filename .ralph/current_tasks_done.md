@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 11:15:24 PM CEST 2026
+Generated: Sat Apr 18 11:30:42 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -138,6 +138,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the continuous upsert reconcile loop from shadow to real tables <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass.md`
+
+```
+## Task: Build the continuous SQL-driven delete reconcile pass <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

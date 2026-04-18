@@ -15,7 +15,7 @@ pub(super) async fn apply(
     table: &HelperShadowTablePlan,
 ) -> Result<(), RunnerReconcileRuntimeError> {
     if table.primary_key_columns().is_empty() {
-        return Err(RunnerReconcileRuntimeError::MissingPrimaryKey {
+        return Err(RunnerReconcileRuntimeError::MissingUpsertPrimaryKey {
             mapping_id: mapping.mapping_id().to_owned(),
             table: table.source_table().label(),
         });

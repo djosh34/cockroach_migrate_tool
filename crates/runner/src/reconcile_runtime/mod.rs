@@ -1,3 +1,4 @@
+mod delete;
 mod upsert;
 
 use std::sync::Arc;
@@ -36,11 +37,13 @@ async fn run_mapping_loop(
 
     loop {
         ticker.tick().await;
-        run_upsert_pass(&mapping).await?;
+        run_reconcile_pass(&mapping).await?;
     }
 }
 
-async fn run_upsert_pass(mapping: &MappingRuntimePlan) -> Result<(), RunnerReconcileRuntimeError> {
+async fn run_reconcile_pass(
+    mapping: &MappingRuntimePlan,
+) -> Result<(), RunnerReconcileRuntimeError> {
     let endpoint = mapping.destination_connection().endpoint_label();
     let database = mapping.destination_connection().database().to_owned();
     let mut postgres = PgConnection::connect_with(&mapping.destination_connection().connect_options())
@@ -59,14 +62,17 @@ async fn run_upsert_pass(mapping: &MappingRuntimePlan) -> Result<(), RunnerRecon
             source,
         })?;
 
-    for table in mapping.reconcile_tables() {
+    for table in mapping.reconcile_upsert_tables() {
         upsert::apply(&mut transaction, mapping, table).await?;
+    }
+    for table in mapping.reconcile_delete_tables() {
+        delete::apply(&mut transaction, mapping, table).await?;
     }
     persist_reconcile_success(
         &mut transaction,
         mapping.mapping_id(),
         &database,
-        mapping.reconcile_tables(),
+        mapping.reconcile_upsert_tables(),
     )
     .await?;
 

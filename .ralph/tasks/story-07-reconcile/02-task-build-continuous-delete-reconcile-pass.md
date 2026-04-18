@@ -1,4 +1,4 @@
-## Task: Build the continuous SQL-driven delete reconcile pass <status>not_started</status> <passes>false</passes>
+## Task: Build the continuous SQL-driven delete reconcile pass <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -23,12 +23,13 @@ This task must preserve the explicit decision:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers delete propagation from helper shadow absence into real tables
-- [ ] Delete reconcile runs in child-before-parent order
-- [ ] Repeated delete passes remain safe and idempotent
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers delete propagation from helper shadow absence into real tables
+- [x] Delete reconcile runs in child-before-parent order
+- [x] Repeated delete passes remain safe and idempotent
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass_plans/2026-04-18-continuous-delete-reconcile-plan.md</plan>

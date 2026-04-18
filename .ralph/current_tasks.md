@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 11:15:24 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-07-reconcile/02-task-build-continuous-delete-reconcile-pass.md`
-
-```
-## Task: Build the continuous SQL-driven delete reconcile pass <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 18 11:30:42 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-07-reconcile/03-task-track-reconciled-watermarks-and-repeatable-sync-state.md`
 

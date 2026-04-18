@@ -113,6 +113,10 @@ impl MappingHelperPlan {
         &self.reconcile_order.upsert_order
     }
 
+    pub(crate) fn reconcile_delete_order(&self) -> &[QualifiedTableName] {
+        &self.reconcile_order.delete_order
+    }
+
     fn write_to(&self, output_dir: &Path) -> Result<(), RunnerArtifactError> {
         let mapping_dir = output_dir.join(&self.mapping_id);
         fs::create_dir_all(&mapping_dir).map_err(|source| RunnerArtifactError::CreateMappingDirectory {

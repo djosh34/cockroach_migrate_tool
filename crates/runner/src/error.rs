@@ -184,11 +184,23 @@ pub enum RunnerReconcileRuntimeError {
     #[error(
         "reconcile upsert for mapping `{mapping_id}` real table `{table}` requires primary-key metadata"
     )]
-    MissingPrimaryKey { mapping_id: String, table: String },
+    MissingUpsertPrimaryKey { mapping_id: String, table: String },
+    #[error(
+        "reconcile delete for mapping `{mapping_id}` real table `{table}` requires primary-key metadata"
+    )]
+    MissingDeletePrimaryKey { mapping_id: String, table: String },
     #[error(
         "failed to apply reconcile upsert for mapping `{mapping_id}` real table `{table}`: {source}"
     )]
     ApplyUpsert {
+        mapping_id: String,
+        table: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to apply reconcile delete for mapping `{mapping_id}` real table `{table}`: {source}"
+    )]
+    ApplyDelete {
         mapping_id: String,
         table: String,
         source: sqlx::Error,

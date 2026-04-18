@@ -365,6 +365,18 @@ fn row_batch_body(source_database: &str, table_name: &str, email: &str) -> Strin
     )
 }
 
+fn delete_row_batch_body(source_database: &str, table_name: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":null,"before":{{"id":1,"email":"customer@example.com"}},"key":{{"id":1}},"op":"d","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":2}}]}}"#
+    )
+}
+
+fn order_delete_row_batch_body(source_database: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":null,"before":{{"id":10,"customer_id":1,"total_cents":1500}},"key":{{"id":10}},"op":"d","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"orders"}},"ts_ns":3}}]}}"#
+    )
+}
+
 fn order_row_batch_body(source_database: &str, customer_id: i64, total_cents: i64) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":10,"customer_id":{customer_id},"total_cents":{total_cents}}},"before":null,"key":{{"id":10}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"orders"}},"ts_ns":2}}]}}"#
@@ -374,6 +386,12 @@ fn order_row_batch_body(source_database: &str, customer_id: i64, total_cents: i6
 fn invoice_row_batch_body(source_database: &str, amount_cents: i64) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":22,"amount_cents":{amount_cents}}},"before":null,"key":{{"id":22}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"invoices"}},"ts_ns":3}}]}}"#
+    )
+}
+
+fn invoice_delete_row_batch_body(source_database: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":null,"before":{{"id":22,"amount_cents":4200}},"key":{{"id":22}},"op":"d","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"invoices"}},"ts_ns":4}}]}}"#
     )
 }
 
@@ -436,6 +454,58 @@ fn run_continuously_reconciles_helper_upserts_into_real_tables() {
 }
 
 #[test]
+fn run_continuously_reconciles_helper_deletes_into_real_tables() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let upsert_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "customer@example.com"),
+    );
+    assert_eq!(upsert_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        "customer@example.com",
+    );
+
+    let delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "0",
+    );
+}
+
+#[test]
 fn run_reconciles_tables_in_dependency_order_not_config_order() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -491,6 +561,88 @@ fn run_reconciles_tables_in_dependency_order_not_config_order() {
 }
 
 #[test]
+fn run_reconciles_deletes_in_reverse_dependency_order() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.orders (
+             id bigint PRIMARY KEY,
+             customer_id bigint NOT NULL REFERENCES public.customers (id),
+             total_cents bigint NOT NULL
+         );",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(
+        &config_path,
+        bind_port,
+        1,
+        &["public.orders", "public.customers"],
+    );
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "fk-delete@example.com"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+
+    let order_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &order_row_batch_body("demo_a", 1, 1500),
+    );
+    assert_eq!(order_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.orders WHERE id = 10;",
+        "1",
+    );
+
+    let customer_delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(customer_delete_response.status(), StatusCode::OK);
+
+    let order_delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &order_delete_row_batch_body("demo_a"),
+    );
+    assert_eq!(order_delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.orders;",
+        "0",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers;",
+        "0",
+    );
+}
+
+#[test]
 fn run_repeats_upsert_reconcile_without_duplication() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -535,6 +687,68 @@ fn run_repeats_upsert_reconcile_without_duplication() {
             "SELECT count(*) || ':' || max(email) FROM public.customers WHERE id = 1;",
         ),
         "1:stable@example.com"
+    );
+}
+
+#[test]
+fn run_repeats_delete_reconcile_without_errors_or_reinserts() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let upsert_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "gone@example.com"),
+    );
+    assert_eq!(upsert_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "1",
+    );
+
+    let delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "0",
+    );
+
+    thread::sleep(Duration::from_millis(2200));
+
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        ),
+        "0"
     );
 }
 
@@ -600,6 +814,101 @@ fn run_reconciles_each_mapping_into_only_its_own_destination_database() {
 }
 
 #[test]
+fn run_reconciles_deletes_only_within_the_target_mapping_database() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_b LOGIN PASSWORD 'runner-secret-b';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec("postgres", "CREATE DATABASE app_b OWNER migration_user_b;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+    postgres.exec(
+        "app_b",
+        "SET ROLE migration_user_b;
+         CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_multi_mapping_runner_config(&config_path, bind_port, 1);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let customer_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "isolated-delete@example.com"),
+    );
+    assert_eq!(customer_response.status(), StatusCode::OK);
+
+    let invoice_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-b"),
+        &client,
+        &invoice_row_batch_body("demo_b", 4200),
+    );
+    assert_eq!(invoice_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "1",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_b",
+        "SELECT count(*)::text FROM public.invoices WHERE id = 22;",
+        "1",
+    );
+
+    let customer_delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(customer_delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "0",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_b",
+        "SELECT COALESCE(amount_cents::text, '<null>') FROM public.invoices WHERE id = 22;",
+        "4200",
+    );
+
+    let invoice_delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-b"),
+        &client,
+        &invoice_delete_row_batch_body("demo_b"),
+    );
+    assert_eq!(invoice_delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_b",
+        "SELECT count(*)::text FROM public.invoices WHERE id = 22;",
+        "0",
+    );
+}
+
+#[test]
 fn run_advances_success_tracking_after_a_full_upsert_pass() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -642,6 +951,83 @@ fn run_advances_success_tracking_after_a_full_upsert_pass() {
         "app_a",
         "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
         "tracked@example.com",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(latest_reconciled_resolved_watermark, '<null>') \
+         FROM _cockroach_migration_tool.stream_state \
+         WHERE mapping_id = 'app-a';",
+        watermark,
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT (last_successful_sync_time IS NOT NULL)::text || ':' || \
+                COALESCE(last_successful_sync_watermark, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a' AND source_table_name = 'public.customers';",
+        &format!("true:{watermark}"),
+    );
+}
+
+#[test]
+fn run_advances_success_tracking_after_a_full_delete_pass() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "tracked-delete@example.com"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "1",
+    );
+
+    let delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(delete_response.status(), StatusCode::OK);
+
+    let watermark = "1776526353000000000.0000000001";
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "0",
     );
     assert_eventually_query_equals(
         &postgres,
