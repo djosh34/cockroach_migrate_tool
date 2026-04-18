@@ -1,5 +1,11 @@
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
 
 use super::{BootstrapConfig, SourceMapping, SourceSelection, TableName, WebhookConfig};
@@ -16,19 +22,25 @@ pub(super) fn load(path: &Path) -> Result<BootstrapConfig, BootstrapConfigError>
             source,
         }
     })?;
-    validate(raw)
+    validate(raw, path.parent().unwrap_or_else(|| Path::new(".")))
 }
 
-pub(super) fn validate(raw: RawBootstrapConfig) -> Result<BootstrapConfig, BootstrapConfigError> {
+pub(super) fn validate(
+    raw: RawBootstrapConfig,
+    config_dir: &Path,
+) -> Result<BootstrapConfig, BootstrapConfigError> {
     let mappings = validate_mappings(raw.mappings)?;
     Ok(BootstrapConfig {
         cockroach_url: validate_text(raw.cockroach.url, "cockroach.url")?,
-        webhook: validate_webhook(raw.webhook)?,
+        webhook: validate_webhook(raw.webhook, config_dir)?,
         mappings,
     })
 }
 
-fn validate_webhook(raw: RawWebhookConfig) -> Result<WebhookConfig, BootstrapConfigError> {
+fn validate_webhook(
+    raw: RawWebhookConfig,
+    config_dir: &Path,
+) -> Result<WebhookConfig, BootstrapConfigError> {
     let base_url = validate_text(raw.base_url, "webhook.base_url")?;
     if !base_url.starts_with("https://") {
         return Err(BootstrapConfigError::InvalidField {
@@ -36,9 +48,19 @@ fn validate_webhook(raw: RawWebhookConfig) -> Result<WebhookConfig, BootstrapCon
             message: "must start with https://",
         });
     }
+    let ca_cert_path = resolve_config_path(
+        validate_path(raw.ca_cert_path, "webhook.ca_cert_path")?,
+        config_dir,
+    );
+    let ca_cert_bytes =
+        fs::read(&ca_cert_path).map_err(|source| BootstrapConfigError::ReadWebhookCaCert {
+            path: ca_cert_path.clone(),
+            source,
+        })?;
 
     Ok(WebhookConfig {
         base_url,
+        ca_cert_query: encode_ca_cert_query(&ca_cert_bytes),
         resolved: validate_text(raw.resolved, "webhook.resolved")?,
     })
 }
@@ -115,6 +137,32 @@ fn validate_text(value: String, field: &'static str) -> Result<String, Bootstrap
     Ok(trimmed.to_owned())
 }
 
+fn validate_path(value: PathBuf, field: &'static str) -> Result<PathBuf, BootstrapConfigError> {
+    if value.as_os_str().is_empty() {
+        return Err(BootstrapConfigError::InvalidField {
+            field,
+            message: "must not be empty",
+        });
+    }
+
+    Ok(value)
+}
+
+fn resolve_config_path(path: PathBuf, config_dir: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path
+    } else {
+        config_dir.join(path)
+    }
+}
+
+const CA_CERT_QUERY_ESCAPE: &AsciiSet = &CONTROLS.add(b'+').add(b'/').add(b'=');
+
+fn encode_ca_cert_query(bytes: &[u8]) -> String {
+    let encoded = STANDARD.encode(bytes);
+    utf8_percent_encode(&encoded, CA_CERT_QUERY_ESCAPE).to_string()
+}
+
 fn validate_table_name(value: String) -> Result<TableName, BootstrapConfigError> {
     let value = validate_text(value, "mappings[].source.tables[]")?;
     let mut parts = value.split('.');
@@ -160,6 +208,7 @@ struct RawCockroachConfig {
 #[derive(Debug, Deserialize)]
 struct RawWebhookConfig {
     base_url: String,
+    ca_cert_path: PathBuf,
     resolved: String,
 }
 

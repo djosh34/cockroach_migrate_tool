@@ -12,6 +12,8 @@ pub enum BootstrapError {
 pub enum BootstrapConfigError {
     #[error("failed to read config file `{path}`")]
     ReadFile { path: PathBuf, source: io::Error },
+    #[error("failed to read webhook CA certificate `{path}`")]
+    ReadWebhookCaCert { path: PathBuf, source: io::Error },
     #[error("failed to parse config file `{path}`")]
     ParseFile {
         path: PathBuf,

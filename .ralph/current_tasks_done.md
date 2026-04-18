@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 01:05:02 AM CEST 2026
+Generated: Sun Apr 19 01:45:56 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -193,6 +193,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build drain-to-zero and cutover readiness checks <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/01-task-e2e-default-database-bootstrap-from-scratch.md`
+
+```
+## Task: End-to-end test a default database bootstrap from scratch <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

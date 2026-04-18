@@ -1693,8 +1693,10 @@ name = "source-bootstrap"
 version = "0.1.0"
 dependencies = [
  "assert_cmd",
+ "base64",
  "clap",
  "ingest-contract",
+ "percent-encoding",
  "predicates",
  "serde",
  "serde_yaml",

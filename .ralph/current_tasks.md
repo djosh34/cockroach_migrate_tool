@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 01:05:02 AM CEST 2026
+Generated: Sun Apr 19 01:45:56 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md`
 
 ```
 ## Task: Document the API write-freeze cutover runbook <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/01-task-e2e-default-database-bootstrap-from-scratch.md`
-
-```
-## Task: End-to-end test a default database bootstrap from scratch <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -207,5 +196,38 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Read the code as it actually exists and produce a very exhaustive Markdown report on code complexity, structure, module interactions, simplicity, stability, and signs of overengineering. The higher order goal is to evaluate whether the implementation is staying faithful to KISS rather than drifting into complexity for its own sake.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/01-task-build-master-only-pipeline-for-full-tests-and-scratch-ghcr-image.md`
+
+```
+## Task: Build a push-to-master-only pipeline that runs the full test suite and publishes a commit-tagged scratch image to GHCR <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/02-task-add-ci-sanity-check-for-workflow-attack-vectors-and-secret-safety.md`
+
+```
+## Task: Add a CI sanity and security check task that audits workflow attack vectors, secret exposure, and untrusted PR behavior <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/03-task-add-free-vulnerability-scan-to-image-publish-workflow.md`
+
+```
+## Task: Add a free vulnerability scan to the image publish workflow so unsafe images fail before release <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
 ```
 

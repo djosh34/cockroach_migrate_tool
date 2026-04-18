@@ -10,6 +10,8 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
+const FIXTURE_CA_CERT_QUERY: &str = "ZHVtbXktY2EK";
+
 #[test]
 fn render_bootstrap_script_emits_a_shell_script_for_configured_mappings() {
     let mut command =
@@ -44,10 +46,14 @@ fn render_bootstrap_script_emits_a_shell_script_for_configured_mappings() {
             "WEBHOOK_BASE_URL='https://runner.example.internal:8443'",
         ))
         .stdout(predicate::str::contains(
-            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-a'",
+            format!(
+                "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-a?ca_cert={FIXTURE_CA_CERT_QUERY}'"
+            ),
         ))
         .stdout(predicate::str::contains(
-            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-b'",
+            format!(
+                "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-b?ca_cert={FIXTURE_CA_CERT_QUERY}'"
+            ),
         ))
         .stdout(predicate::str::contains("cursor = '$START_CURSOR'"))
         .stdout(predicate::str::contains("initial_scan = 'yes'"))

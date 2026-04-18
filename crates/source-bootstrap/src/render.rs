@@ -1,5 +1,4 @@
 use crate::config::{BootstrapConfig, SourceMapping};
-use ingest_contract::MappingIngestPath;
 
 pub(crate) struct RenderedScript {
     text: String,
@@ -56,8 +55,11 @@ fn render_mapping_block(config: &BootstrapConfig, mapping: &SourceMapping) -> Ve
         .collect::<Vec<_>>()
         .join(", ");
     let changefeed_sql = format!(
-        "CREATE CHANGEFEED FOR TABLE {table_list} INTO 'webhook-$WEBHOOK_BASE_URL{}' WITH cursor = '$START_CURSOR', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = {};",
-        MappingIngestPath::new(mapping.id()),
+        "CREATE CHANGEFEED FOR TABLE {table_list} INTO {} WITH cursor = '$START_CURSOR', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = {};",
+        sql_literal(&format!(
+            "webhook-$WEBHOOK_BASE_URL{}",
+            config.webhook().changefeed_sink_suffix(mapping.id())
+        )),
         sql_literal(config.webhook().resolved()),
     );
 

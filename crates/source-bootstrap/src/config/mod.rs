@@ -2,6 +2,8 @@ mod parser;
 
 use std::path::Path;
 
+use ingest_contract::MappingIngestPath;
+
 use crate::error::BootstrapConfigError;
 
 #[derive(Clone, Debug)]
@@ -32,6 +34,7 @@ impl BootstrapConfig {
 #[derive(Clone, Debug)]
 pub(crate) struct WebhookConfig {
     base_url: String,
+    ca_cert_query: String,
     resolved: String,
 }
 
@@ -42,6 +45,14 @@ impl WebhookConfig {
 
     pub(crate) fn resolved(&self) -> &str {
         &self.resolved
+    }
+
+    pub(crate) fn changefeed_sink_suffix(&self, mapping_id: &str) -> String {
+        format!(
+            "{}?ca_cert={}",
+            MappingIngestPath::new(mapping_id),
+            self.ca_cert_query
+        )
     }
 }
 
