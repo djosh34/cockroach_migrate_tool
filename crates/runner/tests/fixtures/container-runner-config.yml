@@ -18,7 +18,7 @@ mappings:
         - public.orders
     destination:
       connection:
-        host: pg-a.example.internal
+        host: postgres
         port: 5432
         database: app_a
         user: migration_user_a
@@ -30,7 +30,7 @@ mappings:
         - public.invoices
     destination:
       connection:
-        host: pg-b.example.internal
+        host: postgres
         port: 5432
         database: app_b
         user: migration_user_b

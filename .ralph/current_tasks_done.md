@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 08:10:34 PM CEST 2026
+Generated: Sat Apr 18 08:38:01 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -50,6 +50,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the Cockroach bootstrap command and emitted setup script <status>in_progress</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-04-source-bootstrap/02-task-apply-postgresql-helper-bootstrap-automatically.md`
+
+```
+## Task: Apply helper-schema bootstrap inside PostgreSQL automatically from the runner <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

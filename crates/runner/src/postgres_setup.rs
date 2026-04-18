@@ -124,7 +124,7 @@ impl Display for TopLevelReadme<'_> {
         writeln!(f)?;
         writeln!(
             f,
-            "The runner later bootstraps helper objects inside schema `{HELPER_SCHEMA}` automatically, but it does not create roles or execute grants for you."
+            "Once the grants exist, `runner run --config <path>` bootstraps helper objects inside schema `{HELPER_SCHEMA}` automatically, but it does not create roles or execute grants for you."
         )?;
         writeln!(f)?;
         writeln!(f, "No superuser requirement is assumed or recommended.")?;
@@ -174,7 +174,7 @@ impl Display for MappingReadme<'_> {
         writeln!(f)?;
         writeln!(
             f,
-            "After the grants exist, the runner later creates helper objects in schema `{HELPER_SCHEMA}` automatically."
+            "After the grants exist, `runner run --config <path>` creates helper objects in schema `{HELPER_SCHEMA}` automatically."
         )?;
         writeln!(
             f,

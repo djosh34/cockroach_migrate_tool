@@ -137,8 +137,15 @@ pub(crate) struct PostgresConnectionConfig {
 
 impl PostgresConnectionConfig {
     pub(crate) fn endpoint_label(&self) -> String {
-        let _ = self.connect_options();
         format!("{}:{}/{}", self.host, self.port, self.database)
+    }
+
+    pub(crate) fn host(&self) -> &str {
+        &self.host
+    }
+
+    pub(crate) fn port(&self) -> u16 {
+        self.port
     }
 
     pub(crate) fn database(&self) -> &str {
@@ -149,13 +156,8 @@ impl PostgresConnectionConfig {
         &self.user
     }
 
-    fn connect_options(&self) -> sqlx::postgres::PgConnectOptions {
-        sqlx::postgres::PgConnectOptions::new()
-            .host(&self.host)
-            .port(self.port)
-            .database(&self.database)
-            .username(&self.user)
-            .password(&self.password)
+    pub(crate) fn password(&self) -> &str {
+        &self.password
     }
 }
 

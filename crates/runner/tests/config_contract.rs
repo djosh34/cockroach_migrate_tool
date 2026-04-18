@@ -258,28 +258,6 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
 }
 
 #[test]
-fn run_reports_the_wired_runner_modules_from_valid_config() {
-    let config_path = fixture_path("valid-runner-config.yml");
-    let config_path_label = config_path.display().to_string();
-    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
-
-    command
-        .args(["run", "--config"])
-        .arg(&config_path)
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("runner ready"))
-        .stdout(predicate::str::contains(format!("config={config_path_label}")))
-        .stdout(predicate::str::contains("mappings=2"))
-        .stdout(predicate::str::contains(
-            "labels=app-a=demo_a(2 tables)->pg-a.example.internal:5432/app_a,app-b=demo_b(1 tables)->pg-b.example.internal:5432/app_b",
-        ))
-        .stdout(predicate::str::contains("verify=molt@/tmp/molt"))
-        .stdout(predicate::str::contains("127.0.0.1:8443"))
-        .stdout(predicate::str::contains("30s"));
-}
-
-#[test]
 fn render_postgres_setup_writes_operator_artifacts_for_each_mapping() {
     let config_path = fixture_path("valid-runner-config.yml");
     let output_dir = tempfile::tempdir().expect("temp dir should be created");

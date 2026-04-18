@@ -1,5 +1,6 @@
 mod config;
 mod error;
+mod postgres_bootstrap;
 mod postgres_setup;
 
 use std::path::PathBuf;
@@ -8,6 +9,7 @@ use clap::{Parser, Subcommand};
 
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
+use postgres_bootstrap::{PostgresBootstrapReport, bootstrap_postgres};
 use postgres_setup::{PostgresSetupArtifacts, render_postgres_setup};
 
 #[derive(Debug, Parser)]
@@ -52,7 +54,11 @@ pub fn execute(cli: Cli) -> Result<CommandOutput, RunnerError> {
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(CommandOutput::Startup(RunnerStartupSummary::from(&config)))
+            let bootstrap = bootstrap_postgres(&config)?;
+            Ok(CommandOutput::Startup(RunnerStartupSummary::new(
+                &config,
+                &bootstrap,
+            )))
         }
     }
 }
@@ -117,10 +123,14 @@ pub struct RunnerStartupSummary {
     webhook_bind_addr: std::net::SocketAddr,
     webhook_tls_files: String,
     reconcile_interval: std::time::Duration,
+    bootstrapped_mappings: usize,
 }
 
-impl From<&LoadedRunnerConfig> for RunnerStartupSummary {
-    fn from(loaded_config: &LoadedRunnerConfig) -> Self {
+impl RunnerStartupSummary {
+    fn new(
+        loaded_config: &LoadedRunnerConfig,
+        bootstrap: &PostgresBootstrapReport,
+    ) -> Self {
         let config = loaded_config.config();
 
         Self {
@@ -131,6 +141,7 @@ impl From<&LoadedRunnerConfig> for RunnerStartupSummary {
             webhook_bind_addr: config.webhook().bind_addr(),
             webhook_tls_files: config.webhook().tls_material_label(),
             reconcile_interval: std::time::Duration::from_secs(config.reconcile().interval_secs()),
+            bootstrapped_mappings: bootstrap.bootstrapped_mappings(),
         }
     }
 }
@@ -139,9 +150,10 @@ impl std::fmt::Display for RunnerStartupSummary {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "runner ready: config={} mappings={} labels={} verify={} webhook={} tls={} reconcile={}s",
+            "runner ready: config={} mappings={} bootstrapped={} labels={} verify={} webhook={} tls={} reconcile={}s",
             self.config_path,
             self.mappings,
+            self.bootstrapped_mappings,
             self.mapping_labels,
             self.verify,
             self.webhook_bind_addr,

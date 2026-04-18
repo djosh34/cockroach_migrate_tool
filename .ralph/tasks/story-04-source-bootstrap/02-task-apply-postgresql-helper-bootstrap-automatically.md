@@ -1,4 +1,4 @@
-## Task: Apply helper-schema bootstrap inside PostgreSQL automatically from the runner <status>not_started</status> <passes>false</passes>
+## Task: Apply helper-schema bootstrap inside PostgreSQL automatically from the runner <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,12 +25,13 @@ This task must preserve:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers helper bootstrap, repeatability, and automatic shadow-table preparation
-- [ ] The runner can bootstrap `_cockroach_migration_tool` and helper shadow tables without extra manual PostgreSQL scripting beyond grants
-- [ ] Minimal helper PK indexing, when used, is automatic rather than operator-managed
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+ - [x] Red/green TDD covers helper bootstrap, repeatability, and automatic shadow-table preparation
+ - [x] The runner can bootstrap `_cockroach_migration_tool` and helper shadow tables without extra manual PostgreSQL scripting beyond grants
+ - [x] Minimal helper PK indexing, when used, is automatic rather than operator-managed
+ - [x] `make check` — passes cleanly
+ - [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+ - [x] `make lint` — passes cleanly
+ - [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-04-source-bootstrap/02-task-apply-postgresql-helper-bootstrap-automatically_plans/2026-04-18-postgresql-helper-bootstrap-plan.md</plan>

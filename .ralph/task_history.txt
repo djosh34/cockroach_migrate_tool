@@ -49,3 +49,4 @@
 .ralph/tasks/story-03-operator-ux-config/01-task-define-single-config-yaml-and-multi-db-mapping.md
 .ralph/tasks/story-03-operator-ux-config/02-task-generate-postgresql-grant-sql-and-operator-artifacts.md
 .ralph/tasks/story-04-source-bootstrap/01-task-build-cockroach-bootstrap-command-and-script-output.md
+.ralph/tasks/story-04-source-bootstrap/02-task-apply-postgresql-helper-bootstrap-automatically.md

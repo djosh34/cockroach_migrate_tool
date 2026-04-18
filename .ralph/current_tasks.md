@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 18 08:10:34 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-04-source-bootstrap/02-task-apply-postgresql-helper-bootstrap-automatically.md`
-
-```
-## Task: Apply helper-schema bootstrap inside PostgreSQL automatically from the runner <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 18 08:38:01 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-05-schema-validation/01-task-compare-schema-exports-semantically.md`
 

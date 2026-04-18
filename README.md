@@ -122,7 +122,7 @@ docker run --rm \
   render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
 ```
 
-5. Start the destination runtime directly through the image entrypoint:
+5. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables, and adds the automatic minimal PK helper indexes when they are needed.
 
 ```bash
 docker run --rm \
