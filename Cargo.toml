@@ -1,0 +1,17 @@
+[workspace]
+members = ["crates/runner", "crates/source-bootstrap"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+publish = false
+rust-version = "1.93"
+
+[workspace.dependencies]
+axum = "0.8.6"
+clap = { version = "4.5.51", features = ["derive"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_yaml = "0.9.34"
+sqlx = { version = "0.8.6", default-features = false, features = ["postgres"] }
+thiserror = "2.0.17"

@@ -1,0 +1,12 @@
+postgres:
+  host: pg.example.internal
+  port: 5432
+  database: migration_db
+  user: migration_user
+  password: runner-secret
+webhook:
+  bind_addr: 127.0.0.1:8443
+  tls_cert_path: certs/server.crt
+  tls_key_path: certs/server.key
+reconcile:
+  interval_secs: 30

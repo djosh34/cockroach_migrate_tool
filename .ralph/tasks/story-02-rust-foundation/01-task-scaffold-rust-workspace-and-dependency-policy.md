@@ -1,4 +1,4 @@
-## Task: Scaffold the Rust workspace and dependency policy for the runner <status>not_started</status> <passes>false</passes>
+## Task: Scaffold the Rust workspace and dependency policy for the runner <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -36,12 +36,13 @@ This task must align with the selected design in `designs/crdb-to-postgres-cdc/`
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers workspace boot, crate wiring, and baseline command contract
-- [ ] The workspace uses `thiserror` for application error types
-- [ ] The baseline dependency policy records that `sqlx` and established HTTP/TLS/config/CLI libraries are required and must not be reinvented
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers workspace boot, crate wiring, and baseline command contract
+- [x] The workspace uses `thiserror` for application error types
+- [x] The baseline dependency policy records that `sqlx` and established HTTP/TLS/config/CLI libraries are required and must not be reinvented
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy_plans/2026-04-18-workspace-foundation-plan.md</plan>

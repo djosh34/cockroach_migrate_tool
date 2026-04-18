@@ -1,0 +1,7 @@
+source:
+  url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
+  webhook_url: https://runner.example.internal:8443/events
+  cursor: 1715000000000000000.0000000000
+  tables:
+    - public.accounts
+    - public.orders
