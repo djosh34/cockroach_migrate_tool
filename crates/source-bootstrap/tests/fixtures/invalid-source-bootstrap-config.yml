@@ -4,14 +4,13 @@ webhook:
   url: https://runner.example.internal:8443/events
   resolved: 5s
 mappings:
-  - id: app-a
+  - id: duplicate
     source:
       database: demo_a
       tables:
         - public.customers
-        - public.orders
-  - id: app-b
+  - id: duplicate
     source:
       database: demo_b
       tables:
-        - public.invoices
+        - public.orders

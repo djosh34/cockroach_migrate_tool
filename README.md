@@ -5,8 +5,50 @@ This repository contains the first Rust workspace for the CockroachDB-to-Postgre
 ## Workspace Layout
 
 - `crates/runner`: destination-side runtime for validated config loading, PostgreSQL access wiring, webhook runtime wiring, and reconcile runtime wiring.
-- `crates/source-bootstrap`: source-side CLI for creating changefeed bootstrap plans from typed YAML config.
+- `crates/source-bootstrap`: source-side CLI for rendering the CockroachDB bootstrap script from typed YAML config.
 - `Dockerfile`: single-binary destination image for the `runner` runtime.
+
+## Source Bootstrap Quick Start
+
+The source-side bootstrap stays explicit. Render the CockroachDB setup script, review it, then execute it yourself; the tool does not hide source-side commands behind the CLI.
+
+Example source bootstrap config:
+
+```yaml
+# config/source-bootstrap.yml
+cockroach:
+  url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
+webhook:
+  url: https://runner.example.internal:8443/events
+  resolved: 5s
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+        - public.orders
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+```
+
+Render the runnable bootstrap script:
+
+```bash
+cargo run -p source-bootstrap -- \
+  render-bootstrap-script \
+  --config config/source-bootstrap.yml > cockroach-bootstrap.sh
+```
+
+The rendered script:
+
+- enables `kv.rangefeed.enabled`
+- captures `cluster_logical_timestamp()`
+- creates one webhook changefeed per configured source database
+- prints mapping id, source database, selected tables, starting cursor, and job id after each changefeed is created
 
 ## Docker Quick Start
 

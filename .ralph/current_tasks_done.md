@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 18 07:52:41 PM CEST 2026
+Generated: Sat Apr 18 08:10:34 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-rust-foundation/01-task-scaffold-rust-workspace-and-dependency-policy.md`
 
@@ -39,6 +39,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Generate PostgreSQL grant SQL and operator-facing bootstrap artifacts <status>in_progress</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-04-source-bootstrap/01-task-build-cockroach-bootstrap-command-and-script-output.md`
+
+```
+## Task: Build the Cockroach bootstrap command and emitted setup script <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

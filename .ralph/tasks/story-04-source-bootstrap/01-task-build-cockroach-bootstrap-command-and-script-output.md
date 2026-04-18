@@ -1,4 +1,4 @@
-## Task: Build the Cockroach bootstrap command and emitted setup script <status>not_started</status> <passes>false</passes>
+## Task: Build the Cockroach bootstrap command and emitted setup script <status>in_progress</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -24,12 +24,13 @@ This task must reflect the hard E2E rule:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers source bootstrap command generation and required-setting output
-- [ ] The bootstrap output makes all required Cockroach changes explicit for a default source
-- [ ] The command supports multi-database CDC setup from one operator flow
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers source bootstrap command generation and required-setting output
+- [x] The bootstrap output makes all required Cockroach changes explicit for a default source
+- [x] The command supports multi-database CDC setup from one operator flow
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-04-source-bootstrap/01-task-build-cockroach-bootstrap-command-and-script-output_plans/2026-04-18-cockroach-bootstrap-command-and-script-output-plan.md</plan>
