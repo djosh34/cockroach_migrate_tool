@@ -28,6 +28,11 @@ jobs:
       - name: Install Rust toolchain
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes postgresql
+          postgres_bin_dir="$(dirname "$(find /usr/lib/postgresql -path '*/bin/initdb' | sort | tail -n1)")"
+          test -n "${postgres_bin_dir}"
+          echo "${postgres_bin_dir}" >> "${GITHUB_PATH}"
           rustup toolchain install 1.93.0 --profile minimal --component clippy
           rustup default 1.93.0
       - name: Validate repository

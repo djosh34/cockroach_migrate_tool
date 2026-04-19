@@ -361,6 +361,18 @@ impl GithubWorkflowContract {
             validate_install.contains("rustup default 1.93.0"),
             "validation should activate the pinned Rust toolchain directly via shell",
         );
+        assert!(
+            validate_install.contains("sudo apt-get install --yes postgresql"),
+            "validation should install PostgreSQL tooling needed by the contract tests",
+        );
+        assert!(
+            validate_install.contains("find /usr/lib/postgresql"),
+            "validation should discover the installed PostgreSQL bin directory explicitly",
+        );
+        assert!(
+            validate_install.contains("GITHUB_PATH"),
+            "validation should add PostgreSQL binaries to PATH for later test steps",
+        );
 
         let publish_install = self.step_run_script(
             self.step_named(self.job("publish"), "Install publish dependencies"),
