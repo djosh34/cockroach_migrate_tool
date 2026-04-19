@@ -1,1 +1,0 @@
-.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract.md

@@ -1,4 +1,4 @@
-## Task: Enforce the runner PostgreSQL-only runtime contract and prove it cannot access source or verify responsibilities <status>not_started</status> <passes>false</passes>
+## Task: Enforce the runner PostgreSQL-only runtime contract and prove it cannot access source or verify responsibilities <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,12 +25,12 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the PostgreSQL-only runner contract and boundary-regression failures
-- [ ] Tests fail if the runner regains source-database access or verify behavior
-- [ ] The runner runtime contract is explicit enough to block future boundary creep
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers the PostgreSQL-only runner contract and boundary-regression failures
+- [x] Tests fail if the runner regains source-database access or verify behavior
+- [x] The runner runtime contract is explicit enough to block future boundary creep
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 

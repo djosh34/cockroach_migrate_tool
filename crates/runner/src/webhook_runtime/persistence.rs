@@ -1,7 +1,7 @@
 use sqlx::{Connection, PgConnection, Postgres, Transaction, types::Json};
 
 use crate::{
-    config::PostgresConnectionConfig,
+    config::PostgresTargetConfig,
     error::RunnerWebhookPersistenceError,
     helper_plan::HelperShadowTablePlan,
     sql_name::SqlIdentifier,
@@ -12,7 +12,7 @@ const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(crate) struct RowMutationBatch {
     pub(crate) mapping_id: String,
-    pub(crate) connection: PostgresConnectionConfig,
+    pub(crate) destination: PostgresTargetConfig,
     pub(crate) table: HelperShadowTablePlan,
     pub(crate) rows: Vec<RowMutation>,
 }
@@ -20,9 +20,9 @@ pub(crate) struct RowMutationBatch {
 pub(crate) async fn persist_row_batch(
     batch: RowMutationBatch,
 ) -> Result<(), RunnerWebhookPersistenceError> {
-    let endpoint = batch.connection.endpoint_label();
-    let database = batch.connection.database().to_owned();
-    let mut postgres = PgConnection::connect_with(&batch.connection.connect_options())
+    let endpoint = batch.destination.endpoint_label();
+    let database = batch.destination.database().to_owned();
+    let mut postgres = PgConnection::connect_with(&batch.destination.connect_options())
         .await
         .map_err(|source| RunnerWebhookPersistenceError::Connect {
             mapping_id: batch.mapping_id.clone(),

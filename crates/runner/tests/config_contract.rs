@@ -73,24 +73,22 @@ mappings:
       tables:
         - public.customers
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
   - id: app-a
     source:
       database: demo_b
       tables:
         - public.invoices
     destination:
-      connection:
-        host: pg-b.example.internal
-        port: 5432
-        database: app_b
-        user: migration_user_b
-        password: runner-secret-b
+      host: pg-b.example.internal
+      port: 5432
+      database: app_b
+      user: migration_user_b
+      password: runner-secret-b
 "#,
     )
     .expect("invalid config fixture should be written");
@@ -128,12 +126,11 @@ mappings:
         - public.customers
         - public.customers
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 "#,
     )
     .expect("invalid config fixture should be written");
@@ -170,12 +167,11 @@ mappings:
       tables:
         - customers
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 "#,
     )
     .expect("invalid config fixture should be written");
@@ -221,6 +217,45 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
 }
 
 #[test]
+fn validate_config_accepts_an_explicit_postgresql_destination_target() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("explicit postgres target config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"));
+}
+
+#[test]
 fn validate_config_rejects_legacy_verify_sections() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
@@ -244,12 +279,11 @@ mappings:
       tables:
         - public.customers
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 "#,
     )
     .expect("legacy config fixture should be written");

@@ -65,7 +65,7 @@ impl RunnerConfig {
 pub(crate) struct MappingConfig {
     pub(super) id: String,
     pub(super) source: SourceConfig,
-    pub(super) destination: DestinationConfig,
+    pub(super) destination: PostgresTargetConfig,
 }
 
 impl MappingConfig {
@@ -77,7 +77,7 @@ impl MappingConfig {
         &self.source
     }
 
-    pub(crate) fn destination(&self) -> &DestinationConfig {
+    pub(crate) fn destination(&self) -> &PostgresTargetConfig {
         &self.destination
     }
 }
@@ -99,18 +99,7 @@ impl SourceConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct DestinationConfig {
-    pub(super) connection: PostgresConnectionConfig,
-}
-
-impl DestinationConfig {
-    pub(crate) fn connection(&self) -> &PostgresConnectionConfig {
-        &self.connection
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PostgresConnectionConfig {
+pub(crate) struct PostgresTargetConfig {
     pub(super) host: String,
     pub(super) port: u16,
     pub(super) database: String,
@@ -118,7 +107,7 @@ pub(crate) struct PostgresConnectionConfig {
     pub(super) password: String,
 }
 
-impl PostgresConnectionConfig {
+impl PostgresTargetConfig {
     pub(crate) fn connect_options(&self) -> PgConnectOptions {
         PgConnectOptions::new()
             .host(&self.host)
@@ -132,7 +121,7 @@ impl PostgresConnectionConfig {
         format!("{}:{}/{}", self.host, self.port, self.database)
     }
 
-    pub(crate) fn same_connection_contract(&self, other: &Self) -> bool {
+    pub(crate) fn same_target_contract(&self, other: &Self) -> bool {
         self.host == other.host
             && self.port == other.port
             && self.database == other.database

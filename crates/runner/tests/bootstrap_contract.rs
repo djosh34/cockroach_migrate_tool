@@ -198,12 +198,11 @@ mappings:
       tables:
 {tables_yaml}
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {port}
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 "#,
                 bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
@@ -269,24 +268,22 @@ mappings:
       tables:
 {app_a_tables_yaml}
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {port}
-        database: shared_app
-        user: {app_a_user}
-        password: {app_a_password}
+      host: 127.0.0.1
+      port: {port}
+      database: shared_app
+      user: {app_a_user}
+      password: {app_a_password}
   - id: app-b
     source:
       database: demo_b
       tables:
 {app_b_tables_yaml}
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {port}
-        database: shared_app
-        user: {app_b_user}
-        password: {app_b_password}
+      host: 127.0.0.1
+      port: {port}
+      database: shared_app
+      user: {app_b_user}
+      password: {app_b_password}
 "#,
                 bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
@@ -961,7 +958,7 @@ fn run_fails_loudly_when_two_mappings_share_one_destination_with_conflicting_cre
 
     RunnerProcess::start(&config_path).assert_exits_failure(
         predicate::str::contains("destination database `127.0.0.1:").and(predicate::str::contains(
-            "has conflicting connection contracts for mappings `app-a` and `app-b`",
+            "has conflicting PostgreSQL target contracts for mappings `app-a` and `app-b`",
         )),
     );
 }

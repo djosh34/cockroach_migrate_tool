@@ -199,12 +199,11 @@ mappings:
       tables:
 {tables_yaml}
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 "#,
                 bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
@@ -239,24 +238,22 @@ mappings:
       tables:
         - public.customers
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
   - id: app-b
     source:
       database: demo_b
       tables:
         - public.invoices
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: app_b
-        user: migration_user_b
-        password: runner-secret-b
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: app_b
+      user: migration_user_b
+      password: runner-secret-b
 "#,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),
@@ -289,24 +286,22 @@ mappings:
       tables:
         - public.customers
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: shared_app
-        user: migration_user_shared
-        password: runner-secret-shared
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: shared_app
+      user: migration_user_shared
+      password: runner-secret-shared
   - id: app-b
     source:
       database: demo_b
       tables:
         - public.invoices
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: shared_app
-        user: migration_user_shared
-        password: runner-secret-shared
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: shared_app
+      user: migration_user_shared
+      password: runner-secret-shared
 "#,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),

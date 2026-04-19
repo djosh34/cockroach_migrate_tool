@@ -1,7 +1,7 @@
 use sqlx::{Connection, PgConnection, Postgres, Row, Transaction};
 
 use crate::{
-    config::PostgresConnectionConfig,
+    config::PostgresTargetConfig,
     error::{RunnerReconcileRuntimeError, RunnerWebhookPersistenceError},
     helper_plan::HelperShadowTablePlan,
 };
@@ -10,7 +10,7 @@ const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(crate) struct ResolvedTrackingTarget {
     pub(crate) mapping_id: String,
-    pub(crate) connection: PostgresConnectionConfig,
+    pub(crate) destination: PostgresTargetConfig,
     pub(crate) resolved_watermark: String,
 }
 
@@ -113,9 +113,9 @@ pub(crate) async fn seed_tracking_state(
 pub(crate) async fn persist_resolved_watermark(
     target: ResolvedTrackingTarget,
 ) -> Result<(), RunnerWebhookPersistenceError> {
-    let endpoint = target.connection.endpoint_label();
-    let database = target.connection.database().to_owned();
-    let mut postgres = PgConnection::connect_with(&target.connection.connect_options())
+    let endpoint = target.destination.endpoint_label();
+    let database = target.destination.database().to_owned();
+    let mut postgres = PgConnection::connect_with(&target.destination.connect_options())
         .await
         .map_err(|source| RunnerWebhookPersistenceError::Connect {
             mapping_id: target.mapping_id.clone(),

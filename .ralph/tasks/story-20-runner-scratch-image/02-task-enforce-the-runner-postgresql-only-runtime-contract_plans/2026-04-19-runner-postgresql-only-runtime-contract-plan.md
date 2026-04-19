@@ -125,77 +125,77 @@
 
 ## Files And Structure To Add Or Change
 
-- [ ] `.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract.md`
+- [x] `.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract.md`
   - keep this plan path linked
-- [ ] `crates/runner/src/config/mod.rs`
+- [x] `crates/runner/src/config/mod.rs`
   - replace generic destination wrappering with an explicit PostgreSQL target type if that is the smallest clear contract
-- [ ] `crates/runner/src/config/parser.rs`
+- [x] `crates/runner/src/config/parser.rs`
   - reject source/verify/network drift loudly and validate only the approved PostgreSQL destination shape
-- [ ] `crates/runner/src/runtime_plan.rs`
+- [x] `crates/runner/src/runtime_plan.rs`
   - flow the explicit PostgreSQL target through startup/runtime planning and remove any redundant generic connection indirection
-- [ ] `crates/runner/src/postgres_bootstrap.rs`
+- [x] `crates/runner/src/postgres_bootstrap.rs`
   - keep bootstrap connecting only through the explicit PostgreSQL target boundary
-- [ ] `crates/runner/src/webhook_runtime/mod.rs`
+- [x] `crates/runner/src/webhook_runtime/mod.rs`
   - keep the inbound listener explicit and avoid any new outbound client surface
-- [ ] `crates/runner/src/webhook_runtime/persistence.rs`
+- [x] `crates/runner/src/webhook_runtime/persistence.rs`
   - keep row-batch writes on the same explicit PostgreSQL target boundary
-- [ ] `crates/runner/src/reconcile_runtime/mod.rs`
+- [x] `crates/runner/src/reconcile_runtime/mod.rs`
   - keep reconcile connects on the same explicit PostgreSQL target boundary
-- [ ] `crates/runner/tests/support/runner_public_contract.rs`
+- [x] `crates/runner/tests/support/runner_public_contract.rs`
   - expand or rename into the canonical runner runtime contract owner instead of a removed-surface-only helper
-- [ ] `crates/runner/tests/cli_contract.rs`
+- [x] `crates/runner/tests/cli_contract.rs`
   - reuse the shared contract owner for allowed commands and forbidden source/verify drift
-- [ ] `crates/runner/tests/config_contract.rs`
+- [x] `crates/runner/tests/config_contract.rs`
   - add regression coverage for forbidden source connection fields and verify/network fields
-- [ ] `crates/runner/tests/image_contract.rs`
+- [x] `crates/runner/tests/image_contract.rs`
   - keep the built image runtime-only and reuse the shared contract owner
-- [ ] `crates/runner/tests/ci_contract.rs`
+- [x] `crates/runner/tests/ci_contract.rs`
   - add default-lane regression coverage that the runner runtime contract suite remains present and authoritative
-- [ ] `crates/runner/tests/e2e_integrity_contract.rs`
+- [x] `crates/runner/tests/e2e_integrity_contract.rs`
   - touch only if one narrow runner-runtime audit belongs there after moving ownership into the dedicated support boundary
 
 ## TDD Execution Order
 
 ### Slice 1: Tracer Bullet For The Allowed Runner Network Contract
 
-- [ ] RED: add one failing contract test that names the only approved runner network surfaces and fails because no shared helper owns that contract yet
-- [ ] GREEN: add or deepen a shared `RunnerPublicContract`-style support boundary that exposes:
+- [x] RED: add one failing contract test that names the only approved runner network surfaces and fails because no shared helper owns that contract yet
+- [x] GREEN: add or deepen a shared `RunnerPublicContract`-style support boundary that exposes:
   - allowed CLI subcommands
   - forbidden source/verify markers
   - allowed network surface vocabulary
-- [ ] REFACTOR: remove duplicated removed-surface lists from the first touched tests
+- [x] REFACTOR: remove duplicated removed-surface lists from the first touched tests
 
 ### Slice 2: Reject Source And Verify Config Drift Loudly
 
-- [ ] RED: add failing config contract coverage for legacy or speculative drift such as:
+- [x] RED: add failing config contract coverage for legacy or speculative drift such as:
   - `mappings.source.connection`
   - `mappings.source.url`
   - `verify`
   - `verify_http`
   - destination fields that imply a non-Postgres/generic client path
-- [ ] GREEN: tighten parser validation and/or config DTO shapes so those forms fail loudly while valid PostgreSQL destination config still passes
-- [ ] REFACTOR: keep approved config shape ownership in one boundary helper or fixture builder instead of repeating ad hoc YAML fragments
+- [x] GREEN: tighten parser validation and/or config DTO shapes so those forms fail loudly while valid PostgreSQL destination config still passes
+- [x] REFACTOR: keep approved config shape ownership in one boundary helper or fixture builder instead of repeating ad hoc YAML fragments
 
 ### Slice 3: Make PostgreSQL Destination Access The Explicit Runtime Boundary
 
-- [ ] RED: add one failing runtime-shape or compile-time-facing contract that proves bootstrap/reconcile/persistence do not each own their own generic connection concept
-- [ ] GREEN: flatten the config/runtime boundary around one explicit PostgreSQL target type and route startup, persistence, reconcile, and tracking writes through it
-- [ ] REFACTOR: delete any wrapper or alias that preserves fake destination extensibility or duplicate endpoint-label logic
+- [x] RED: add one failing runtime-shape or compile-time-facing contract that proves bootstrap/reconcile/persistence do not each own their own generic connection concept
+- [x] GREEN: flatten the config/runtime boundary around one explicit PostgreSQL target type and route startup, persistence, reconcile, and tracking writes through it
+- [x] REFACTOR: delete any wrapper or alias that preserves fake destination extensibility or duplicate endpoint-label logic
 
 ### Slice 4: Prove The Runner Cannot Regain Source Or Verify Responsibilities
 
-- [ ] RED: add one failing default-lane contract that proves the runner runtime surface cannot regain:
+- [x] RED: add one failing default-lane contract that proves the runner runtime surface cannot regain:
   - Cockroach/source connection settings
   - verify commands or verify endpoints
   - extra outbound client families beyond PostgreSQL destination access
-- [ ] GREEN: tighten the shared runner runtime contract support and any narrow static audits needed to make this explicit and loud
-- [ ] REFACTOR: keep these audits narrow and owned by one support module instead of spreading raw file-content checks across unrelated tests
+- [x] GREEN: tighten the shared runner runtime contract support and any narrow static audits needed to make this explicit and loud
+- [x] REFACTOR: keep these audits narrow and owned by one support module instead of spreading raw file-content checks across unrelated tests
 
 ### Slice 5: Repository Lanes
 
-- [ ] RED: run `make check`, `make lint`, and `make test`, fixing only the first failing lane at a time
-- [ ] GREEN: continue until every required default lane passes cleanly
-- [ ] REFACTOR: do one final `improve-code-boundaries` pass over runner config/runtime contract ownership and remove any leftover generic destination or duplicated audit shape
+- [x] RED: run `make check`, `make lint`, and `make test`, fixing only the first failing lane at a time
+- [x] GREEN: continue until every required default lane passes cleanly
+- [x] REFACTOR: do one final `improve-code-boundaries` pass over runner config/runtime contract ownership and remove any leftover generic destination or duplicated audit shape
 
 ## TDD Guardrails For Execution
 
@@ -208,23 +208,23 @@
 
 ## Boundary Review Checklist
 
-- [ ] Runner config accepts only source metadata and destination PostgreSQL target settings
-- [ ] No runner config accepts source host/port/url/auth or verify endpoint/config
-- [ ] Bootstrap connects only through the explicit PostgreSQL target boundary
-- [ ] Webhook persistence connects only through the explicit PostgreSQL target boundary
-- [ ] Reconcile connects only through the explicit PostgreSQL target boundary
-- [ ] Runner help and image help expose only `validate-config` and `run`
-- [ ] Runner tests fail loudly if source/verify/network drift is reintroduced
-- [ ] No fake generic destination wrapper survives where a typed PostgreSQL target would do
+- [x] Runner config accepts only source metadata and destination PostgreSQL target settings
+- [x] No runner config accepts source host/port/url/auth or verify endpoint/config
+- [x] Bootstrap connects only through the explicit PostgreSQL target boundary
+- [x] Webhook persistence connects only through the explicit PostgreSQL target boundary
+- [x] Reconcile connects only through the explicit PostgreSQL target boundary
+- [x] Runner help and image help expose only `validate-config` and `run`
+- [x] Runner tests fail loudly if source/verify/network drift is reintroduced
+- [x] No fake generic destination wrapper survives where a typed PostgreSQL target would do
 
 ## Final Verification For The Execution Turn
 
-- [ ] `make check`
-- [ ] `make lint`
-- [ ] `make test`
-- [ ] `make test-long` only if execution changes the ultra-long lane or the task proves it is required
-- [ ] One final `improve-code-boundaries` pass after all required lanes are green
-- [ ] Update the task file acceptance checkboxes and set `<passes>true</passes>` only after every required lane passes
+- [x] `make check`
+- [x] `make lint`
+- [x] `make test`
+- [x] `make test-long` only if execution changes the ultra-long lane or the task proves it is required
+- [x] One final `improve-code-boundaries` pass after all required lanes are green
+- [x] Update the task file acceptance checkboxes and set `<passes>true</passes>` only after every required lane passes
 
 Plan path: `.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract_plans/2026-04-19-runner-postgresql-only-runtime-contract-plan.md`
 

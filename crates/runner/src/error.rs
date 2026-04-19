@@ -125,9 +125,9 @@ pub enum RunnerBootstrapError {
 #[derive(Debug, Error)]
 pub enum RunnerRuntimePlanError {
     #[error(
-        "destination database `{destination}` has conflicting connection contracts for mappings `{first_mapping_id}` and `{second_mapping_id}`"
+        "destination database `{destination}` has conflicting PostgreSQL target contracts for mappings `{first_mapping_id}` and `{second_mapping_id}`"
     )]
-    InconsistentDestinationConnection {
+    InconsistentDestinationTarget {
         destination: String,
         first_mapping_id: String,
         second_mapping_id: String,

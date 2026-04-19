@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 23:19:29 CEST 2026
+Generated: Sun Apr 19 11:23:26 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -699,6 +699,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the runner as a scratch image with one binary that only applies webhook requests to PostgreSQL <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract.md`
+
+```
+## Task: Enforce the runner PostgreSQL-only runtime contract and prove it cannot access source or verify responsibilities <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

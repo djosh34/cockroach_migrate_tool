@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use crate::{
-    config::{MappingConfig, PostgresConnectionConfig, RunnerConfig},
+    config::{MappingConfig, PostgresTargetConfig, RunnerConfig},
     error::{RunnerRuntimePlanError, RunnerWebhookRoutingError},
     helper_plan::{HelperShadowTablePlan, MappingHelperPlan},
     sql_name::QualifiedTableName,
@@ -25,9 +25,7 @@ impl RunnerStartupPlan {
         for mapping in config.mappings() {
             let mapping_plan = ConfiguredMappingPlan::from_config(mapping);
             grouped_mappings
-                .entry(DestinationDatabaseKey::from_connection(
-                    mapping_plan.destination_connection(),
-                ))
+                .entry(DestinationDatabaseKey::from_target(mapping_plan.destination()))
                 .or_default()
                 .push(mapping_plan.clone());
             mappings.insert(mapping_plan.mapping_id().to_owned(), mapping_plan);
@@ -57,7 +55,7 @@ impl RunnerStartupPlan {
 pub(crate) struct ConfiguredMappingPlan {
     mapping_id: String,
     source_database: String,
-    destination_connection: PostgresConnectionConfig,
+    destination: PostgresTargetConfig,
     selected_tables: Vec<QualifiedTableName>,
 }
 
@@ -66,7 +64,7 @@ impl ConfiguredMappingPlan {
         Self {
             mapping_id: mapping.id().to_owned(),
             source_database: mapping.source().database().to_owned(),
-            destination_connection: mapping.destination().connection().clone(),
+            destination: mapping.destination().clone(),
             selected_tables: mapping
                 .source()
                 .tables()
@@ -84,8 +82,8 @@ impl ConfiguredMappingPlan {
         &self.source_database
     }
 
-    pub(crate) fn destination_connection(&self) -> &PostgresConnectionConfig {
-        &self.destination_connection
+    pub(crate) fn destination(&self) -> &PostgresTargetConfig {
+        &self.destination
     }
 
     pub(crate) fn selected_tables(&self) -> &[QualifiedTableName] {
@@ -101,11 +99,11 @@ pub(crate) struct DestinationDatabaseKey {
 }
 
 impl DestinationDatabaseKey {
-    fn from_connection(connection: &PostgresConnectionConfig) -> Self {
+    fn from_target(target: &PostgresTargetConfig) -> Self {
         Self {
-            host: connection.host().to_owned(),
-            port: connection.port(),
-            database: connection.database().to_owned(),
+            host: target.host().to_owned(),
+            port: target.port(),
+            database: target.database().to_owned(),
         }
     }
 
@@ -116,7 +114,7 @@ impl DestinationDatabaseKey {
 
 #[derive(Clone)]
 pub(crate) struct DestinationGroupPlan {
-    connection: PostgresConnectionConfig,
+    target: PostgresTargetConfig,
     mappings: Vec<ConfiguredMappingPlan>,
 }
 
@@ -125,19 +123,16 @@ impl DestinationGroupPlan {
         database_key: DestinationDatabaseKey,
         mappings: Vec<ConfiguredMappingPlan>,
     ) -> Result<Self, RunnerRuntimePlanError> {
-        let Some(connection) = mappings
+        let Some(target) = mappings
             .first()
-            .map(|mapping| mapping.destination_connection().clone())
+            .map(|mapping| mapping.destination().clone())
         else {
             panic!("destination group should contain at least one mapping");
         };
 
         for mapping in &mappings {
-            if !mapping
-                .destination_connection()
-                .same_connection_contract(&connection)
-            {
-                return Err(RunnerRuntimePlanError::InconsistentDestinationConnection {
+            if !mapping.destination().same_target_contract(&target) {
+                return Err(RunnerRuntimePlanError::InconsistentDestinationTarget {
                     destination: database_key.label(),
                     first_mapping_id: mappings
                         .first()
@@ -168,13 +163,13 @@ impl DestinationGroupPlan {
         }
 
         Ok(Self {
-            connection,
+            target,
             mappings,
         })
     }
 
-    pub(crate) fn connection(&self) -> &PostgresConnectionConfig {
-        &self.connection
+    pub(crate) fn target(&self) -> &PostgresTargetConfig {
+        &self.target
     }
 
     pub(crate) fn mappings(&self) -> &[ConfiguredMappingPlan] {
@@ -287,7 +282,7 @@ impl DestinationRuntimePlan {
 pub(crate) struct MappingRuntimePlan {
     mapping_id: String,
     source_database: String,
-    destination_connection: PostgresConnectionConfig,
+    destination: PostgresTargetConfig,
     helper_tables: BTreeMap<QualifiedTableName, HelperShadowTablePlan>,
     reconcile_upsert_tables: Vec<HelperShadowTablePlan>,
     reconcile_delete_tables: Vec<HelperShadowTablePlan>,
@@ -318,7 +313,7 @@ impl MappingRuntimePlan {
         Ok(Self {
             mapping_id: mapping.mapping_id().to_owned(),
             source_database: mapping.source_database().to_owned(),
-            destination_connection: mapping.destination_connection().clone(),
+            destination: mapping.destination().clone(),
             helper_tables,
             reconcile_upsert_tables,
             reconcile_delete_tables,
@@ -333,8 +328,8 @@ impl MappingRuntimePlan {
         &self.source_database
     }
 
-    pub(crate) fn destination_connection(&self) -> &PostgresConnectionConfig {
-        &self.destination_connection
+    pub(crate) fn destination(&self) -> &PostgresTargetConfig {
+        &self.destination
     }
 
     pub(crate) fn helper_table(

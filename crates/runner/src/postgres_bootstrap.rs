@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use sqlx::{Connection, Executor, PgConnection, Row};
 
 use crate::{
-    config::PostgresConnectionConfig,
+    config::PostgresTargetConfig,
     error::RunnerBootstrapError,
     helper_plan::MappingHelperPlan,
     runtime_plan::{ConfiguredMappingPlan, DestinationGroupPlan, RunnerStartupPlan},
@@ -43,15 +43,14 @@ async fn bootstrap_destination_group(
         .mappings()
         .first()
         .unwrap_or_else(|| panic!("destination group should contain at least one mapping"));
-    let mut postgres =
-        PgConnection::connect_with(&destination_group.connection().connect_options())
+    let mut postgres = PgConnection::connect_with(&destination_group.target().connect_options())
             .await
             .map_err(|source| RunnerBootstrapError::Connect {
                 mapping_id: first_mapping.mapping_id().to_owned(),
-                endpoint: destination_group.connection().endpoint_label(),
+                endpoint: destination_group.target().endpoint_label(),
                 source,
             })?;
-    bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.connection())
+    bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.target())
         .await?;
 
     for mapping in destination_group
@@ -68,7 +67,7 @@ async fn bootstrap_destination_group(
         .await
         .map_err(|source| RunnerBootstrapError::Connect {
             mapping_id: first_mapping.mapping_id().to_owned(),
-            endpoint: destination_group.connection().endpoint_label(),
+            endpoint: destination_group.target().endpoint_label(),
             source,
         })?;
 
@@ -78,14 +77,14 @@ async fn bootstrap_destination_group(
 async fn bootstrap_destination_scaffold(
     postgres: &mut PgConnection,
     first_mapping: &ConfiguredMappingPlan,
-    connection: &PostgresConnectionConfig,
+    destination: &PostgresTargetConfig,
 ) -> Result<(), RunnerBootstrapError> {
     postgres
         .execute(format!("CREATE SCHEMA IF NOT EXISTS {HELPER_SCHEMA}").as_str())
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
             mapping_id: first_mapping.mapping_id().to_owned(),
-            database: connection.database().to_owned(),
+            database: destination.database().to_owned(),
             source,
         })?;
 
@@ -107,7 +106,7 @@ async fn bootstrap_destination_scaffold(
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
             mapping_id: first_mapping.mapping_id().to_owned(),
-            database: connection.database().to_owned(),
+            database: destination.database().to_owned(),
             source,
         })?;
 
@@ -129,7 +128,7 @@ async fn bootstrap_destination_scaffold(
         .await
         .map_err(|source| RunnerBootstrapError::ExecuteDdl {
             mapping_id: first_mapping.mapping_id().to_owned(),
-            database: connection.database().to_owned(),
+            database: destination.database().to_owned(),
             source,
         })?;
 
@@ -140,7 +139,7 @@ async fn bootstrap_mapping(
     postgres: &mut PgConnection,
     mapping: &MappingBootstrapPlan<'_>,
 ) -> Result<MappingHelperPlan, RunnerBootstrapError> {
-    let database = mapping.connection.database().to_owned();
+    let database = mapping.destination.database().to_owned();
 
     let destination_schema = load_destination_schema(postgres, mapping).await?;
     let helper_plan = MappingHelperPlan::from_validated_schema(
@@ -203,7 +202,7 @@ async fn load_destination_schema(
         if columns.is_empty() {
             return Err(RunnerBootstrapError::MissingTable {
                 mapping_id: mapping.mapping_id.clone(),
-                database: mapping.connection.database().to_owned(),
+                database: mapping.destination.database().to_owned(),
                 table: table_name.label(),
             });
         }
@@ -258,7 +257,7 @@ async fn load_table_columns(
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
         mapping_id: mapping.mapping_id.clone(),
-        database: mapping.connection.database().to_owned(),
+        database: mapping.destination.database().to_owned(),
         table: table_name.label(),
         source,
     })?;
@@ -306,7 +305,7 @@ async fn load_primary_key_columns(
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
         mapping_id: mapping.mapping_id.clone(),
-        database: mapping.connection.database().to_owned(),
+        database: mapping.destination.database().to_owned(),
         table: table_name.label(),
         source,
     })?;
@@ -360,7 +359,7 @@ async fn load_foreign_keys(
     .await
     .map_err(|source| RunnerBootstrapError::ReadCatalog {
         mapping_id: mapping.mapping_id.clone(),
-        database: mapping.connection.database().to_owned(),
+        database: mapping.destination.database().to_owned(),
         table: table_name.label(),
         source,
     })?;
@@ -379,14 +378,14 @@ async fn load_foreign_keys(
                 let Some(referenced_table) = current_referenced_table.take() else {
                     return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
                         mapping_id: mapping.mapping_id.clone(),
-                        database: mapping.connection.database().to_owned(),
+                        database: mapping.destination.database().to_owned(),
                         table: table_name.label(),
                     });
                 };
                 let Some(on_delete) = current_on_delete.take() else {
                     return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
                         mapping_id: mapping.mapping_id.clone(),
-                        database: mapping.connection.database().to_owned(),
+                        database: mapping.destination.database().to_owned(),
                         table: table_name.label(),
                     });
                 };
@@ -421,14 +420,14 @@ async fn load_foreign_keys(
         let Some(referenced_table) = current_referenced_table.take() else {
             return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
                 mapping_id: mapping.mapping_id.clone(),
-                database: mapping.connection.database().to_owned(),
+                database: mapping.destination.database().to_owned(),
                 table: table_name.label(),
             });
         };
         let Some(on_delete) = current_on_delete.take() else {
             return Err(RunnerBootstrapError::IncompleteForeignKeyMetadata {
                 mapping_id: mapping.mapping_id.clone(),
-                database: mapping.connection.database().to_owned(),
+                database: mapping.destination.database().to_owned(),
                 table: table_name.label(),
             });
         };
@@ -455,7 +454,7 @@ fn parse_on_delete_action(
         "r" => Ok(ForeignKeyAction::Restrict),
         other => Err(RunnerBootstrapError::UnsupportedForeignKeyAction {
             mapping_id: mapping.mapping_id.clone(),
-            database: mapping.connection.database().to_owned(),
+            database: mapping.destination.database().to_owned(),
             table: table_name.label(),
             action: other.to_owned(),
         }),
@@ -465,7 +464,7 @@ fn parse_on_delete_action(
 struct MappingBootstrapPlan<'a> {
     mapping_id: String,
     source_database: String,
-    connection: &'a PostgresConnectionConfig,
+    destination: &'a PostgresTargetConfig,
     selected_tables: Vec<QualifiedTableName>,
 }
 
@@ -474,7 +473,7 @@ impl<'a> MappingBootstrapPlan<'a> {
         Self {
             mapping_id: mapping.mapping_id().to_owned(),
             source_database: mapping.source_database().to_owned(),
-            connection: mapping.destination_connection(),
+            destination: mapping.destination(),
             selected_tables: mapping.selected_tables().to_vec(),
         }
     }

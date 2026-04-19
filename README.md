@@ -147,12 +147,11 @@ mappings:
         - public.customers
         - public.orders
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
 ```
 
 3. Validate the mounted config directly through the image entrypoint:

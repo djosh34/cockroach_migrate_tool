@@ -617,12 +617,11 @@ VALUES (5003, 1, 'expansion-pack', 2);
       tables:
 {selected_tables}
     destination:
-      connection:
-        host: 127.0.0.1
-        port: {postgres_port}
-        database: {destination_database}
-        user: {destination_user}
-        password: {destination_password}
+      host: 127.0.0.1
+      port: {postgres_port}
+      database: {destination_database}
+      user: {destination_user}
+      password: {destination_password}
 "#,
                     mapping_id = mapping.id,
                     source_database = mapping.source_database,

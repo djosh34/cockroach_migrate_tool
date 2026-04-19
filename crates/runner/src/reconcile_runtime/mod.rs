@@ -48,10 +48,9 @@ async fn run_mapping_loop(
 async fn run_reconcile_pass(
     mapping: &MappingRuntimePlan,
 ) -> Result<(), RunnerReconcileRuntimeError> {
-    let endpoint = mapping.destination_connection().endpoint_label();
-    let database = mapping.destination_connection().database().to_owned();
-    let mut postgres =
-        PgConnection::connect_with(&mapping.destination_connection().connect_options())
+    let endpoint = mapping.destination().endpoint_label();
+    let database = mapping.destination().database().to_owned();
+    let mut postgres = PgConnection::connect_with(&mapping.destination().connect_options())
             .await
             .map_err(|source| RunnerReconcileRuntimeError::Connect {
                 mapping_id: mapping.mapping_id().to_owned(),

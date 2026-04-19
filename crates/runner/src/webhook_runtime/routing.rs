@@ -22,7 +22,7 @@ pub(crate) fn route_request(
 fn route_resolved(mapping: &MappingRuntimePlan, resolved: ResolvedRequest) -> DispatchTarget {
     DispatchTarget::Resolved(ResolvedTrackingTarget {
         mapping_id: mapping.mapping_id().to_owned(),
-        connection: mapping.destination_connection().clone(),
+        destination: mapping.destination().clone(),
         resolved_watermark: resolved.resolved().to_owned(),
     })
 }
@@ -70,7 +70,7 @@ fn route_row_batch(
 
     Ok(DispatchTarget::RowBatch(Box::new(RowMutationBatch {
         mapping_id: mapping.mapping_id().to_owned(),
-        connection: mapping.destination_connection().clone(),
+        destination: mapping.destination().clone(),
         table: selected_table,
         rows: batch
             .into_rows()

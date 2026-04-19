@@ -6,12 +6,15 @@ mod published_image_contract_support;
 mod repo_license_contract_support;
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
+#[path = "support/runner_public_contract.rs"]
+mod runner_public_contract_support;
 #[path = "support/verify_source_contract.rs"]
 mod verify_source_contract_support;
 
 use github_workflow_contract_support::GithubWorkflowContract;
 use repo_license_contract_support::RepoLicenseContract;
 use runner_docker_contract_support::RunnerDockerContract;
+use runner_public_contract_support::RunnerPublicContract;
 use verify_source_contract_support::VerifySourceContract;
 
 #[test]
@@ -87,6 +90,16 @@ fn master_image_workflow_keeps_registry_coordinates_in_one_shared_boundary() {
 #[test]
 fn dockerfile_declares_a_scratch_runtime_image_with_only_the_runner_binary() {
     RunnerDockerContract::assert_dockerfile_uses_a_scratch_runtime_with_only_runner_binary();
+}
+
+#[test]
+fn runner_runtime_contract_explicitly_limits_network_surfaces() {
+    RunnerPublicContract::assert_runtime_network_surface_contract();
+}
+
+#[test]
+fn runner_config_contract_excludes_source_connection_and_verify_drift() {
+    RunnerPublicContract::assert_config_surface_contract();
 }
 
 #[test]

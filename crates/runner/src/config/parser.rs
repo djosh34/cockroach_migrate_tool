@@ -7,8 +7,8 @@ use serde::Deserialize;
 
 use crate::{
     config::{
-        DestinationConfig, MappingConfig, PostgresConnectionConfig, ReconcileConfig, RunnerConfig,
-        SourceConfig, TlsConfig, WebhookConfig,
+        MappingConfig, PostgresTargetConfig, ReconcileConfig, RunnerConfig, SourceConfig,
+        TlsConfig, WebhookConfig,
     },
     error::RunnerConfigError,
 };
@@ -112,7 +112,7 @@ impl RawReconcileConfig {
 struct RawMappingConfig {
     id: String,
     source: RawSourceConfig,
-    destination: RawDestinationConfig,
+    destination: RawPostgresTargetConfig,
 }
 
 impl RawMappingConfig {
@@ -143,21 +143,7 @@ impl RawSourceConfig {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawDestinationConfig {
-    connection: RawPostgresConnectionConfig,
-}
-
-impl RawDestinationConfig {
-    fn validate(self) -> Result<DestinationConfig, RunnerConfigError> {
-        Ok(DestinationConfig {
-            connection: self.connection.validate()?,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawPostgresConnectionConfig {
+struct RawPostgresTargetConfig {
     host: String,
     port: u16,
     database: String,
@@ -165,14 +151,14 @@ struct RawPostgresConnectionConfig {
     password: String,
 }
 
-impl RawPostgresConnectionConfig {
-    fn validate(self) -> Result<PostgresConnectionConfig, RunnerConfigError> {
-        Ok(PostgresConnectionConfig {
-            host: validate_text(self.host, "mappings.destination.connection.host")?,
+impl RawPostgresTargetConfig {
+    fn validate(self) -> Result<PostgresTargetConfig, RunnerConfigError> {
+        Ok(PostgresTargetConfig {
+            host: validate_text(self.host, "mappings.destination.host")?,
             port: self.port,
-            database: validate_text(self.database, "mappings.destination.connection.database")?,
-            user: validate_text(self.user, "mappings.destination.connection.user")?,
-            password: validate_text(self.password, "mappings.destination.connection.password")?,
+            database: validate_text(self.database, "mappings.destination.database")?,
+            user: validate_text(self.user, "mappings.destination.user")?,
+            password: validate_text(self.password, "mappings.destination.password")?,
         })
     }
 }

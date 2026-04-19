@@ -12,9 +12,8 @@ mappings:
       tables:
         - public.customers
     destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a

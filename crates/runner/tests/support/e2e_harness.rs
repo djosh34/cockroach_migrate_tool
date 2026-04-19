@@ -922,12 +922,11 @@ mappings:
       tables:
 {selected_tables}
     destination:
-      connection:
-        host: {destination_host}
-        port: {postgres_port}
-        database: {destination_database}
-        user: {destination_user}
-        password: {destination_password}
+      host: {destination_host}
+      port: {postgres_port}
+      database: {destination_database}
+      user: {destination_user}
+      password: {destination_password}
 "#,
                 runner_bind_port = self.destination_runtime_bind_port(),
                 cert_path = investigation_server_cert_path().display(),
