@@ -4,6 +4,7 @@ use crate::e2e_harness::{
     CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, MappingTrackingProgress,
     WebhookSinkMode,
 };
+use crate::webhook_chaos_gateway::ExternalSinkFault;
 
 const DEFAULT_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -55,7 +56,7 @@ impl DefaultBootstrapHarness {
         }
     }
 
-    pub fn start_with_retry_chaos() -> Self {
+    pub fn start_with_external_sink_faults() -> Self {
         Self {
             inner: Self::build_inner(1, WebhookSinkMode::ExternalChaosGateway),
         }
@@ -134,7 +135,19 @@ impl DefaultBootstrapHarness {
 
     pub fn arm_single_external_http_500_for_customer_email(&self, email: &str) {
         self.inner
-            .arm_single_external_http_500_for_request_body(email);
+            .arm_single_external_sink_fault_for_request_body(
+                email,
+                ExternalSinkFault::HttpStatus {
+                    status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                },
+            );
+    }
+
+    pub fn arm_single_external_transport_disconnect_for_customer_email(&self, email: &str) {
+        self.inner.arm_single_external_sink_fault_for_request_body(
+            email,
+            ExternalSinkFault::AbortConnectionBeforeForward,
+        );
     }
 
     pub fn update_source_customer_email(&self, customer_id: i64, email: &str) {
@@ -149,6 +162,13 @@ impl DefaultBootstrapHarness {
     pub fn wait_for_duplicate_customer_delivery(&self, email: &str) {
         self.inner
             .wait_for_duplicate_gateway_delivery_of_request_body(email);
+    }
+
+    pub fn wait_for_gateway_transport_abort_then_success_for_customer_email(&self, email: &str) {
+        self.inner.wait_for_gateway_fault_then_success_for_request_body(
+            email,
+            ExternalSinkFault::AbortConnectionBeforeForward,
+        );
     }
 
     pub fn verify_default_migration(&self) {

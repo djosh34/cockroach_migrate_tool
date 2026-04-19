@@ -1,5 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
+    error::Error,
+    fmt,
     fs,
     hash::{Hash, Hasher},
     net::TcpListener as StdTcpListener,
@@ -9,17 +11,15 @@ use std::{
 };
 
 use axum::{
-    Router,
     body::Bytes,
-    extract::{OriginalUri, State},
-    http::{HeaderMap, HeaderValue, Method, StatusCode, header},
+    http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::{any, get},
 };
+use http_body_util::BodyExt;
+use hyper::{body::Incoming, service::service_fn};
 use hyper_util::{
     rt::{TokioExecutor, TokioIo},
     server::conn::auto::Builder as AutoBuilder,
-    service::TowerToHyperService,
 };
 use reqwest::Certificate;
 use rustls::ServerConfig;
@@ -38,6 +38,23 @@ pub(crate) struct WebhookChaosGateway {
     thread_handle: Option<thread::JoinHandle<()>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ExternalSinkFault {
+    HttpStatus { status: StatusCode },
+    AbortConnectionBeforeForward,
+}
+
+impl fmt::Display for ExternalSinkFault {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::HttpStatus { status } => write!(f, "http_status={status}"),
+            Self::AbortConnectionBeforeForward => {
+                f.write_str("abort_connection_before_forward")
+            }
+        }
+    }
+}
+
 struct GatewayAppState {
     upstream_base_url: String,
     upstream_client: reqwest::Client,
@@ -46,23 +63,51 @@ struct GatewayAppState {
 
 #[derive(Default)]
 struct GatewayState {
-    armed_failures: Vec<ArmedFailure>,
+    armed_faults: Vec<ArmedFault>,
     attempts_by_fingerprint: HashMap<String, usize>,
-    attempt_log: Vec<ForwardedAttempt>,
+    attempt_log: Vec<GatewayAttempt>,
 }
 
-struct ArmedFailure {
+struct ArmedFault {
     body_substring: String,
-    remaining_failures: usize,
+    remaining_activations: usize,
+    fault: ExternalSinkFault,
 }
 
-struct ForwardedAttempt {
+struct GatewayAttempt {
     body: String,
     fingerprint: String,
     attempt_number: usize,
-    upstream_status: StatusCode,
-    downstream_status: StatusCode,
+    outcome: GatewayAttemptOutcome,
 }
+
+struct GatewayRequestContext {
+    method: Method,
+    headers: HeaderMap,
+    uri: String,
+    body: Bytes,
+    body_text: String,
+    fingerprint: String,
+}
+
+enum GatewayAttemptOutcome {
+    InjectedFault(ExternalSinkFault),
+    Forwarded {
+        upstream_status: StatusCode,
+        downstream_status: StatusCode,
+    },
+}
+
+#[derive(Debug)]
+struct InjectedConnectionAbort;
+
+impl fmt::Display for InjectedConnectionAbort {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("gateway injected a connection abort before forwarding")
+    }
+}
+
+impl Error for InjectedConnectionAbort {}
 
 impl WebhookChaosGateway {
     pub(crate) fn start(upstream_runner_port: u16) -> Self {
@@ -107,14 +152,19 @@ impl WebhookChaosGateway {
         format!("https://host.docker.internal:{}", self.sink_port)
     }
 
-    pub(crate) fn arm_single_external_http_500_for_body_substring(&self, body_substring: &str) {
+    pub(crate) fn arm_single_external_fault_for_body_substring(
+        &self,
+        body_substring: &str,
+        fault: ExternalSinkFault,
+    ) {
         let mut state = self
             .state
             .lock()
             .expect("webhook chaos gateway state should lock");
-        state.armed_failures.push(ArmedFailure {
+        state.armed_faults.push(ArmedFault {
             body_substring: body_substring.to_owned(),
-            remaining_failures: 1,
+            remaining_activations: 1,
+            fault,
         });
     }
 
@@ -137,6 +187,41 @@ impl WebhookChaosGateway {
             })
     }
 
+    pub(crate) fn has_fault_then_forward_success_for_body_substring(
+        &self,
+        body_substring: &str,
+        fault: ExternalSinkFault,
+    ) -> bool {
+        let state = self
+            .state
+            .lock()
+            .expect("webhook chaos gateway state should lock");
+        let mut outcomes_by_fingerprint: HashMap<&str, (bool, bool)> = HashMap::new();
+        for attempt in state
+            .attempt_log
+            .iter()
+            .filter(|attempt| attempt.body.contains(body_substring))
+        {
+            let entry = outcomes_by_fingerprint
+                .entry(attempt.fingerprint.as_str())
+                .or_insert((false, false));
+            match attempt.outcome {
+                GatewayAttemptOutcome::InjectedFault(recorded_fault) if recorded_fault == fault => {
+                    entry.0 = true;
+                }
+                GatewayAttemptOutcome::Forwarded {
+                    downstream_status, ..
+                } if downstream_status.is_success() => {
+                    entry.1 = true;
+                }
+                GatewayAttemptOutcome::InjectedFault(_) | GatewayAttemptOutcome::Forwarded { .. } => {}
+            }
+        }
+        outcomes_by_fingerprint
+            .values()
+            .any(|(fault_seen, success_seen)| *fault_seen && *success_seen)
+    }
+
     pub(crate) fn attempt_summary_for_body_substring(&self, body_substring: &str) -> String {
         let state = self
             .state
@@ -147,12 +232,19 @@ impl WebhookChaosGateway {
             .iter()
             .filter(|attempt| attempt.body.contains(body_substring))
             .map(|attempt| {
+                let outcome = match attempt.outcome {
+                    GatewayAttemptOutcome::InjectedFault(fault) => format!("fault={fault}"),
+                    GatewayAttemptOutcome::Forwarded {
+                        upstream_status,
+                        downstream_status,
+                    } => format!(
+                        "upstream={} downstream={}",
+                        upstream_status, downstream_status
+                    ),
+                };
                 format!(
-                    "fingerprint={} attempt={} upstream={} downstream={}",
-                    attempt.fingerprint,
-                    attempt.attempt_number,
-                    attempt.upstream_status,
-                    attempt.downstream_status,
+                    "fingerprint={} attempt={} {}",
+                    attempt.fingerprint, attempt.attempt_number, outcome,
                 )
             })
             .collect::<Vec<_>>()
@@ -212,15 +304,11 @@ async fn run_gateway(
         .add_root_certificate(certificate)
         .build()
         .expect("webhook chaos gateway client should build");
-    let app = Router::new()
-        .route("/healthz", get(healthz))
-        .route("/", any(proxy_request))
-        .route("/{*path}", any(proxy_request))
-        .with_state(Arc::new(GatewayAppState {
-            upstream_base_url: format!("https://localhost:{upstream_runner_port}"),
-            upstream_client,
-            state,
-        }));
+    let app = Arc::new(GatewayAppState {
+        upstream_base_url: format!("https://localhost:{upstream_runner_port}"),
+        upstream_client,
+        state,
+    });
     let mut connections = JoinSet::new();
 
     loop {
@@ -229,17 +317,25 @@ async fn run_gateway(
                 let (tcp_stream, _) = accept_result
                     .map_err(|error| format!("webhook chaos gateway accept failed: {error}"))?;
                 let tls_acceptor = tls_acceptor.clone();
-                let service = app.clone();
+                let app = Arc::clone(&app);
                 connections.spawn(async move {
                     let tls_stream = tls_acceptor
                         .accept(tcp_stream)
                         .await
                         .map_err(|error| format!("webhook chaos gateway TLS handshake failed: {error}"))?;
                     let io = TokioIo::new(tls_stream);
-                    AutoBuilder::new(TokioExecutor::new())
-                        .serve_connection_with_upgrades(io, TowerToHyperService::new(service))
+                    let service = service_fn(move |request: Request<Incoming>| {
+                        let app = Arc::clone(&app);
+                        async move { handle_request(app, request).await }
+                    });
+                    match AutoBuilder::new(TokioExecutor::new())
+                        .serve_connection_with_upgrades(io, service)
                         .await
-                        .map_err(|error| format!("webhook chaos gateway connection failed: {error}"))
+                    {
+                        Ok(()) => Ok(()),
+                        Err(error) if is_injected_abort_error(error.as_ref()) => Ok(()),
+                        Err(error) => Err(format!("webhook chaos gateway connection failed: {error}")),
+                    }
                 });
             }
             Some(connection_result) = connections.join_next(), if !connections.is_empty() => {
@@ -258,80 +354,158 @@ async fn run_gateway(
     }
 }
 
-async fn healthz() -> &'static str {
-    "ok"
+async fn handle_request(
+    app: Arc<GatewayAppState>,
+    request: Request<Incoming>,
+) -> Result<Response, InjectedConnectionAbort> {
+    let uri = request
+        .uri()
+        .path_and_query()
+        .map(|path_and_query| path_and_query.as_str().to_owned())
+        .unwrap_or_else(|| request.uri().path().to_owned());
+    if uri == "/healthz" {
+        return Ok("ok".into_response());
+    }
+
+    let method = request.method().clone();
+    let headers = request.headers().clone();
+    let body = request
+        .into_body()
+        .collect()
+        .await
+        .map(|collected| collected.to_bytes())
+        .expect("webhook chaos gateway should read the incoming request body");
+    let body_text = String::from_utf8_lossy(body.as_ref()).into_owned();
+    let fingerprint = request_fingerprint(&uri, &body_text);
+    let request = GatewayRequestContext {
+        method,
+        headers,
+        uri,
+        body,
+        body_text,
+        fingerprint,
+    };
+    if let Some(fault) = consume_matching_fault(&app.state, &request.body_text) {
+        if fault == ExternalSinkFault::AbortConnectionBeforeForward {
+            record_attempt(
+                &app.state,
+                request.body_text,
+                request.fingerprint,
+                GatewayAttemptOutcome::InjectedFault(fault),
+            );
+            return Err(InjectedConnectionAbort);
+        }
+        return Ok(forward_request(app, request, Some(fault)).await);
+    }
+
+    Ok(forward_request(app, request, None).await)
 }
 
-async fn proxy_request(
-    State(app): State<Arc<GatewayAppState>>,
-    method: Method,
-    headers: HeaderMap,
-    OriginalUri(uri): OriginalUri,
-    body: Bytes,
+async fn forward_request(
+    app: Arc<GatewayAppState>,
+    request: GatewayRequestContext,
+    override_fault: Option<ExternalSinkFault>,
 ) -> Response {
-    let forward_url = format!("{}{}", app.upstream_base_url, uri);
-    let body_text = String::from_utf8_lossy(body.as_ref()).into_owned();
-    let fingerprint = request_fingerprint(&uri.to_string(), &body_text);
-    let override_status = {
-        let mut state = app
-            .state
-            .lock()
-            .expect("webhook chaos gateway state should lock");
-        state
-            .armed_failures
-            .iter_mut()
-            .find(|rule| {
-                rule.remaining_failures > 0 && body_text.contains(rule.body_substring.as_str())
-            })
-            .map(|rule| {
-                rule.remaining_failures -= 1;
-                StatusCode::INTERNAL_SERVER_ERROR
-            })
-    };
-
-    let mut request = app.upstream_client.request(method, forward_url).body(body);
-    if let Some(content_type) = headers.get(header::CONTENT_TYPE) {
-        request = request.header(header::CONTENT_TYPE, content_type);
+    let forward_url = format!("{}{}", app.upstream_base_url, request.uri);
+    let mut upstream_request = app
+        .upstream_client
+        .request(request.method, forward_url)
+        .body(request.body);
+    if let Some(content_type) = request.headers.get(header::CONTENT_TYPE) {
+        upstream_request = upstream_request.header(header::CONTENT_TYPE, content_type);
     }
-    let upstream_response = request
+    let upstream_response = upstream_request
         .send()
         .await
         .expect("webhook chaos gateway should forward the request to the runner");
     let upstream_status = upstream_response.status();
-    let downstream_status = override_status.unwrap_or(upstream_status);
+    let downstream_status = match override_fault {
+        Some(ExternalSinkFault::HttpStatus { status }) => status,
+        Some(ExternalSinkFault::AbortConnectionBeforeForward) => {
+            panic!("abort fault should have returned before forwarding")
+        }
+        None => upstream_status,
+    };
     let upstream_headers = upstream_response.headers().clone();
     let upstream_body = upstream_response
         .bytes()
         .await
         .expect("webhook chaos gateway should read the upstream response body");
 
-    {
-        let mut state = app
-            .state
-            .lock()
-            .expect("webhook chaos gateway state should lock");
-        let attempt_number = {
-            let entry = state
-                .attempts_by_fingerprint
-                .entry(fingerprint.clone())
-                .or_insert(0);
-            *entry += 1;
-            *entry
-        };
-        state.attempt_log.push(ForwardedAttempt {
-            body: body_text,
-            fingerprint,
-            attempt_number,
+    record_attempt(
+        &app.state,
+        request.body_text,
+        request.fingerprint,
+        GatewayAttemptOutcome::Forwarded {
             upstream_status,
             downstream_status,
-        });
-    }
+        },
+    );
 
     response_with_optional_content_type(
         downstream_status,
         upstream_headers.get(header::CONTENT_TYPE),
         upstream_body,
     )
+}
+
+fn consume_matching_fault(state: &Arc<Mutex<GatewayState>>, body_text: &str) -> Option<ExternalSinkFault> {
+    let mut state = state
+        .lock()
+        .expect("webhook chaos gateway state should lock");
+    state
+        .armed_faults
+        .iter_mut()
+        .find(|rule| {
+            rule.remaining_activations > 0 && body_text.contains(rule.body_substring.as_str())
+        })
+        .map(|rule| {
+            rule.remaining_activations -= 1;
+            rule.fault
+        })
+}
+
+fn record_attempt(
+    state: &Arc<Mutex<GatewayState>>,
+    body: String,
+    fingerprint: String,
+    outcome: GatewayAttemptOutcome,
+) {
+    let mut state = state
+        .lock()
+        .expect("webhook chaos gateway state should lock");
+    let attempt_number = {
+        let entry = state
+            .attempts_by_fingerprint
+            .entry(fingerprint.clone())
+            .or_insert(0);
+        *entry += 1;
+        *entry
+    };
+    state.attempt_log.push(GatewayAttempt {
+        body,
+        fingerprint,
+        attempt_number,
+        outcome,
+    });
+}
+
+fn is_injected_abort_error(mut error: &(dyn Error + 'static)) -> bool {
+    loop {
+        if error.downcast_ref::<InjectedConnectionAbort>().is_some() {
+            return true;
+        }
+        if error
+            .to_string()
+            .contains("gateway injected a connection abort before forwarding")
+        {
+            return true;
+        }
+        let Some(source) = error.source() else {
+            return false;
+        };
+        error = source;
+    }
 }
 
 fn response_with_optional_content_type(

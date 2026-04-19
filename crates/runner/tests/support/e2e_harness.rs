@@ -21,7 +21,7 @@ mod destination_lock;
 pub(crate) use destination_lock::DestinationTableLock;
 use runner_process::RunnerProcess;
 
-use crate::webhook_chaos_gateway::WebhookChaosGateway;
+use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
@@ -377,11 +377,15 @@ impl CdcE2eHarness {
         output
     }
 
-    pub fn arm_single_external_http_500_for_request_body(&self, body_substring: &str) {
+    pub fn arm_single_external_sink_fault_for_request_body(
+        &self,
+        body_substring: &str,
+        fault: ExternalSinkFault,
+    ) {
         self.webhook_chaos_gateway
             .as_ref()
             .expect("chaos gateway should be configured for this harness")
-            .arm_single_external_http_500_for_body_substring(body_substring);
+            .arm_single_external_fault_for_body_substring(body_substring, fault);
     }
 
     pub fn wait_for_duplicate_gateway_delivery_of_request_body(&self, body_substring: &str) {
@@ -403,6 +407,34 @@ impl CdcE2eHarness {
             .expect("chaos gateway should be configured for this harness");
         panic!(
             "gateway did not observe duplicate delivery for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
+    pub fn wait_for_gateway_fault_then_success_for_request_body(
+        &self,
+        body_substring: &str,
+        fault: ExternalSinkFault,
+    ) {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            if gateway.has_fault_then_forward_success_for_body_substring(body_substring, fault) {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        panic!(
+            "gateway did not observe `{fault}` followed by a successful forward for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
             gateway.attempt_summary_for_body_substring(body_substring),
             read_file(&self.runner_stderr_path),
         );

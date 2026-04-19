@@ -12,6 +12,7 @@ path = "src/lib.rs"
 [dependencies]
 axum.workspace = true
 clap.workspace = true
+http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 ingest-contract = { path = "../ingest-contract" }

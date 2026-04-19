@@ -1460,6 +1460,7 @@ dependencies = [
  "assert_cmd",
  "axum",
  "clap",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "ingest-contract",
