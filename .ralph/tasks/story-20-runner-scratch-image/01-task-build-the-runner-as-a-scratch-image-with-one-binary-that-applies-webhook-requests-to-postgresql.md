@@ -1,4 +1,4 @@
-## Task: Build the runner as a scratch image with one binary that only applies webhook requests to PostgreSQL <status>not_started</status> <passes>false</passes>
+## Task: Build the runner as a scratch image with one binary that only applies webhook requests to PostgreSQL <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,11 +25,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the single-binary scratch runner image and its PostgreSQL apply path
-- [ ] The runner image contains only the runner binary and the minimal runtime contents needed to operate
-- [ ] The runner performs webhook application to PostgreSQL and nothing else
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers the single-binary scratch runner image and its PostgreSQL apply path
+- [x] The runner image contains only the runner binary and the minimal runtime contents needed to operate
+- [x] The runner performs webhook application to PostgreSQL and nothing else
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-20-runner-scratch-image/01-task-build-the-runner-as-a-scratch-image-with-one-binary-that-applies-webhook-requests-to-postgresql_plans/2026-04-19-runner-scratch-image-apply-plan.md</plan>

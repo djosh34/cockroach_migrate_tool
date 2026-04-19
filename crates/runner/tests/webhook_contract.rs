@@ -903,6 +903,51 @@ fn run_persists_insert_row_batches_before_returning_200() {
 }
 
 #[test]
+fn run_routes_quoted_source_table_names_to_the_configured_mapping_table() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        r#"CREATE TABLE public."CustomerEvents" (id bigint PRIMARY KEY, email text NOT NULL);"#,
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(&config_path, bind_port, &[r#"public."CustomerEvents""#]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let row_batch = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &quoted_identifier_row_batch_body("demo_a", r#""CustomerEvents""#),
+    );
+    let row_batch_status = row_batch.status();
+    let row_batch_body = row_batch
+        .text()
+        .expect("quoted-identifier row-batch response body should be readable");
+    assert_eq!(
+        row_batch_status,
+        StatusCode::OK,
+        "runner must accept quoted source identifiers through the public ingest surface, got body: {row_batch_body}",
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT id::text || '|' || email FROM _cockroach_migration_tool."app-a__public__CustomerEvents""#,
+        ),
+        "1|customer@example.com"
+    );
+}
+
+#[test]
 fn run_deletes_helper_rows_from_row_batches() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -1180,6 +1225,14 @@ fn run_returns_non_200_and_rolls_back_partial_row_batch_failures() {
 fn row_batch_body(source_database: &str, table_name: &str) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}}]}}"#
+    )
+}
+
+fn quoted_identifier_row_batch_body(source_database: &str, table_name: &str) -> String {
+    let table_name = serde_json::to_string(table_name)
+        .expect("quoted identifier table name should serialize as json");
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":{table_name}}},"ts_ns":1}}]}}"#
     )
 }
 

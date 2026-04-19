@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 10:45:34 PM CEST 2026
+Generated: Sun Apr 19 11:02:59 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -688,6 +688,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Emit the absolute minimum PostgreSQL role grants needed by the runner from the one-time setup image <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-20-runner-scratch-image/01-task-build-the-runner-as-a-scratch-image-with-one-binary-that-applies-webhook-requests-to-postgresql.md`
+
+```
+## Task: Build the runner as a scratch image with one binary that only applies webhook requests to PostgreSQL <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

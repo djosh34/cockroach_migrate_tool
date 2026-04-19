@@ -1,4 +1,4 @@
-use std::{ffi::OsString, fs, path::PathBuf};
+use std::{collections::BTreeSet, ffi::OsString, fs, path::PathBuf};
 
 pub struct RunnerDockerContract;
 
@@ -38,6 +38,33 @@ impl RunnerDockerContract {
             image_entrypoint_json.trim(),
             Self::direct_runner_entrypoint_json(),
             "runner image must start the binary directly instead of handing off through a shell entrypoint",
+        );
+    }
+
+    pub fn assert_runtime_filesystem_is_minimal(exported_paths: &[String]) {
+        let actual_paths = exported_paths.iter().cloned().collect::<BTreeSet<_>>();
+        let expected_paths = BTreeSet::from([
+            String::from(".dockerenv"),
+            String::from("dev/"),
+            String::from("dev/console"),
+            String::from("dev/pts/"),
+            String::from("dev/shm/"),
+            String::from("etc/"),
+            String::from("etc/hostname"),
+            String::from("etc/hosts"),
+            String::from("etc/mtab"),
+            String::from("etc/resolv.conf"),
+            String::from("proc/"),
+            String::from("sys/"),
+            String::from("usr/"),
+            String::from("usr/local/"),
+            String::from("usr/local/bin/"),
+            String::from("usr/local/bin/runner"),
+        ]);
+
+        assert_eq!(
+            actual_paths, expected_paths,
+            "runner image runtime filesystem must stay minimal and carry only the runner binary payload",
         );
     }
 

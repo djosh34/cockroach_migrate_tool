@@ -1,6 +1,7 @@
 use serde_json::{Map, Value};
 
 use crate::error::RunnerWebhookPayloadError;
+use crate::sql_name::{QualifiedTableName, SqlIdentifier};
 
 #[derive(Clone, Debug)]
 pub(crate) enum WebhookRequest {
@@ -69,8 +70,7 @@ pub(crate) enum RowOperation {
 #[derive(Clone, Debug)]
 pub(crate) struct SourceMetadata {
     database_name: String,
-    schema_name: String,
-    table_name: String,
+    source_table: QualifiedTableName,
 }
 
 impl SourceMetadata {
@@ -78,8 +78,8 @@ impl SourceMetadata {
         &self.database_name
     }
 
-    pub(crate) fn table_label(&self) -> String {
-        format!("{}.{}", self.schema_name, self.table_name)
+    pub(crate) fn source_table(&self) -> &QualifiedTableName {
+        &self.source_table
     }
 }
 
@@ -204,8 +204,10 @@ fn parse_source_metadata(value: &Value) -> Result<SourceMetadata, RunnerWebhookP
         .ok_or(RunnerWebhookPayloadError::InvalidSource)?;
     Ok(SourceMetadata {
         database_name: required_string_field(object, "database_name")?,
-        schema_name: required_string_field(object, "schema_name")?,
-        table_name: required_string_field(object, "table_name")?,
+        source_table: QualifiedTableName::new(
+            SqlIdentifier::new(&required_string_field(object, "schema_name")?),
+            SqlIdentifier::new(&required_string_field(object, "table_name")?),
+        ),
     })
 }
 

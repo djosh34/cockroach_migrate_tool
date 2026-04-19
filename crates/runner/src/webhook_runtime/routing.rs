@@ -42,20 +42,20 @@ fn route_row_batch(
             });
         }
 
-        let table = source.table_label();
-        let helper_table = mapping.helper_table(&table).ok_or_else(|| {
+        let table = source.source_table();
+        let helper_table = mapping.helper_table(table).ok_or_else(|| {
             RunnerWebhookRoutingError::SourceTableNotMapped {
                 mapping_id: mapping.mapping_id().to_owned(),
-                table: table.clone(),
+                table: table.label(),
             }
         })?;
 
         match &selected_table {
-            Some(existing) if existing.source_table().label() != table => {
+            Some(existing) if existing.source_table() != table => {
                 return Err(RunnerWebhookRoutingError::MixedSourceTables {
                     mapping_id: mapping.mapping_id().to_owned(),
                     first: existing.source_table().label(),
-                    second: table,
+                    second: table.label(),
                 });
             }
             Some(_) => {}

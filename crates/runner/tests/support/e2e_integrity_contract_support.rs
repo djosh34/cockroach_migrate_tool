@@ -121,6 +121,7 @@ impl E2eIntegrityContractAudit {
         let approved = [
             "tests/support/e2e_harness.rs",
             "tests/support/runner_container_process.rs",
+            "tests/support/runner_image_artifact_harness.rs",
             "tests/support/runner_image_harness.rs",
             "tests/support/verify_image_artifact_harness.rs",
             "tests/support/verify_image_harness.rs",

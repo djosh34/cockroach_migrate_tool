@@ -288,7 +288,7 @@ pub(crate) struct MappingRuntimePlan {
     mapping_id: String,
     source_database: String,
     destination_connection: PostgresConnectionConfig,
-    helper_tables: BTreeMap<String, HelperShadowTablePlan>,
+    helper_tables: BTreeMap<QualifiedTableName, HelperShadowTablePlan>,
     reconcile_upsert_tables: Vec<HelperShadowTablePlan>,
     reconcile_delete_tables: Vec<HelperShadowTablePlan>,
 }
@@ -302,7 +302,7 @@ impl MappingRuntimePlan {
             .helper_tables()
             .iter()
             .cloned()
-            .map(|table| (table.source_table().label(), table))
+            .map(|table| (table.source_table().clone(), table))
             .collect::<BTreeMap<_, _>>();
         let reconcile_upsert_tables = build_reconcile_tables(
             mapping.mapping_id(),
@@ -337,8 +337,11 @@ impl MappingRuntimePlan {
         &self.destination_connection
     }
 
-    pub(crate) fn helper_table(&self, table_label: &str) -> Option<&HelperShadowTablePlan> {
-        self.helper_tables.get(table_label)
+    pub(crate) fn helper_table(
+        &self,
+        table_name: &QualifiedTableName,
+    ) -> Option<&HelperShadowTablePlan> {
+        self.helper_tables.get(table_name)
     }
 
     pub(crate) fn reconcile_upsert_tables(&self) -> &[HelperShadowTablePlan] {
@@ -352,14 +355,14 @@ impl MappingRuntimePlan {
 
 fn build_reconcile_tables(
     mapping_id: &str,
-    helper_tables: &BTreeMap<String, HelperShadowTablePlan>,
+    helper_tables: &BTreeMap<QualifiedTableName, HelperShadowTablePlan>,
     table_order: &[QualifiedTableName],
 ) -> Result<Vec<HelperShadowTablePlan>, RunnerRuntimePlanError> {
     table_order
         .iter()
         .map(|table_name| {
             helper_tables
-                .get(&table_name.label())
+                .get(table_name)
                 .cloned()
                 .ok_or_else(|| RunnerRuntimePlanError::MissingReconcileTable {
                     mapping_id: mapping_id.to_owned(),
