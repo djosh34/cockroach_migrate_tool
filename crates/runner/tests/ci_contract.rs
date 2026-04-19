@@ -88,6 +88,13 @@ fn publish_images_workflow_installs_publish_dependencies_via_direct_shell_steps(
 }
 
 #[test]
+fn publish_images_workflow_proves_multi_arch_builder_support_before_publishing() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_proves_multi_arch_builder_support_before_publishing();
+}
+
+#[test]
 fn publish_images_workflow_emits_published_image_manifest_for_downstream_consumers() {
     let workflow = GithubWorkflowContract::load_publish_images();
 

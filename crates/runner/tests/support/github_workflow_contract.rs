@@ -380,7 +380,8 @@ impl GithubWorkflowContract {
         );
         for required_marker in [
             "sudo apt-get update",
-            "sudo apt-get install --yes jq qemu-user-static",
+            "sudo apt-get install --yes binfmt-support jq qemu-user-static",
+            "sudo update-binfmts --enable qemu-aarch64",
             "curl -fsSL",
             "docker buildx version",
             "docker buildx create --name publish-builder --driver docker-container --use",
@@ -402,6 +403,38 @@ impl GithubWorkflowContract {
             assert!(
                 !self.workflow_text.contains(forbidden_action),
                 "workflow must not depend on `{forbidden_action}`",
+            );
+        }
+    }
+
+    pub fn assert_proves_multi_arch_builder_support_before_publishing(&self) {
+        let publish_job = self.job("publish");
+        let probe_script = self.step_run_script(
+            self.step_named(publish_job, "Assert multi-arch builder support"),
+            "Assert multi-arch builder support",
+        );
+        for required_marker in [
+            "docker buildx inspect --bootstrap",
+            "buildx_platforms",
+            "linux/amd64",
+            "linux/arm64",
+            "grep -F",
+        ] {
+            assert!(
+                probe_script.contains(required_marker),
+                "multi-arch builder proof step must include `{required_marker}`",
+            );
+        }
+
+        for image in PublishedImageContract::all() {
+            let publish_script = self.step_run_script(
+                self.step_named(publish_job, &publish_step_name(image)),
+                &publish_step_name(image),
+            );
+            assert!(
+                publish_script.contains("--progress plain"),
+                "publish step for `{}` must use plain buildx progress so hosted failures stay inspectable",
+                image.image_id(),
             );
         }
     }
