@@ -68,7 +68,7 @@ cockroach sql \
 The rendered SQL:
 
 - enables `kv.rangefeed.enabled`
-- records `cluster_logical_timestamp()` as an explicit source-side statement
+- records `cluster_logical_timestamp()` as an explicit source-side statement and feeds that value back into each changefeed `cursor`
 - creates one webhook changefeed per configured source database
 - renders each mapping to its own HTTPS ingest path at `/ingest/<mapping_id>`
 - keeps the operator-facing artifact to SQL statements plus SQL comments only

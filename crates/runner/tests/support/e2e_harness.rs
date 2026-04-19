@@ -12,7 +12,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use clap::Parser as _;
+use assert_cmd::cargo::cargo_bin;
 use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
@@ -39,6 +39,7 @@ use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
+pub(crate) const CHANGEFEED_CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
     DirectRunner,
@@ -880,21 +881,20 @@ impl CdcE2eHarness {
     }
 
     fn render_source_bootstrap_sql(&self) -> String {
-        source_bootstrap::execute(source_bootstrap::Cli::parse_from([
-            "setup-sql",
-            "emit-cockroach-sql",
-            "--config",
-            self.source_bootstrap_config_path
-                .to_str()
-                .expect("Cockroach setup config path should be utf-8"),
-        ]))
-        .unwrap_or_else(|error| panic!("setup-sql emit-cockroach-sql failed: {error}"))
+        run_command_capture(
+            Command::new(cargo_bin("setup-sql")).args([
+                "emit-cockroach-sql",
+                "--config",
+                self.source_bootstrap_config_path
+                    .to_str()
+                    .expect("Cockroach setup config path should be utf-8"),
+            ]),
+            "setup-sql emit-cockroach-sql",
+        )
     }
 
     fn apply_source_bootstrap_sql(&self, sql: &str) {
-        for statement in source_bootstrap_sql_statements(sql) {
-            run_audited_cockroach_sql(&self.wrapper_bin_dir, &statement);
-        }
+        apply_source_bootstrap_sql_statements(&self.wrapper_bin_dir, sql);
     }
 
     fn write_runner_config(&self) {
@@ -1740,12 +1740,61 @@ pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> St
     )
 }
 
+pub(crate) fn apply_source_bootstrap_sql_statements(wrapper_bin_dir: &Path, sql: &str) {
+    let mut captured_cursor = None;
+
+    for statement in source_bootstrap_sql_statements(sql) {
+        if contains_non_comment_fragment(&statement, "cluster_logical_timestamp()")
+            && !contains_non_comment_fragment(&statement, "CREATE CHANGEFEED")
+        {
+            let output = run_audited_cockroach_sql(wrapper_bin_dir, &statement);
+            captured_cursor = Some(parse_changefeed_cursor(&output));
+            continue;
+        }
+
+        let rendered_statement = if contains_non_comment_fragment(&statement, "CREATE CHANGEFEED")
+            && statement.contains(CHANGEFEED_CURSOR_PLACEHOLDER)
+        {
+            let cursor = captured_cursor.as_deref().unwrap_or_else(|| {
+                panic!(
+                    "bootstrap SQL must capture a cursor before using `{CHANGEFEED_CURSOR_PLACEHOLDER}`"
+                )
+            });
+            statement.replace(CHANGEFEED_CURSOR_PLACEHOLDER, cursor)
+        } else {
+            statement
+        };
+
+        run_audited_cockroach_sql(wrapper_bin_dir, &rendered_statement);
+    }
+}
+
 pub(crate) fn source_bootstrap_sql_statements(sql: &str) -> Vec<String> {
     sql.split(';')
         .map(str::trim)
         .filter(|statement| !statement.is_empty())
         .map(|statement| format!("{statement};"))
         .collect()
+}
+
+fn parse_changefeed_cursor(output: &str) -> String {
+    output
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty() && *line != "changefeed_cursor")
+        .unwrap_or_else(|| {
+            panic!(
+                "cluster_logical_timestamp output should include a cursor row, got:\n{output}"
+            )
+        })
+        .to_owned()
+}
+
+fn contains_non_comment_fragment(statement: &str, fragment: &str) -> bool {
+    statement
+        .lines()
+        .map(str::trim_start)
+        .any(|line| !line.starts_with("--") && line.contains(fragment))
 }
 
 pub(crate) fn run_command_capture(command: &mut Command, context: &str) -> String {

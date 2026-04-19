@@ -10,6 +10,8 @@ use source_bootstrap_image_contract_support::SourceBootstrapImageContract;
 use source_bootstrap_image_harness_support::SourceBootstrapImageHarness;
 use std::{fs, path::PathBuf};
 
+const CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
+
 #[test]
 fn setup_sql_image_dockerfile_lives_in_the_setup_slice() {
     let contract = SourceBootstrapImageContract::load();
@@ -50,6 +52,14 @@ fn readme_setup_sql_fixture_renders_through_the_published_image_entrypoint() {
     assert!(
         output.starts_with("-- Source bootstrap SQL\n"),
         "published setup-sql image must render the README fixture through the container entrypoint",
+    );
+    assert!(
+        output.contains("SELECT cluster_logical_timestamp() AS changefeed_cursor;"),
+        "published setup-sql image must keep the explicit cursor capture step in the emitted SQL",
+    );
+    assert!(
+        output.contains(&format!("cursor = '{CURSOR_PLACEHOLDER}'")),
+        "published setup-sql image must emit the explicit cursor handoff in each changefeed statement",
     );
 }
 

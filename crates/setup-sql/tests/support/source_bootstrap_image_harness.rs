@@ -8,6 +8,8 @@ use std::{
 
 use crate::source_bootstrap_image_contract_support::SourceBootstrapImageContract;
 
+const CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
+
 pub struct SourceBootstrapImageHarness {
     image_tag: String,
 }
@@ -57,6 +59,14 @@ impl SourceBootstrapImageHarness {
                 "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"
             ),
             "setup-sql image must render the README mapping changefeed through the container entrypoint",
+        );
+        assert!(
+            output.contains("SELECT cluster_logical_timestamp() AS changefeed_cursor;"),
+            "setup-sql image must keep the explicit cursor capture SQL in the emitted artifact",
+        );
+        assert!(
+            output.contains(&format!("cursor = '{CURSOR_PLACEHOLDER}'")),
+            "setup-sql image must emit the explicit cursor handoff in the rendered changefeed SQL",
         );
         assert!(
             output.contains("INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert=ZHVtbXktY2EK'"),

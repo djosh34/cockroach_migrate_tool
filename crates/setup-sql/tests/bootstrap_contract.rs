@@ -16,6 +16,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 const FIXTURE_CA_CERT_QUERY: &str = "ZHVtbXktY2EK";
+const CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
 
 #[test]
 fn emit_cockroach_sql_defaults_to_text_and_supports_simple_json_output() {
@@ -31,8 +32,11 @@ fn emit_cockroach_sql_defaults_to_text_and_supports_simple_json_output() {
             "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
         ))
         .stdout(predicate::str::contains(
-            "SELECT cluster_logical_timestamp();",
+            "SELECT cluster_logical_timestamp() AS changefeed_cursor;",
         ))
+        .stdout(predicate::str::contains(format!(
+            "-- Replace {CURSOR_PLACEHOLDER} below with the decimal cursor returned above before running the CREATE CHANGEFEED statement."
+        )))
         .stdout(predicate::str::contains("-- Mapping: app-a"))
         .stdout(predicate::str::contains("-- Source database: demo_a"))
         .stdout(predicate::str::contains(
@@ -45,6 +49,9 @@ fn emit_cockroach_sql_defaults_to_text_and_supports_simple_json_output() {
         .stdout(predicate::str::contains(
             "CREATE CHANGEFEED FOR TABLE demo_b.public.invoices",
         ))
+        .stdout(predicate::str::contains(format!(
+            "cursor = '{CURSOR_PLACEHOLDER}'"
+        )))
         .stdout(predicate::str::contains(format!(
             "INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert={FIXTURE_CA_CERT_QUERY}'"
         )))
@@ -97,6 +104,14 @@ fn emit_cockroach_sql_defaults_to_text_and_supports_simple_json_output() {
         .get("demo_a")
         .and_then(Value::as_str)
         .expect("demo_a sql should be a string");
+    assert!(
+        demo_a_sql.contains("SELECT cluster_logical_timestamp() AS changefeed_cursor;"),
+        "demo_a json payload should preserve the explicit cursor capture step",
+    );
+    assert!(
+        demo_a_sql.contains(&format!("cursor = '{CURSOR_PLACEHOLDER}'")),
+        "demo_a json payload should keep the explicit cursor handoff in the changefeed SQL",
+    );
     assert!(
         demo_a_sql.contains(
             "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"

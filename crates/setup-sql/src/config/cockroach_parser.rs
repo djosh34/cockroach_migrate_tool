@@ -8,7 +8,11 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use serde::Deserialize;
 
-use super::{BootstrapConfig, SourceMapping, SourceSelection, TableName, WebhookConfig};
+use super::{
+    BootstrapConfig, SourceMapping, WebhookConfig,
+    cockroach::SourceSelection,
+    table_name::{TableName, parse_schema_qualified_table_name, validate_text},
+};
 use crate::error::BootstrapConfigError;
 
 pub(super) fn load(path: &Path) -> Result<BootstrapConfig, BootstrapConfigError> {
@@ -123,17 +127,6 @@ fn validate_tables(raw_tables: Vec<String>) -> Result<Vec<TableName>, BootstrapC
     Ok(tables)
 }
 
-fn validate_text(value: String, field: &'static str) -> Result<String, BootstrapConfigError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(BootstrapConfigError::InvalidField {
-            field,
-            message: "must not be empty",
-        });
-    }
-    Ok(trimmed.to_owned())
-}
-
 fn validate_path(value: PathBuf, field: &'static str) -> Result<PathBuf, BootstrapConfigError> {
     if value.as_os_str().is_empty() {
         return Err(BootstrapConfigError::InvalidField {
@@ -161,30 +154,7 @@ fn encode_ca_cert_query(bytes: &[u8]) -> String {
 }
 
 fn validate_table_name(value: String) -> Result<TableName, BootstrapConfigError> {
-    let value = validate_text(value, "mappings[].source.tables[]")?;
-    let mut parts = value.split('.');
-    let schema = parts.next().unwrap_or_default();
-    let name = parts.next().unwrap_or_default();
-
-    if schema.is_empty()
-        || name.is_empty()
-        || parts.next().is_some()
-        || !is_simple_identifier(schema)
-        || !is_simple_identifier(name)
-    {
-        return Err(BootstrapConfigError::InvalidField {
-            field: "mappings[].source.tables[]",
-            message: "must be schema-qualified with simple SQL identifiers",
-        });
-    }
-
-    Ok(TableName::new(schema.to_owned(), name.to_owned()))
-}
-
-fn is_simple_identifier(value: &str) -> bool {
-    value
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    parse_schema_qualified_table_name(value, "mappings[].source.tables[]")
 }
 
 #[derive(Debug, Deserialize)]

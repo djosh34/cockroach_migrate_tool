@@ -1,4 +1,4 @@
-## Task: Emit the required Cockroach changefeed SQL from the one-time setup image <status>not_started</status> <passes>false</passes>
+## Task: Emit the required Cockroach changefeed SQL from the one-time setup image <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -33,13 +33,15 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers generation of the required Cockroach source-setup SQL
-- [ ] The emitted output includes the changefeed creation SQL needed by the supported flow, this mode does not require PostgreSQL config, and it supports both simple JSON and plain-text SQL output
-- [ ] JSON output can return multiple configured Cockroach databases in one response, with one SQL string per database
-- [ ] The Cockroach command allows configuring webhook URLs and cert paths without mixing in PostgreSQL behavior
-- [ ] The runner no longer depends on source-side SQL generation or source access after this step
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers generation of the required Cockroach source-setup SQL
+- [x] The emitted output includes the changefeed creation SQL needed by the supported flow, this mode does not require PostgreSQL config, and it supports both simple JSON and plain-text SQL output
+- [x] JSON output can return multiple configured Cockroach databases in one response, with one SQL string per database
+- [x] The Cockroach command allows configuring webhook URLs and cert paths without mixing in PostgreSQL behavior
+- [x] The runner no longer depends on source-side SQL generation or source access after this step
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-19-source-sql-emitter-image/02-task-emit-the-required-cockroach-changefeed-sql-from-the-one-time-setup-image_plans/2026-04-19-cockroach-changefeed-sql-plan.md</plan>

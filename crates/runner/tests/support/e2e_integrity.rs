@@ -270,7 +270,7 @@ impl SourceCommandAudit {
             "bootstrap should enable rangefeeds explicitly",
         );
         self.assert_bootstrap_contains(
-            "SELECT cluster_logical_timestamp();",
+            "SELECT cluster_logical_timestamp() AS changefeed_cursor;",
             "bootstrap should capture the start cursor explicitly",
         );
         let expected_changefeed_fragment = format!(
@@ -284,6 +284,10 @@ impl SourceCommandAudit {
         self.assert_bootstrap_contains(
             &expected_changefeed_fragment,
             "bootstrap should create the expected changefeed explicitly",
+        );
+        self.assert_bootstrap_contains(
+            "cursor = '",
+            "bootstrap should pass the explicit cursor into the changefeed creation statement",
         );
     }
 

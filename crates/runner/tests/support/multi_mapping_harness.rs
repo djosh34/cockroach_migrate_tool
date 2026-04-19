@@ -8,14 +8,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use clap::Parser as _;
+use assert_cmd::cargo::cargo_bin;
 use tempfile::TempDir;
 
 use crate::e2e_harness::{
-    DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
-    investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, read_file,
-    run_audited_cockroach_sql, source_bootstrap_sql_statements, wait_for_runner_health,
-    write_cockroach_wrapper_script,
+    DockerEnvironment, apply_source_bootstrap_sql_statements, https_client,
+    investigation_ca_cert_path, investigation_server_cert_path, investigation_server_key_path,
+    lock_e2e_docker_resources, pick_unused_port, read_file, run_audited_cockroach_sql,
+    wait_for_runner_health, write_cockroach_wrapper_script,
 };
 use crate::e2e_integrity::{SourceCommandAudit, VerifyCorrectnessAudit};
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
@@ -288,12 +288,16 @@ impl MultiMappingHarness {
             "bootstrap should issue one rangefeed enable, one start cursor, and one changefeed per mapping",
         );
         audit.assert_bootstrap_contains(
-            "SELECT cluster_logical_timestamp();",
+            "SELECT cluster_logical_timestamp() AS changefeed_cursor;",
             "bootstrap should capture the start cursor explicitly",
         );
         audit.assert_bootstrap_contains(
             "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.order_items",
             "bootstrap should create the app-a changefeed explicitly",
+        );
+        audit.assert_bootstrap_contains(
+            "cursor = '",
+            "bootstrap should pass the explicit cursor into each changefeed creation statement",
         );
         audit.assert_bootstrap_contains(
             "CREATE CHANGEFEED FOR TABLE demo_b.public.invoices, demo_b.public.invoice_lines",
@@ -580,21 +584,20 @@ VALUES (5003, 1, 'expansion-pack', 2);
     }
 
     fn render_source_bootstrap_sql(&self) -> String {
-        source_bootstrap::execute(source_bootstrap::Cli::parse_from([
-            "setup-sql",
-            "emit-cockroach-sql",
-            "--config",
-            self.source_bootstrap_config_path
-                .to_str()
-                .expect("Cockroach setup config path should be utf-8"),
-        ]))
-        .unwrap_or_else(|error| panic!("setup-sql emit-cockroach-sql failed: {error}"))
+        super::e2e_harness::run_command_capture(
+            Command::new(cargo_bin("setup-sql")).args([
+                "emit-cockroach-sql",
+                "--config",
+                self.source_bootstrap_config_path
+                    .to_str()
+                    .expect("Cockroach setup config path should be utf-8"),
+            ]),
+            "setup-sql emit-cockroach-sql",
+        )
     }
 
     fn apply_source_bootstrap_sql(&self, sql: &str) {
-        for statement in source_bootstrap_sql_statements(sql) {
-            run_audited_cockroach_sql(&self.wrapper_bin_dir, &statement);
-        }
+        apply_source_bootstrap_sql_statements(&self.wrapper_bin_dir, sql);
     }
 
     fn write_runner_config(&self) {

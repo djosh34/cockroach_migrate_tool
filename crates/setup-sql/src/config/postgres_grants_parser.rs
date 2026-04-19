@@ -6,7 +6,11 @@ use std::{
 
 use serde::Deserialize;
 
-use super::{PostgresGrantDestination, PostgresGrantMapping, PostgresGrantsConfig, TableName};
+use super::{
+    PostgresGrantMapping, PostgresGrantsConfig,
+    postgres_grants::PostgresGrantDestination,
+    table_name::{TableName, parse_schema_qualified_table_name, validate_text},
+};
 use crate::error::BootstrapConfigError;
 
 pub(super) fn load(path: &Path) -> Result<PostgresGrantsConfig, BootstrapConfigError> {
@@ -90,42 +94,8 @@ fn validate_tables(raw_tables: Vec<String>) -> Result<Vec<TableName>, BootstrapC
     Ok(tables)
 }
 
-fn validate_text(value: String, field: &'static str) -> Result<String, BootstrapConfigError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(BootstrapConfigError::InvalidField {
-            field,
-            message: "must not be empty",
-        });
-    }
-    Ok(trimmed.to_owned())
-}
-
 fn validate_table_name(value: String) -> Result<TableName, BootstrapConfigError> {
-    let value = validate_text(value, "mappings[].destination.tables[]")?;
-    let mut parts = value.split('.');
-    let schema = parts.next().unwrap_or_default();
-    let name = parts.next().unwrap_or_default();
-
-    if schema.is_empty()
-        || name.is_empty()
-        || parts.next().is_some()
-        || !is_simple_identifier(schema)
-        || !is_simple_identifier(name)
-    {
-        return Err(BootstrapConfigError::InvalidField {
-            field: "mappings[].destination.tables[]",
-            message: "must be schema-qualified with simple SQL identifiers",
-        });
-    }
-
-    Ok(TableName::new(schema.to_owned(), name.to_owned()))
-}
-
-fn is_simple_identifier(value: &str) -> bool {
-    value
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || character == '_')
+    parse_schema_qualified_table_name(value, "mappings[].destination.tables[]")
 }
 
 #[derive(Debug, Deserialize)]
