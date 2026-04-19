@@ -1,5 +1,7 @@
 #[path = "support/github_workflow_contract.rs"]
 mod github_workflow_contract_support;
+#[path = "support/published_image_contract.rs"]
+mod published_image_contract_support;
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
 #[path = "support/verify_source_contract.rs"]
@@ -52,14 +54,14 @@ fn master_image_workflow_runs_the_full_repository_validation_suite() {
 }
 
 #[test]
-fn master_image_workflow_publishes_only_a_commit_tagged_ghcr_image() {
+fn master_image_workflow_publishes_only_commit_tagged_novice_path_images() {
     let workflow = GithubWorkflowContract::load_master_image();
 
     workflow.assert_commit_tagged_ghcr_publish_only();
 }
 
 #[test]
-fn master_image_workflow_scans_the_release_archive_before_publishing() {
+fn master_image_workflow_scans_each_release_archive_before_publishing() {
     let workflow = GithubWorkflowContract::load_master_image();
 
     workflow.assert_scans_the_release_archive_before_publishing();

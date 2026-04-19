@@ -24,37 +24,6 @@ impl RunnerDockerContract {
         &["validate-config", "render-postgres-setup", "run"]
     }
 
-    pub fn assert_readme_documents_direct_build_and_run(docker_quick_start: &str) {
-        assert!(
-            docker_quick_start.contains("docker build -t cockroach-migrate-runner ."),
-            "README Docker quick start must build the runner image directly from the repository root",
-        );
-        assert!(
-            docker_quick_start.contains(
-                "cockroach-migrate-runner \\\n  validate-config --config /config/runner.yml"
-            ),
-            "README Docker quick start must run `validate-config` directly through the runner image entrypoint",
-        );
-        assert!(
-            docker_quick_start
-                .contains("cockroach-migrate-runner \\\n  run --config /config/runner.yml"),
-            "README Docker quick start must run `run --config` directly through the runner image entrypoint",
-        );
-    }
-
-    pub fn assert_readme_has_no_wrapper_handoff(docker_quick_start: &str) {
-        assert!(
-            docker_quick_start.contains("There is no wrapper shell script in the user path."),
-            "README Docker quick start must explicitly state that wrapper shell scripts are not part of the public container path",
-        );
-        for forbidden_marker in ["bash ", ".sh", "/bin/sh", "/bin/bash"] {
-            assert!(
-                !docker_quick_start.contains(forbidden_marker),
-                "README Docker quick start must not hand the operator path off to `{forbidden_marker}`",
-            );
-        }
-    }
-
     pub fn assert_cli_help_covers_documented_subcommands(help_output: &str) {
         for subcommand in Self::documented_subcommands() {
             assert!(

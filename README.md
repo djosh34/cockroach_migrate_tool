@@ -10,7 +10,9 @@ This repository contains the first Rust workspace for the CockroachDB-to-Postgre
 
 ## Source Bootstrap Quick Start
 
-The source-side bootstrap stays explicit. Render the CockroachDB setup SQL, review it, then apply it yourself with a Cockroach SQL client; the tool does not hide source-side commands behind the CLI.
+The supported novice-user path starts from pulling published images only. This flow does not require a repository checkout, a local Rust install, or any image build from source.
+
+The source-side bootstrap stays explicit. Pull the published `source-bootstrap` image, render the CockroachDB setup SQL, review it, then apply it yourself with a Cockroach SQL client; the tool does not hide source-side commands behind the CLI.
 
 Example source bootstrap config:
 
@@ -39,9 +41,15 @@ mappings:
 Render the bootstrap SQL:
 
 ```bash
-cargo run -p source-bootstrap -- \
+export GITHUB_OWNER=<github-owner>
+export IMAGE_TAG=<published-commit-sha>
+export SOURCE_BOOTSTRAP_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-source-bootstrap:${IMAGE_TAG}"
+docker pull "${SOURCE_BOOTSTRAP_IMAGE}"
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${SOURCE_BOOTSTRAP_IMAGE}" \
   render-bootstrap-sql \
-  --config config/source-bootstrap.yml > cockroach-bootstrap.sql
+  --config /config/source-bootstrap.yml > cockroach-bootstrap.sql
 ```
 
 Apply the rendered SQL yourself after review:
@@ -62,10 +70,19 @@ The rendered SQL:
 
 ## Docker Quick Start
 
-The destination runtime is one container that starts the `runner` binary directly. There is no wrapper shell script in the user path.
+The destination runtime is one published container that starts the `runner` binary directly. There is no wrapper shell script in the user path.
 You should not need to inspect `crates/`, `tests/`, or `investigations/` to complete this quick start.
 
-1. Create a config directory, generate TLS material for local testing, and write one runner config file.
+1. Choose the published image coordinates and pull the validated runner image.
+
+```bash
+export GITHUB_OWNER=<github-owner>
+export IMAGE_TAG=<published-commit-sha>
+export RUNNER_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-runner:${IMAGE_TAG}"
+docker pull "${RUNNER_IMAGE}"
+```
+
+2. Create a config directory, generate TLS material for local testing, and write one runner config file.
 
 ```bash
 mkdir -p config/certs
@@ -101,18 +118,12 @@ mappings:
         password: runner-secret-a
 ```
 
-2. Build the destination image directly from the repository root:
-
-```bash
-docker build -t cockroach-migrate-runner .
-```
-
 3. Validate the mounted config directly through the image entrypoint:
 
 ```bash
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
-  cockroach-migrate-runner \
+  "${RUNNER_IMAGE}" \
   validate-config --config /config/runner.yml
 ```
 
@@ -122,7 +133,7 @@ docker run --rm \
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   -v "$(pwd)/postgres-setup:/work/postgres-setup" \
-  cockroach-migrate-runner \
+  "${RUNNER_IMAGE}" \
   render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
 ```
 
@@ -132,7 +143,7 @@ docker run --rm \
 docker run --rm \
   -p 8443:8443 \
   -v "$(pwd)/config:/config:ro" \
-  cockroach-migrate-runner \
+  "${RUNNER_IMAGE}" \
   run --config /config/runner.yml
 ```
 
@@ -162,6 +173,6 @@ Random pull requests, forks, `pull_request_target`, manual dispatch, reusable wo
 
 The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.
 
-Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.
+Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.
 
-Before any push, the workflow builds one release-image archive, scans that exact archive with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifact for review.
+Before any push, the workflow builds each release-image archive, scans those exact archives with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifacts for review.

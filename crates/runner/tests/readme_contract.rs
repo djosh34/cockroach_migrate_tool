@@ -1,14 +1,16 @@
 #[path = "support/readme_contract.rs"]
 mod readme_contract_support;
-#[path = "support/runner_docker_contract.rs"]
-mod runner_docker_contract_support;
+#[path = "support/published_image_contract.rs"]
+mod published_image_contract_support;
+#[path = "support/readme_published_image_contract.rs"]
+mod readme_published_image_contract_support;
 #[path = "support/runner_public_contract.rs"]
 mod runner_public_contract_support;
 
 use assert_cmd::Command;
 use predicates::prelude::predicate;
 use readme_contract_support::RepositoryReadme;
-use runner_docker_contract_support::RunnerDockerContract;
+use readme_published_image_contract_support::ReadmePublishedImageContract;
 use runner_public_contract_support::RunnerPublicContract;
 use std::{fs, path::PathBuf};
 
@@ -35,6 +37,9 @@ fn source_bootstrap_quick_start_shows_the_sql_only_contract() {
     assert!(
         !source_bootstrap_quick_start.contains("bash cockroach-bootstrap.sh"),
         "README source bootstrap quick start must not tell operators to execute a rendered shell script"
+    );
+    ReadmePublishedImageContract::assert_source_bootstrap_quick_start_uses_published_image(
+        source_bootstrap_quick_start.text(),
     );
 }
 
@@ -65,7 +70,9 @@ fn docker_quick_start_documents_the_direct_runner_image_build_and_run_contract()
     let readme = RepositoryReadme::load();
     let docker_quick_start = readme.docker_quick_start();
 
-    RunnerDockerContract::assert_readme_documents_direct_build_and_run(docker_quick_start.text());
+    ReadmePublishedImageContract::assert_runner_quick_start_uses_published_image(
+        docker_quick_start.text(),
+    );
 }
 
 #[test]
@@ -73,7 +80,7 @@ fn docker_quick_start_forbids_wrapper_script_handoff_in_the_public_container_pat
     let readme = RepositoryReadme::load();
     let docker_quick_start = readme.docker_quick_start();
 
-    RunnerDockerContract::assert_readme_has_no_wrapper_handoff(docker_quick_start.text());
+    ReadmePublishedImageContract::assert_readme_has_no_wrapper_handoff(docker_quick_start.text());
 }
 
 #[test]
@@ -141,5 +148,20 @@ fn docker_quick_start_keeps_runner_destination_only() {
     RunnerPublicContract::assert_text_excludes_removed_surface(
         docker_quick_start.text(),
         "README Docker quick start must not expose removed runner surface",
+    );
+    ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
+        docker_quick_start.text(),
+        "README Docker quick start must keep the novice path on published images only",
+    );
+}
+
+#[test]
+fn source_bootstrap_quick_start_forbids_repo_checkout_and_local_tooling_steps() {
+    let readme = RepositoryReadme::load();
+    let source_bootstrap_quick_start = readme.source_bootstrap_quick_start();
+
+    ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
+        source_bootstrap_quick_start.text(),
+        "README source bootstrap quick start must keep the novice path on published images only",
     );
 }

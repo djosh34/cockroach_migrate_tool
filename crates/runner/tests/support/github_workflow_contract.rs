@@ -2,6 +2,8 @@ use std::{fs, path::PathBuf};
 
 use serde_yaml::{Mapping, Value};
 
+use crate::published_image_contract_support::PublishedImageContract;
+
 pub struct GithubWorkflowContract {
     workflow_text: String,
     readme_text: String,
@@ -177,24 +179,44 @@ impl GithubWorkflowContract {
             "publish checkout must not override the trusted pushed commit ref",
         );
 
-        let build_inputs = self.step_inputs(
-            self.step_using_prefix(publish_job, "docker/build-push-action"),
-            "docker/build-push-action",
-        );
-        assert_eq!(
-            build_inputs
-                .get(Value::String("context".to_owned()))
-                .map(value_as_str),
-            Some("."),
-            "publish job must build from the repository root of the trusted checked-out commit",
-        );
-        assert_eq!(
-            build_inputs
-                .get(Value::String("tags".to_owned()))
-                .map(value_as_str),
-            Some("${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}"),
-            "publish job must tag the real image only with the trusted pushed commit SHA",
-        );
+        for (step_name, dockerfile, repository_env) in [
+            (
+                "Build runner release image archive",
+                "./Dockerfile",
+                "RUNNER_IMAGE_REPOSITORY",
+            ),
+            (
+                "Build source-bootstrap release image archive",
+                "./crates/source-bootstrap/Dockerfile",
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+            ),
+        ] {
+            let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
+            let expected_tag = format!(
+                "${{{{ env.REGISTRY }}}}/${{{{ env.{repository_env} }}}}:${{{{ github.sha }}}}"
+            );
+            assert_eq!(
+                build_inputs
+                    .get(Value::String("context".to_owned()))
+                    .map(value_as_str),
+                Some("."),
+                "publish job must build `{step_name}` from the trusted repository root context",
+            );
+            assert_eq!(
+                build_inputs
+                    .get(Value::String("file".to_owned()))
+                    .map(value_as_str),
+                Some(dockerfile),
+                "publish job must pin `{step_name}` to its expected Dockerfile",
+            );
+            assert_eq!(
+                build_inputs
+                    .get(Value::String("tags".to_owned()))
+                    .map(value_as_str),
+                Some(expected_tag.as_str()),
+                "publish job must tag `{step_name}` only with the trusted pushed commit SHA",
+            );
+        }
     }
 
     pub fn assert_ci_publish_safety_model_is_documented(&self) {
@@ -205,8 +227,8 @@ impl GithubWorkflowContract {
         for required_line in [
             "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, and tag pushes do not trigger the protected image-publish workflow.",
             "The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.",
-            "Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.",
-            "Before any push, the workflow builds one release-image archive, scans that exact archive with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifact for review.",
+            "Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.",
+            "Before any push, the workflow builds each release-image archive, scans those exact archives with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifacts for review.",
         ] {
             assert!(
                 self.readme_text.contains(required_line),
@@ -237,173 +259,205 @@ impl GithubWorkflowContract {
             "publish job should read registry coordinates from the shared env boundary",
         );
 
-        let build_step = self.step_using_prefix(publish_job, "docker/build-push-action");
-        let build_inputs = self.step_inputs(build_step, "docker/build-push-action");
-        let tags = build_inputs
-            .get(Value::String("tags".to_owned()))
-            .map(value_as_str)
-            .expect("build-push step should define tags");
-        assert!(
-            tags.contains("${{ env.REGISTRY }}/"),
-            "published image must target GHCR through the shared registry boundary",
-        );
-        assert!(
-            tags.contains("${{ github.sha }}"),
-            "published image tag must be derived from the pushed commit SHA",
-        );
-        for forbidden_tag in ["latest", "type=semver", "refs/tags/", "github.ref_name"] {
+        for (step_name, repository_env) in [
+            ("Build runner release image archive", "RUNNER_IMAGE_REPOSITORY"),
+            (
+                "Build source-bootstrap release image archive",
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+            ),
+        ] {
+            let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
+            let tags = build_inputs
+                .get(Value::String("tags".to_owned()))
+                .map(value_as_str)
+                .expect("build-push step should define tags");
             assert!(
-                !tags.contains(forbidden_tag),
-                "published image tags must not include `{forbidden_tag}`",
+                tags.contains("${{ env.REGISTRY }}/"),
+                "published image must target GHCR through the shared registry boundary",
             );
+            assert!(
+                tags.contains("${{ github.sha }}"),
+                "published image tag must be derived from the pushed commit SHA",
+            );
+            assert!(
+                tags.contains(&format!("${{{{ env.{repository_env} }}}}")),
+                "published image tags must consume the shared `{repository_env}` boundary",
+            );
+            for forbidden_tag in ["latest", "type=semver", "refs/tags/", "github.ref_name"] {
+                assert!(
+                    !tags.contains(forbidden_tag),
+                    "published image tags must not include `{forbidden_tag}`",
+                );
+            }
         }
 
-        let push_script = self.run_script_containing(
-            publish_job,
-            "docker push \"${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}\"",
-        );
-        assert!(
-            push_script.contains("${{ github.sha }}"),
-            "publish command must push only the trusted commit SHA image tag",
-        );
+        for (step_name, repository_env) in [
+            ("Push scanned runner image", "RUNNER_IMAGE_REPOSITORY"),
+            (
+                "Push scanned source-bootstrap image",
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+            ),
+        ] {
+            let push_script = self.step_run_script(self.step_named(publish_job, step_name), step_name);
+            let expected_push = format!(
+                "docker push \"${{{{ env.REGISTRY }}}}/${{{{ env.{repository_env} }}}}:${{{{ github.sha }}}}\""
+            );
+            assert!(
+                push_script.contains(&expected_push),
+                "publish command `{step_name}` must push only the trusted commit SHA image tag",
+            );
+        }
     }
 
     pub fn assert_scans_the_release_archive_before_publishing(&self) {
         let publish_job = self.job("publish");
-        let archive_path = self
-            .workflow_env()
-            .get(Value::String("RELEASE_IMAGE_ARCHIVE".to_owned()))
-            .map(value_as_str)
-            .expect("workflow should define a shared RELEASE_IMAGE_ARCHIVE env");
-        let publish_steps = self.steps(publish_job);
+        for (build_step, archive_env, scan_step, load_step, push_step, archive_suffix) in [
+            (
+                "Build runner release image archive",
+                "RUNNER_RELEASE_IMAGE_ARCHIVE",
+                "Scan runner release image archive",
+                "Load scanned runner release image archive",
+                "Push scanned runner image",
+                "runner-release-image.tar",
+            ),
+            (
+                "Build source-bootstrap release image archive",
+                "SOURCE_BOOTSTRAP_RELEASE_IMAGE_ARCHIVE",
+                "Scan source-bootstrap release image archive",
+                "Load scanned source-bootstrap release image archive",
+                "Push scanned source-bootstrap image",
+                "source-bootstrap-release-image.tar",
+            ),
+        ] {
+            let archive_path = self
+                .workflow_env()
+                .get(Value::String(archive_env.to_owned()))
+                .map(value_as_str)
+                .unwrap_or_else(|| panic!("workflow should define a shared `{archive_env}` env"));
+            let build_inputs = self.step_inputs(self.step_named(publish_job, build_step), build_step);
+            let expected_output = format!("type=docker,dest=${{{{ env.{archive_env} }}}}");
+            assert_eq!(
+                build_inputs
+                    .get(Value::String("push".to_owned()))
+                    .map(value_as_bool),
+                Some(false),
+                "publish job must build `{build_step}` before the scan gate pushes it",
+            );
+            assert_eq!(
+                build_inputs
+                    .get(Value::String("outputs".to_owned()))
+                    .map(value_as_str),
+                Some(expected_output.as_str()),
+                "publish job must export `{build_step}` once as a docker archive tarball",
+            );
 
-        let build_step = self.step_using_prefix(publish_job, "docker/build-push-action");
-        let build_inputs = self.step_inputs(build_step, "docker/build-push-action");
-        assert_eq!(
-            build_inputs
-                .get(Value::String("push".to_owned()))
-                .map(value_as_bool),
-            Some(false),
-            "publish job must build the release image archive before the scan gate pushes it",
-        );
-        assert_eq!(
-            build_inputs
-                .get(Value::String("outputs".to_owned()))
-                .map(value_as_str),
-            Some("type=docker,dest=${{ env.RELEASE_IMAGE_ARCHIVE }}"),
-            "publish job must export the release image once as a docker archive tarball",
-        );
+            let build_index = self.step_index_named(publish_job, build_step);
+            let scan_index = self.step_index_named(publish_job, scan_step);
+            let load_index = self.step_index_named(publish_job, load_step);
+            let push_index = self.step_index_named(publish_job, push_step);
 
-        let build_index = self.step_index_using_prefix(publish_job, "docker/build-push-action");
-        let scan_index = self.step_index_with_run_containing(
-            publish_job,
-            "trivy image --input \"${{ env.RELEASE_IMAGE_ARCHIVE }}\"",
-        );
-        let load_index = self.step_index_with_run_containing(
-            publish_job,
-            "docker load --input \"${{ env.RELEASE_IMAGE_ARCHIVE }}\"",
-        );
-        let push_index = self.step_index_with_run_containing(
-            publish_job,
-            "docker push \"${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}\"",
-        );
+            assert!(
+                build_index < scan_index,
+                "publish job must build `{build_step}` before scanning it",
+            );
+            assert!(
+                scan_index < load_index,
+                "publish job must load `{build_step}` only after the scan passes",
+            );
+            assert!(
+                load_index < push_index,
+                "publish job must push `{build_step}` only after loading the scanned archive",
+            );
 
-        assert!(
-            build_index < scan_index,
-            "publish job must build the release archive before scanning it",
-        );
-        assert!(
-            scan_index < load_index,
-            "publish job must load the same scanned archive only after the scan passes",
-        );
-        assert!(
-            load_index < push_index,
-            "publish job must push only after loading the scanned archive",
-        );
-
-        let scan_step = publish_steps
-            .get(scan_index)
-            .and_then(Value::as_mapping)
-            .expect("scan step should resolve");
-        let scan_script = self.step_run_script(scan_step, "scan release archive");
-        assert!(
-            scan_script.contains("${{ env.RELEASE_IMAGE_ARCHIVE }}"),
-            "scan step must read the release archive through the shared env boundary",
-        );
-        assert!(
-            archive_path.ends_with("release-image.tar"),
-            "release archive boundary should describe the built docker archive tarball",
-        );
+            let scan_script = self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
+            assert!(
+                scan_script.contains(&format!("${{{{ env.{archive_env} }}}}")),
+                "scan step `{scan_step}` must read the release archive through the shared env boundary",
+            );
+            assert!(
+                archive_path.ends_with(archive_suffix),
+                "release archive boundary `{archive_env}` should describe the built docker archive tarball",
+            );
+        }
     }
 
     pub fn assert_release_scan_policy_is_explicit_and_visible(&self) {
         let publish_job = self.job("publish");
-        let report_path = self
-            .workflow_env()
-            .get(Value::String("VULNERABILITY_REPORT".to_owned()))
-            .map(value_as_str)
-            .expect("workflow should define a shared VULNERABILITY_REPORT env");
-
         self.step_using_prefix(publish_job, "aquasecurity/setup-trivy");
 
-        let scan_script = self.run_script_containing(
-            publish_job,
-            "trivy image --input \"${{ env.RELEASE_IMAGE_ARCHIVE }}\"",
-        );
-        for required_flag in [
-            "--severity HIGH,CRITICAL",
-            "--exit-code 1",
-            "--format table",
-            "--output \"${{ env.VULNERABILITY_REPORT }}\"",
+        for (report_env, scan_step, print_step, upload_step, report_suffix) in [
+            (
+                "RUNNER_VULNERABILITY_REPORT",
+                "Scan runner release image archive",
+                "Print runner vulnerability report",
+                "Upload runner vulnerability report",
+                "runner-vulnerability-report.txt",
+            ),
+            (
+                "SOURCE_BOOTSTRAP_VULNERABILITY_REPORT",
+                "Scan source-bootstrap release image archive",
+                "Print source-bootstrap vulnerability report",
+                "Upload source-bootstrap vulnerability report",
+                "source-bootstrap-vulnerability-report.txt",
+            ),
         ] {
+            let report_path = self
+                .workflow_env()
+                .get(Value::String(report_env.to_owned()))
+                .map(value_as_str)
+                .unwrap_or_else(|| panic!("workflow should define a shared `{report_env}` env"));
+            let scan_script = self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
+            let expected_output_flag = format!("--output \"${{{{ env.{report_env} }}}}\"");
+            for required_flag in [
+                "--severity HIGH,CRITICAL",
+                "--exit-code 1",
+                "--format table",
+                expected_output_flag.as_str(),
+            ] {
+                assert!(
+                    scan_script.contains(required_flag),
+                    "scan step `{scan_step}` must define `{required_flag}` so the Trivy gate is explicit and actionable",
+                );
+            }
+
+            let print_step = self.step_named(publish_job, print_step);
+            assert_eq!(
+                print_step
+                    .get(Value::String("if".to_owned()))
+                    .map(value_as_str),
+                Some("always()"),
+                "report printing must still run when the vulnerability gate fails",
+            );
+
+            let upload_step = self.step_named(publish_job, upload_step);
+            let expected_report_path = format!("${{{{ env.{report_env} }}}}");
+            assert_eq!(
+                upload_step
+                    .get(Value::String("if".to_owned()))
+                    .map(value_as_str),
+                Some("always()"),
+                "report upload must still run when the vulnerability gate fails",
+            );
+            let upload_inputs = self.step_inputs(upload_step, "actions/upload-artifact");
+            assert_eq!(
+                upload_inputs
+                    .get(Value::String("path".to_owned()))
+                    .map(value_as_str),
+                Some(expected_report_path.as_str()),
+                "report upload must preserve the shared report path boundary",
+            );
+            assert_eq!(
+                upload_inputs
+                    .get(Value::String("if-no-files-found".to_owned()))
+                    .map(value_as_str),
+                Some("error"),
+                "report upload must fail loudly if the expected scan artifact is missing",
+            );
             assert!(
-                scan_script.contains(required_flag),
-                "scan step must define `{required_flag}` so the Trivy gate is explicit and actionable",
+                report_path.ends_with(report_suffix),
+                "report boundary `{report_env}` should describe the persisted vulnerability report artifact",
             );
         }
-
-        let print_index = self
-            .step_index_with_run_containing(publish_job, "cat \"${{ env.VULNERABILITY_REPORT }}\"");
-        let print_step = self
-            .steps(publish_job)
-            .get(print_index)
-            .and_then(Value::as_mapping)
-            .expect("print report step should resolve");
-        assert_eq!(
-            print_step
-                .get(Value::String("if".to_owned()))
-                .map(value_as_str),
-            Some("always()"),
-            "report printing must still run when the vulnerability gate fails",
-        );
-
-        let upload_step = self.step_using_prefix(publish_job, "actions/upload-artifact");
-        assert_eq!(
-            upload_step
-                .get(Value::String("if".to_owned()))
-                .map(value_as_str),
-            Some("always()"),
-            "report upload must still run when the vulnerability gate fails",
-        );
-        let upload_inputs = self.step_inputs(upload_step, "actions/upload-artifact");
-        assert_eq!(
-            upload_inputs
-                .get(Value::String("path".to_owned()))
-                .map(value_as_str),
-            Some("${{ env.VULNERABILITY_REPORT }}"),
-            "report upload must preserve the shared report path boundary",
-        );
-        assert_eq!(
-            upload_inputs
-                .get(Value::String("if-no-files-found".to_owned()))
-                .map(value_as_str),
-            Some("error"),
-            "report upload must fail loudly if the expected scan artifact is missing",
-        );
-        assert!(
-            report_path.ends_with("vulnerability-report.txt"),
-            "report boundary should describe the persisted vulnerability report artifact",
-        );
     }
 
     pub fn assert_registry_coordinates_are_isolated(&self) {
@@ -412,12 +466,36 @@ impl GithubWorkflowContract {
             env.get(Value::String("REGISTRY".to_owned()))
                 .map(value_as_str)
                 .expect("workflow should define a shared REGISTRY env"),
-            "ghcr.io",
+            PublishedImageContract::registry_host(),
             "workflow should define GHCR once through a shared REGISTRY env boundary",
         );
         assert!(
-            env.contains_key(Value::String("IMAGE_REPOSITORY".to_owned())),
-            "workflow should define a shared IMAGE_REPOSITORY env boundary",
+            env.contains_key(Value::String("RUNNER_IMAGE_REPOSITORY".to_owned())),
+            "workflow should define a shared RUNNER_IMAGE_REPOSITORY env boundary",
+        );
+        assert!(
+            env.contains_key(Value::String("SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned())),
+            "workflow should define a shared SOURCE_BOOTSTRAP_IMAGE_REPOSITORY env boundary",
+        );
+        let expected_runner_repository = format!(
+            "${{{{ github.repository_owner }}}}/{}",
+            PublishedImageContract::runner_image_repository()
+        );
+        assert_eq!(
+            env.get(Value::String("RUNNER_IMAGE_REPOSITORY".to_owned()))
+                .map(value_as_str),
+            Some(expected_runner_repository.as_str()),
+            "workflow should define the runner image repository once through a shared env boundary",
+        );
+        let expected_source_bootstrap_repository = format!(
+            "${{{{ github.repository_owner }}}}/{}",
+            PublishedImageContract::source_bootstrap_image_repository()
+        );
+        assert_eq!(
+            env.get(Value::String("SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()))
+                .map(value_as_str),
+            Some(expected_source_bootstrap_repository.as_str()),
+            "workflow should define the source-bootstrap image repository once through a shared env boundary",
         );
         assert_eq!(
             self.workflow_text.matches("ghcr.io").count(),
@@ -425,17 +503,23 @@ impl GithubWorkflowContract {
             "workflow should not scatter raw GHCR coordinates across multiple steps",
         );
 
-        let publish_job = self.job("publish");
-        let build_step = self.step_using_prefix(publish_job, "docker/build-push-action");
-        let tags = self
-            .step_inputs(build_step, "docker/build-push-action")
-            .get(Value::String("tags".to_owned()))
-            .map(value_as_str)
-            .expect("build-push step should define tags");
-        assert!(
-            tags.contains("${{ env.IMAGE_REPOSITORY }}"),
-            "build-push step should consume the shared IMAGE_REPOSITORY boundary",
-        );
+        for (step_name, repository_env) in [
+            ("Build runner release image archive", "RUNNER_IMAGE_REPOSITORY"),
+            (
+                "Build source-bootstrap release image archive",
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+            ),
+        ] {
+            let tags = self
+                .step_inputs(self.step_named(self.job("publish"), step_name), step_name)
+                .get(Value::String("tags".to_owned()))
+                .map(value_as_str)
+                .expect("build-push step should define tags");
+            assert!(
+                tags.contains(&format!("${{{{ env.{repository_env} }}}}")),
+                "build-push step `{step_name}` should consume the shared `{repository_env}` boundary",
+            );
+        }
     }
 
     fn workflow_on(&self) -> &Mapping {
@@ -530,44 +614,16 @@ impl GithubWorkflowContract {
             .collect()
     }
 
-    fn step_index_using_prefix(&self, job: &Mapping, uses_prefix: &str) -> usize {
+    fn step_index_named(&self, job: &Mapping, step_name: &str) -> usize {
         self.steps(job)
             .iter()
             .position(|step| {
                 step.as_mapping()
-                    .and_then(|mapping| mapping.get(Value::String("uses".to_owned())))
+                    .and_then(|mapping| mapping.get(Value::String("name".to_owned())))
                     .and_then(Value::as_str)
-                    .is_some_and(|uses| uses.starts_with(uses_prefix))
+                    .is_some_and(|name| name == step_name)
             })
-            .unwrap_or_else(|| panic!("workflow job should use `{uses_prefix}`"))
-    }
-
-    fn step_index_with_run_containing(&self, job: &Mapping, snippet: &str) -> usize {
-        self.steps(job)
-            .iter()
-            .position(|step| {
-                step.as_mapping()
-                    .and_then(|mapping| mapping.get(Value::String("run".to_owned())))
-                    .and_then(Value::as_str)
-                    .is_some_and(|run| run.contains(snippet))
-            })
-            .unwrap_or_else(|| {
-                panic!("workflow job should define a run step containing `{snippet}`")
-            })
-    }
-
-    fn run_script_containing<'a>(&self, job: &'a Mapping, snippet: &str) -> &'a str {
-        self.steps(job)
-            .iter()
-            .filter_map(Value::as_mapping)
-            .find_map(|step| {
-                step.get(Value::String("run".to_owned()))
-                    .and_then(Value::as_str)
-                    .filter(|run| run.contains(snippet))
-            })
-            .unwrap_or_else(|| {
-                panic!("workflow job should define a run step containing `{snippet}`")
-            })
+            .unwrap_or_else(|| panic!("workflow job should define a `{step_name}` step"))
     }
 
     fn step_using_prefix<'a>(&self, job: &'a Mapping, uses_prefix: &str) -> &'a Mapping {
@@ -580,6 +636,18 @@ impl GithubWorkflowContract {
                     .is_some_and(|uses| uses.starts_with(uses_prefix))
             })
             .unwrap_or_else(|| panic!("workflow job should use `{uses_prefix}`"))
+    }
+
+    fn step_named<'a>(&self, job: &'a Mapping, step_name: &str) -> &'a Mapping {
+        self.steps(job)
+            .iter()
+            .filter_map(Value::as_mapping)
+            .find(|step| {
+                step.get(Value::String("name".to_owned()))
+                    .and_then(Value::as_str)
+                    .is_some_and(|name| name == step_name)
+            })
+            .unwrap_or_else(|| panic!("workflow job should define a `{step_name}` step"))
     }
 
     fn step_inputs<'a>(&self, step: &'a Mapping, uses_prefix: &str) -> &'a Mapping {

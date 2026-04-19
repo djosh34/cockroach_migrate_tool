@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 05:33:18 PM CEST 2026
+Generated: Sun Apr 19 05:56:48 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -468,6 +468,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove bash-based bootstrap flows and replace the old script contract with generated SQL output only <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/04-task-remove-novice-user-dependence-on-repo-clone-and-local-tooling.md`
+
+```
+## Task: Remove any novice-user path that requires a repo checkout, local installs, or build-from-source steps <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
