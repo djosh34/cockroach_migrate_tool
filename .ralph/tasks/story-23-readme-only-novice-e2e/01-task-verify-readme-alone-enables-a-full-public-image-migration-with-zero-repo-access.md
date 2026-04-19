@@ -34,6 +34,9 @@ Decisions already made:
 - the migration path must explicitly go Cockroach SQL first, then PostgreSQL SQL, then runner, then verify API
 - secure setup for this path uses mTLS on both CockroachDB and PostgreSQL
 - a wrong config must fail clearly enough for a novice operator to understand what to fix
+- any issue found during this verification must immediately create a bug via the `add-bug` skill
+- when a bug is found, the verification flow must ask for a task switch so the system can switch to the bug task
+- this task must not be marked passed unless the verification finishes with zero new bug tasks created
 
 </description>
 
@@ -45,6 +48,8 @@ Decisions already made:
 - [ ] The task proves the user can derive the required secure mTLS config values from the README alone and run the runner successfully from pulled public images
 - [ ] The task proves wrong config produces clear operator-facing failures, including clean distinction between authentication and connectivity problems
 - [ ] The task proves the user can deploy and use the verify HTTP API from the README alone
+- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
 - [ ] `make lint` — passes cleanly

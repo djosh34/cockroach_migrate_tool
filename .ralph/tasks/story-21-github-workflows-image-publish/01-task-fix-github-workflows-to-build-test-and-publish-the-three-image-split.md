@@ -16,12 +16,16 @@ In scope:
 - explicit restriction against casually importing external community actions just because they are convenient
 - building and publishing both `arm64` and `amd64` image variants
 - using authenticated GitHub workflow/API log inspection to read real image-building logs and results until the workflows work for real
-- trigger policy that runs the publish workflow only on pushes to `master`
+- trigger policy that runs the publish workflow only on pushes to `main`
 - publishing images tagged by the exact full pushed commit SHA rather than a floating `latest` tag
-- concurrency control that cancels the previous in-progress run when a newer push lands on `master`
+- concurrency control that cancels the previous in-progress run when a newer push lands on `main`
 - explicit non-support for publishing from pull requests, forked contributions, or other external-person PR paths
 - manual release tagging flow only, with release creation intentionally restricted to repository owners
 - ordering that ensures images are never pushed before their required tests pass
+- secrets handling rules that ensure registry credentials are available only to the intended trusted `main`-push publish path
+- explicit masking/redaction steps for any sensitive value that is not automatically handled as a GitHub secret
+- verification that logs do not leak registry credentials and that GitHub masking/redaction is working correctly
+- explicit protection against issue-triggered, PR-triggered, branch-triggered, or other unintended workflow paths receiving publish secrets
 
 Out of scope:
 - implementing the image internals themselves
@@ -36,11 +40,13 @@ Decisions already made:
 - the trust bar for external actions is extremely high; prefer direct shell installation over importing extra actions
 - both arm and x86 images are required
 - use the authenticated GitHub API curl wrapper/skill to inspect workflow runs and build logs until the build is actually fixed
-- publish happens on commits to `master`, not on PRs
+- publish happens on commits to `main`, not on PRs
 - image tags for this automated flow should use the full commit SHA and should not publish `latest`
-- previous in-progress publish runs should be cancelled when a newer `master` push arrives
+- previous in-progress publish runs should be cancelled when a newer `main` push arrives
 - releases are always manual and only repository owners should be able to cut them
 - pushing before tests pass is explicitly disallowed
+- publish secrets must not be usable from PRs, issues, other branches, forks, or other unintended event types
+- secret redaction behavior must be treated as a first-class security requirement rather than assumed to work magically
 
 </description>
 
@@ -51,11 +57,12 @@ Decisions already made:
 - [ ] The workflows build and publish both `arm64` and `amd64` images
 - [ ] Workflow definitions manually install required dependencies where practical and avoid importing untrusted third-party actions
 - [ ] The task is not complete until authenticated GitHub workflow log inspection has been used to confirm the real image-building runs succeed
-- [ ] Automated image publish runs trigger only on pushes to `master`, not on pull requests or external contribution paths
+- [ ] Automated image publish runs trigger only on pushes to `main`, not on pull requests, issues, other branches, or external contribution paths
 - [ ] Published image tags use the exact full commit SHA and do not rely on a floating `latest` tag for this workflow
-- [ ] Workflow concurrency cancels the previous in-progress `master` publish run when a newer push arrives
+- [ ] Workflow concurrency cancels the previous in-progress `main` publish run when a newer push arrives
 - [ ] No image is pushed before its required tests pass successfully
 - [ ] Release tagging remains a manual owner-controlled path and is not automatically performed by the publish workflow
+- [ ] Workflow design proves publish secrets are unavailable to untrusted events and verifies masking/redaction works correctly in logs
 - [ ] Downstream checks fail if the registry-only user path is not backed by published images from CI
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)

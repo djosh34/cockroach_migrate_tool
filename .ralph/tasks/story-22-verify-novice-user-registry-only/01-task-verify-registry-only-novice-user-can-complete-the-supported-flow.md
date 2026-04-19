@@ -25,6 +25,9 @@ Decisions already made:
 - this story depends on the image-build and GitHub workflow publication stories being completed first
 - Docker Compose is an allowed operator interface, including modern config-style features
 - the README contains the novice-user examples and must be sufficient without a repo checkout
+- any issue found during this verification must immediately create a bug via the `add-bug` skill
+- when a bug is found, the verification flow must ask for a task switch so the system can switch to the bug task
+- this task must not be marked passed unless the verification finishes with zero new bug tasks created
 
 </description>
 
@@ -35,6 +38,8 @@ Decisions already made:
 - [ ] The task fails if any supported novice-user step depends on a local image build instead of a published image
 - [ ] The task verifies the novice user can use the separate published Compose contracts where applicable without a repo checkout
 - [ ] The task verifies the novice user can follow the README examples directly without downloading the repository contents
+- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
 - [ ] `make lint` — passes cleanly

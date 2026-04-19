@@ -21,6 +21,9 @@ Decisions already made:
 - `cli-name [one action level] [--args]` is the target shape whenever practical
 - this is not an absolute rule, but the burden is on deeper command trees to justify themselves
 - `--help` must always work when appended to any command the user may invoke
+- any issue found during this verification must immediately create a bug via the `add-bug` skill
+- when a bug is found, the verification flow must ask for a task switch so the system can switch to the bug task
+- this task must not be marked passed unless the verification finishes with zero new bug tasks created
 
 </description>
 
@@ -30,6 +33,8 @@ Decisions already made:
 - [ ] The task fails if the supported CLI surface grows unnecessary nested action levels for novice-user flows
 - [ ] The task proves `--help` works on every supported command or subcommand used by the README path
 - [ ] The task proves the help output is consistent with the README examples and sufficient for a novice operator
+- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
 - [ ] `make lint` — passes cleanly

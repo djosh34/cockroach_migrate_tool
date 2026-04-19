@@ -25,6 +25,9 @@ Decisions already made:
 - explanations should be list-based and practical
 - the guide should start simple and grow only when extra arguments are genuinely needed
 - contributor/process guidance must be verified as absent from the README, not treated as somebody else's concern
+- any issue found during this verification must immediately create a bug via the `add-bug` skill
+- when a bug is found, the verification flow must ask for a task switch so the system can switch to the bug task
+- this task must not be marked passed unless the verification finishes with zero new bug tasks created
 
 </description>
 
@@ -35,6 +38,8 @@ Decisions already made:
 - [ ] The task proves contributor-only material is absent from the README rather than indirectly tolerated
 - [ ] The task proves the README begins with a simple working example and introduces extra arguments only when needed
 - [ ] The task proves the README includes the exact inline config and Compose text needed for the supported image flows
+- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
 - [ ] `make lint` — passes cleanly

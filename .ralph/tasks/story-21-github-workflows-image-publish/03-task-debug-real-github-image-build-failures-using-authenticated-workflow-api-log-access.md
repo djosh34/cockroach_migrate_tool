@@ -11,6 +11,8 @@ In scope:
 - use the local authenticated GitHub API curl wrapper/skill instead of exposing tokens or relying on unauthenticated guesses
 - iterate on workflow/task fixes until the hosted image-build runs succeed for the three-image split
 - capture the real causes of failure found in hosted CI, including architecture-specific failures
+- inspect real hosted logs for secret-masking/redaction behavior as part of workflow verification
+- verify that trusted-secret usage is gated to the intended `main` push path only
 
 Out of scope:
 - broad repository triage unrelated to image build and publish workflows
@@ -21,6 +23,8 @@ Decisions already made:
 - the fix must be validated against real GitHub workflow logs/results
 - the authenticated GitHub API curl wrapper/skill is the intended path for inspecting workflow runs safely
 - both `arm64` and `amd64` image paths matter during this debugging work
+- real log inspection should include checking that redaction is functioning correctly
+- secret-gating failures are workflow bugs and must be treated as real failures
 
 </description>
 
@@ -28,7 +32,7 @@ Decisions already made:
 <acceptance_criteria>
 - [ ] Red/green TDD covers the local logic around workflow/result expectations where practical
 - [ ] Real hosted GitHub workflow runs and logs have been inspected through authenticated API access until the image builds succeed
-- [ ] The task records or reflects the actual CI failure modes fixed, including any arch-specific publish failures
+- [ ] The task records or reflects the actual CI failure modes fixed, including any arch-specific publish failures and any secret-gating or redaction failures found
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
 - [ ] `make lint` — passes cleanly
