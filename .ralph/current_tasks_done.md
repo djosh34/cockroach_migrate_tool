@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 07:15:48 AM CEST 2026
+Generated: Sun Apr 19 07:39:01 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -347,6 +347,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Assert there are no post-setup source commands in end-to-end tests <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/01-task-verify-readme-alone-is-sufficient-for-novice-user.md`
+
+```
+## Task: Verify the README alone is sufficient for a novice user <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

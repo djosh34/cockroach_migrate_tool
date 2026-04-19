@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 07:15:48 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/01-task-verify-readme-alone-is-sufficient-for-novice-user.md`
-
-```
-## Task: Verify the README alone is sufficient for a novice user <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sun Apr 19 07:39:01 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/02-task-verify-direct-docker-build-and-run-without-wrapper-scripts.md`
 

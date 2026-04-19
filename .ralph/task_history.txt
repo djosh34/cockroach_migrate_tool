@@ -75,3 +75,4 @@
 .ralph/tasks/story-12-verify-e2e-integrity/01-task-assert-e2e-suite-has-no-cheating.md
 .ralph/tasks/story-12-verify-e2e-integrity/02-task-assert-single-container-tls-and-scoped-role-integrity.md
 .ralph/tasks/story-12-verify-e2e-integrity/03-task-assert-no-post-setup-source-commands-in-e2e.md
+.ralph/tasks/story-13-verify-novice-user/01-task-verify-readme-alone-is-sufficient-for-novice-user.md

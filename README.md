@@ -43,6 +43,12 @@ cargo run -p source-bootstrap -- \
   --config config/source-bootstrap.yml > cockroach-bootstrap.sh
 ```
 
+Run the rendered script yourself after review:
+
+```bash
+bash cockroach-bootstrap.sh
+```
+
 The rendered script:
 
 - enables `kv.rangefeed.enabled`
@@ -54,6 +60,7 @@ The rendered script:
 ## Docker Quick Start
 
 The destination runtime is one container that starts the `runner` binary directly. There is no wrapper shell script in the user path.
+You should not need to inspect `crates/`, `tests/`, or `investigations/` to complete this quick start.
 
 1. Create a config directory with one runner config file and the TLS material it references.
 
@@ -113,7 +120,22 @@ docker run --rm \
   validate-config --config /config/runner.yml
 ```
 
-4. Validate the exported CockroachDB and PostgreSQL schemas semantically before starting the runtime. The compare command uses the selected mapping’s table list as the filter, ignores unrelated tables, and rejects structural mismatches without relying on a raw text diff.
+4. Export the source and destination schema artifacts into a local `schema/` directory before running any schema-aware runner command. For each mapping, use that mapping's CockroachDB source database and PostgreSQL destination database.
+
+```bash
+mkdir -p schema
+cockroach sql \
+  --url "postgresql://root@crdb.example.internal:26257/demo_a?sslmode=require" \
+  --execute "SHOW CREATE ALL TABLES;" > schema/crdb_schema.txt
+pg_dump \
+  --schema-only \
+  --no-owner \
+  --no-privileges \
+  --dbname "postgresql://postgres@pg-a.example.internal:5432/app_a?sslmode=require" \
+  > schema/pg_schema.sql
+```
+
+5. Validate the exported CockroachDB and PostgreSQL schemas semantically before starting the runtime. The compare command uses the selected mapping’s table list as the filter, ignores unrelated tables, and rejects structural mismatches without relying on a raw text diff.
 
 ```bash
 docker run --rm \
@@ -127,7 +149,7 @@ docker run --rm \
   --postgres-schema /schema/pg_schema.sql
 ```
 
-5. Render the PostgreSQL grant artifacts and review the generated `README.md` plus per-mapping `grants.sql` files. These grants stay manual and explicit; no superuser role is assumed.
+6. Render the PostgreSQL grant artifacts, review the generated `README.md`, and run each `grants.sql` before starting the runtime. These grants stay manual and explicit; no superuser role is assumed.
 
 ```bash
 docker run --rm \
@@ -137,7 +159,7 @@ docker run --rm \
   render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
 ```
 
-6. Render the helper shadow-table plan and reconcile order for one validated mapping when you want explicit review artifacts before runtime bootstrap. The render command reuses semantic schema validation and writes `helper_tables.sql`, `reconcile_order.txt`, and a per-mapping `README.md`.
+7. Render the helper shadow-table plan and reconcile order for one validated mapping when you want explicit review artifacts before runtime bootstrap. The render command reuses semantic schema validation and writes `helper_tables.sql`, `reconcile_order.txt`, and a per-mapping `README.md`.
 
 ```bash
 docker run --rm \
@@ -153,7 +175,7 @@ docker run --rm \
   --output-dir /work/helper-plan
 ```
 
-7. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables from the same helper-plan rules as `render-helper-plan`, adds the automatic minimal PK helper indexes when they are needed, and then keeps serving HTTPS from the same process.
+8. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, prepares helper shadow tables from the same helper-plan rules as `render-helper-plan`, adds the automatic minimal PK helper indexes when they are needed, and then keeps serving HTTPS from the same process.
 
 ```bash
 docker run --rm \
