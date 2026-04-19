@@ -268,7 +268,10 @@ VALUES (2, 'live-write', 'should stay excluded');
         );
         self.inner.wait_for_helper_table_row_counts(&[
             ("public.customers", expected_customers.split(',').count()),
-            ("public.order_items", expected_order_items.split(',').count()),
+            (
+                "public.order_items",
+                expected_order_items.split(',').count(),
+            ),
         ]);
     }
 }

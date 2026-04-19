@@ -352,9 +352,6 @@ impl CdcE2eHarness {
         write_molt_wrapper_script(
             &self.wrapper_bin_dir.join("molt"),
             &self.docker.cockroach_container,
-            &self.config.destination_user,
-            &self.config.destination_password,
-            &self.config.destination_database,
         );
         self.write_runner_config();
         self.write_source_bootstrap_config();
@@ -537,15 +534,15 @@ impl Drop for CdcE2eHarness {
     }
 }
 
-struct DockerEnvironment {
+pub(crate) struct DockerEnvironment {
     network_name: String,
-    cockroach_container: String,
+    pub(crate) cockroach_container: String,
     postgres_container: String,
-    postgres_host_port: u16,
+    pub(crate) postgres_host_port: u16,
 }
 
 impl DockerEnvironment {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let suffix = unique_suffix();
         Self {
             network_name: format!("cockroach-migrate-runner-net-{suffix}"),
@@ -555,14 +552,14 @@ impl DockerEnvironment {
         }
     }
 
-    fn create_network(&self) {
+    pub(crate) fn create_network(&self) {
         run_command_capture(
             Command::new("docker").args(["network", "create", &self.network_name]),
             "docker network create",
         );
     }
 
-    fn start_cockroach(&self) {
+    pub(crate) fn start_cockroach(&self) {
         run_command_capture(
             Command::new("docker").args([
                 "run",
@@ -585,7 +582,7 @@ impl DockerEnvironment {
         );
     }
 
-    fn start_postgres(&self) {
+    pub(crate) fn start_postgres(&self) {
         run_command_capture(
             Command::new("docker").args([
                 "run",
@@ -611,7 +608,7 @@ impl DockerEnvironment {
         );
     }
 
-    fn wait_for_cockroach(&self) {
+    pub(crate) fn wait_for_cockroach(&self) {
         for _ in 0..60 {
             let status = Command::new("docker")
                 .args([
@@ -644,7 +641,7 @@ impl DockerEnvironment {
         );
     }
 
-    fn wait_for_postgres(&self) {
+    pub(crate) fn wait_for_postgres(&self) {
         for _ in 0..60 {
             let status = Command::new("docker")
                 .args([
@@ -671,11 +668,11 @@ impl DockerEnvironment {
         panic!("postgres container did not become ready");
     }
 
-    fn prepare_source_schema_and_seed(&self, sql: &str) {
+    pub(crate) fn prepare_source_schema_and_seed(&self, sql: &str) {
         self.exec_cockroach_sql(sql);
     }
 
-    fn prepare_destination_database(
+    pub(crate) fn prepare_destination_database(
         &self,
         destination_database: &str,
         destination_user: &str,
@@ -702,7 +699,7 @@ impl DockerEnvironment {
         );
     }
 
-    fn exec_cockroach_sql(&self, sql: &str) -> String {
+    pub(crate) fn exec_cockroach_sql(&self, sql: &str) -> String {
         run_command_capture(
             Command::new("docker").args([
                 "exec",
@@ -719,7 +716,7 @@ impl DockerEnvironment {
         )
     }
 
-    fn exec_psql(&self, database: &str, sql: &str) -> String {
+    pub(crate) fn exec_psql(&self, database: &str, sql: &str) -> String {
         run_command_capture(
             Command::new("docker").args([
                 "exec",
@@ -766,7 +763,7 @@ fn repo_root() -> PathBuf {
         .expect("repo root should resolve")
 }
 
-fn investigation_ca_cert_path() -> PathBuf {
+pub(crate) fn investigation_ca_cert_path() -> PathBuf {
     repo_root()
         .join("investigations")
         .join("cockroach-webhook-cdc")
@@ -774,7 +771,7 @@ fn investigation_ca_cert_path() -> PathBuf {
         .join("ca.crt")
 }
 
-fn investigation_server_cert_path() -> PathBuf {
+pub(crate) fn investigation_server_cert_path() -> PathBuf {
     repo_root()
         .join("investigations")
         .join("cockroach-webhook-cdc")
@@ -782,7 +779,7 @@ fn investigation_server_cert_path() -> PathBuf {
         .join("server.crt")
 }
 
-fn investigation_server_key_path() -> PathBuf {
+pub(crate) fn investigation_server_key_path() -> PathBuf {
     repo_root()
         .join("investigations")
         .join("cockroach-webhook-cdc")
@@ -790,14 +787,14 @@ fn investigation_server_key_path() -> PathBuf {
         .join("server.key")
 }
 
-fn source_bootstrap_binary_path() -> PathBuf {
+pub(crate) fn source_bootstrap_binary_path() -> PathBuf {
     repo_root()
         .join("target")
         .join("debug")
         .join("source-bootstrap")
 }
 
-fn ensure_source_bootstrap_binary() {
+pub(crate) fn ensure_source_bootstrap_binary() {
     run_command_capture(
         Command::new("cargo").args(["build", "-p", "source-bootstrap"]),
         "cargo build source-bootstrap",
@@ -812,7 +809,7 @@ fn unique_suffix() -> String {
         .to_string()
 }
 
-fn pick_unused_port() -> u16 {
+pub(crate) fn pick_unused_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .expect("ephemeral port should bind")
         .local_addr()
@@ -820,7 +817,7 @@ fn pick_unused_port() -> u16 {
         .port()
 }
 
-fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, container_name: &str) {
+pub(crate) fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, container_name: &str) {
     fs::write(
         path,
         format!(
@@ -833,20 +830,11 @@ fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, container_name: 
     make_executable(path);
 }
 
-fn write_molt_wrapper_script(
-    path: &Path,
-    cockroach_container: &str,
-    destination_user: &str,
-    destination_password: &str,
-    destination_database: &str,
-) {
+pub(crate) fn write_molt_wrapper_script(path: &Path, cockroach_container: &str) {
     fs::write(
         path,
         format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nargs=()\nrewrite_target=0\nfor arg in \"$@\"; do\n  if [[ \"$rewrite_target\" == 1 ]]; then\n    args+=(\"postgresql://{destination_user}:{destination_password}@postgres:5432/{destination_database}\")\n    rewrite_target=0\n    continue\n  fi\n  args+=(\"$arg\")\n  if [[ \"$arg\" == \"--target\" ]]; then\n    rewrite_target=1\n  fi\ndone\nexec docker run --rm --network container:{cockroach_container} {image} \"${{args[@]}}\"\n",
-            destination_user = destination_user,
-            destination_password = destination_password,
-            destination_database = destination_database,
+            "#!/usr/bin/env bash\nset -euo pipefail\nargs=()\nrewrite_target=0\nfor arg in \"$@\"; do\n  if [[ \"$rewrite_target\" == 1 ]]; then\n    if [[ \"$arg\" != postgresql://*@*/* ]]; then\n      printf 'unexpected --target url for molt wrapper: %s\\n' \"$arg\" >&2\n      exit 1\n    fi\n    target_prefix=\"${{arg%@*}}\"\n    target_database=\"${{arg##*/}}\"\n    args+=(\"${{target_prefix}}@postgres:5432/${{target_database}}\")\n    rewrite_target=0\n    continue\n  fi\n  args+=(\"$arg\")\n  if [[ \"$arg\" == \"--target\" ]]; then\n    rewrite_target=1\n  fi\ndone\nif [[ \"$rewrite_target\" == 1 ]]; then\n  printf 'molt wrapper expected a value after --target\\n' >&2\n  exit 1\nfi\nexec docker run --rm --network container:{cockroach_container} {image} \"${{args[@]}}\"\n",
             cockroach_container = shell_quote_text(cockroach_container),
             image = shell_quote_text(MOLT_IMAGE),
         ),
@@ -868,7 +856,7 @@ fn make_executable(path: &Path) {
     }
 }
 
-fn https_client(certificate_path: &Path) -> Client {
+pub(crate) fn https_client(certificate_path: &Path) -> Client {
     let certificate =
         Certificate::from_pem(&fs::read(certificate_path).expect("certificate should be readable"))
             .expect("certificate should parse");
@@ -879,7 +867,7 @@ fn https_client(certificate_path: &Path) -> Client {
         .expect("https client should build")
 }
 
-fn wait_for_runner_health<F>(client: &Client, port: u16, logs: F)
+pub(crate) fn wait_for_runner_health<F>(client: &Client, port: u16, logs: F)
 where
     F: Fn() -> String,
 {
@@ -899,7 +887,7 @@ where
     );
 }
 
-fn prepend_path(bin_dir: &Path) -> OsString {
+pub(crate) fn prepend_path(bin_dir: &Path) -> OsString {
     let mut path = OsString::new();
     path.push(bin_dir.as_os_str());
     path.push(":");
@@ -907,7 +895,7 @@ fn prepend_path(bin_dir: &Path) -> OsString {
     path
 }
 
-fn run_command_capture(command: &mut Command, context: &str) -> String {
+pub(crate) fn run_command_capture(command: &mut Command, context: &str) -> String {
     let output = run_command_output(command, context);
     String::from_utf8(output.stdout).expect("command stdout should be utf-8")
 }
@@ -951,7 +939,7 @@ fn container_running(container: &str) -> bool {
     output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
 }
 
-fn read_file(path: &Path) -> String {
+pub(crate) fn read_file(path: &Path) -> String {
     match fs::read_to_string(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),

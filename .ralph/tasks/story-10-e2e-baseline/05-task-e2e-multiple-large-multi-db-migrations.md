@@ -1,4 +1,4 @@
-## Task: End-to-end test multiple large multi-database migrations under one container <status>not_started</status> <passes>false</passes>
+## Task: End-to-end test multiple large multi-database migrations under one container <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -21,12 +21,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers multiple large multi-db migrations controlled by one destination container
-- [ ] The test proves one container can own all configured mappings without cross-talk
-- [ ] Real target tables verify correctly after migration
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers multiple large multi-db migrations controlled by one destination container
+- [x] The test proves one container can own all configured mappings without cross-talk
+- [x] Real target tables verify correctly after migration
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-10-e2e-baseline/05-task-e2e-multiple-large-multi-db-migrations_plans/2026-04-19-multi-mapping-e2e-plan.md</plan>

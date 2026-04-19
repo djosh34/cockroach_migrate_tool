@@ -128,8 +128,9 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn delete_source_customer(&self, customer_id: i64) {
-        self.inner
-            .execute_source_sql(&format!("DELETE FROM public.customers WHERE id = {customer_id};"));
+        self.inner.execute_source_sql(&format!(
+            "DELETE FROM public.customers WHERE id = {customer_id};"
+        ));
     }
 
     pub fn verify_default_migration(&self) {

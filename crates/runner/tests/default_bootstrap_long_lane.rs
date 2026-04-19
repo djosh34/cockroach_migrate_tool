@@ -1,15 +1,18 @@
-#[path = "support/default_bootstrap_harness.rs"]
-mod default_bootstrap_harness;
 #[path = "support/composite_pk_exclusion_harness.rs"]
 mod composite_pk_exclusion_harness;
+#[path = "support/default_bootstrap_harness.rs"]
+mod default_bootstrap_harness;
 #[path = "support/e2e_harness.rs"]
 mod e2e_harness;
+#[path = "support/multi_mapping_harness.rs"]
+mod multi_mapping_harness;
 
 use std::{thread, time::Duration};
 
 use composite_pk_exclusion_harness::CompositePkExclusionHarness;
 use default_bootstrap_harness::DefaultBootstrapHarness;
 use e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
+use multi_mapping_harness::MultiMappingHarness;
 
 const FK_HEAVY_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -178,4 +181,20 @@ fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_ta
     harness.wait_for_live_catchup();
     harness.assert_included_tables_stable(Duration::from_secs(3));
     harness.verify_migration();
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_runs_multiple_large_multi_database_migrations_under_one_destination_container()
+{
+    let harness = MultiMappingHarness::start();
+
+    harness.bootstrap_migration();
+    harness.wait_for_initial_scan();
+    harness.assert_explicit_source_bootstrap_commands();
+    harness.assert_helper_state_is_mapping_scoped();
+    harness.apply_live_source_changes();
+    harness.wait_for_live_catchup();
+    harness.assert_mapping_state_stable(Duration::from_secs(3));
+    harness.verify_migrations();
 }
