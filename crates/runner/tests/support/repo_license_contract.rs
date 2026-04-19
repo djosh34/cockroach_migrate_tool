@@ -64,6 +64,29 @@ impl RepoLicenseContract {
             );
         }
     }
+
+    pub fn assert_workspace_tls_crypto_backend_is_explicitly_ring_only(&self) {
+        assert!(
+            self.cargo_toml_text.contains(
+                "rustls = { version = \"0.23.34\", default-features = false, features = [\"ring\"] }"
+            ),
+            "Cargo.toml must disable rustls default crypto backends and keep the workspace on the explicit `ring` provider only",
+        );
+        assert!(
+            !self.cargo_toml_text.contains("rustls = { version = \"0.23.34\", features = [\"ring\"] }"),
+            "Cargo.toml must not leave rustls default features enabled alongside the `ring` feature",
+        );
+        assert!(
+            self.cargo_toml_text.contains(
+                "tokio-rustls = { version = \"0.26.4\", default-features = false, features = [\"ring\", \"tls12\"] }"
+            ),
+            "Cargo.toml must disable tokio-rustls default crypto features and keep only the explicit ring/tls12 surface",
+        );
+        assert!(
+            !self.cargo_toml_text.contains("tokio-rustls = \"0.26.4\""),
+            "Cargo.toml must not leave tokio-rustls default features enabled",
+        );
+    }
 }
 
 fn read_required_file(path: PathBuf) -> String {

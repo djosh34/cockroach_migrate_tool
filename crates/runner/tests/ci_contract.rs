@@ -180,3 +180,10 @@ fn repo_root_license_boundary_is_explicit() {
 
     contract.assert_root_declares_proprietary_rust_workspace_and_apache_vendored_component();
 }
+
+#[test]
+fn workspace_tls_crypto_backend_is_explicitly_ring_only() {
+    let contract = RepoLicenseContract::load();
+
+    contract.assert_workspace_tls_crypto_backend_is_explicitly_ring_only();
+}
