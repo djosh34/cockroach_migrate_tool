@@ -66,3 +66,4 @@
 .ralph/tasks/story-10-e2e-baseline/03-task-e2e-delete-propagation-through-shadow-and-real-tables.md
 .ralph/tasks/story-10-e2e-baseline/04-task-e2e-composite-pk-and-excluded-table-handling.md
 .ralph/tasks/story-10-e2e-baseline/05-task-e2e-multiple-large-multi-db-migrations.md
+.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md

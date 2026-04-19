@@ -170,6 +170,17 @@ After startup, the runtime serves:
 
 The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, `runner render-helper-plan --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
+## Write-Freeze Cutover Runbook
+
+Use one mapping-scoped runbook for cutover. Before handover starts, run `runner verify --config <path> --mapping <id> --source-url <cockroach-url>` repeatedly while PostgreSQL is shadowing CockroachDB so parity is already a normal check, not a last-minute surprise.
+
+1. Block writes at the API boundary for the mapping you are handing over.
+2. Run `runner cutover-readiness --config <path> --mapping <id> --source-url <cockroach-url>` until it reports `ready=true`.
+3. Run one final `runner verify --config <path> --mapping <id> --source-url <cockroach-url>` after readiness reports drained.
+4. Switch application traffic to PostgreSQL only after those checks finish cleanly.
+
+Do not switch traffic until writes are frozen, `runner cutover-readiness` has drained to zero with `ready=true`, and the final `runner verify` reports equality.
+
 ## Command Contract
 
 - `make check`: run the workspace lint gate.

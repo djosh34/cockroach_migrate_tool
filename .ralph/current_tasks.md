@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 02:56:01 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md`
-
-```
-## Task: Document the API write-freeze cutover runbook <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sun Apr 19 03:07:56 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-11-e2e-chaos/01-task-e2e-http-retry-chaos-imposed-externally.md`
 
