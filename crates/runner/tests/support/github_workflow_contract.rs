@@ -396,6 +396,10 @@ impl GithubWorkflowContract {
 
     pub fn assert_emits_published_image_manifest_for_downstream_consumers(&self) {
         let publish_job = self.job("publish");
+        let publish_env = publish_job
+            .get(Value::String("env".to_owned()))
+            .and_then(Value::as_mapping)
+            .expect("publish job should define a scoped env mapping");
         let outputs = publish_job
             .get(Value::String("outputs".to_owned()))
             .and_then(Value::as_mapping)
@@ -411,9 +415,16 @@ impl GithubWorkflowContract {
         let manifest_step =
             self.step_named(publish_job, "Publish manifest");
         let manifest_script = self.step_run_script(manifest_step, "Publish manifest");
+        assert_eq!(
+            publish_env
+                .get(Value::String("PUBLISHED_IMAGE_MANIFEST".to_owned()))
+                .map(value_as_str),
+            Some("${{ runner.temp }}/published-images.json"),
+            "publish job should scope the manifest path to the selected runner",
+        );
         assert!(
             manifest_script.contains("${{ env.PUBLISHED_IMAGE_MANIFEST }}"),
-            "manifest step should write the published image manifest through the shared env boundary",
+            "manifest step should write the published image manifest through the publish job env boundary",
         );
         assert!(
             manifest_script.contains("GITHUB_OUTPUT"),

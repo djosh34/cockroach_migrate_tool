@@ -17,7 +17,6 @@ env:
   RUNNER_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-runner
   SETUP_SQL_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-setup-sql
   VERIFY_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-verify
-  PUBLISHED_IMAGE_MANIFEST: ${{ runner.temp }}/published-images.json
 
 jobs:
   validate:
@@ -41,6 +40,8 @@ jobs:
     needs: validate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    env:
+      PUBLISHED_IMAGE_MANIFEST: ${{ runner.temp }}/published-images.json
     permissions:
       contents: read
       packages: write
