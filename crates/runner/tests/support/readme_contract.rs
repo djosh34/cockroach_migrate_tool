@@ -70,6 +70,36 @@ impl ReadmeSection<'_> {
     pub fn contains(&self, needle: &str) -> bool {
         self.text.contains(needle)
     }
+
+    pub fn assert_in_order(&self, phrases: &[&str], message: &str) {
+        let mut offsets = phrases.iter().map(|phrase| {
+            self.text
+                .find(phrase)
+                .unwrap_or_else(|| panic!("README section must contain `{phrase}`"))
+        });
+        let Some(mut previous_offset) = offsets.next() else {
+            panic!("phrase order assertions require at least one phrase");
+        };
+
+        for offset in offsets {
+            assert!(previous_offset < offset, "{message}");
+            previous_offset = offset;
+        }
+    }
+
+    pub fn code_block(&self, language: &str) -> String {
+        let fence = format!("```{language}");
+        let start = self
+            .text
+            .find(&fence)
+            .unwrap_or_else(|| panic!("README section must contain a `{language}` code block"));
+        let after_fence = &self.text[start + fence.len()..];
+        let end = after_fence
+            .find("\n```")
+            .unwrap_or_else(|| panic!("README `{language}` code block must close its fence"));
+
+        after_fence[..end].trim().to_owned()
+    }
 }
 
 fn repository_readme_path() -> PathBuf {

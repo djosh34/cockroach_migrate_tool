@@ -10,47 +10,6 @@ fn fixture_path(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn mounted_config_text() -> &'static str {
-    r#"webhook:
-  bind_addr: 127.0.0.1:8443
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
-reconcile:
-  interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /work/molt-verify
-mappings:
-  - id: app-a
-    source:
-      database: demo_a
-      tables:
-        - public.customers
-        - public.orders
-    destination:
-      connection:
-        host: pg-a.example.internal
-        port: 5432
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
-  - id: app-b
-    source:
-      database: demo_b
-      tables:
-        - public.invoices
-    destination:
-      connection:
-        host: pg-b.example.internal
-        port: 5432
-        database: app_b
-        user: migration_user_b
-        password: runner-secret-b
-"#
-}
-
 #[test]
 fn validate_config_accepts_a_minimal_valid_yaml_file() {
     let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
@@ -236,7 +195,7 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
     let mounted_config_dir = temp_dir.path().join("config");
     fs::create_dir_all(&mounted_config_dir).expect("mounted config dir should be created");
     let config_path = mounted_config_dir.join("runner.yml");
-    fs::write(&config_path, mounted_config_text())
+    fs::copy(fixture_path("container-runner-config.yml"), &config_path)
         .expect("mounted config fixture should be written");
 
     let config_path_label = config_path.display().to_string();
@@ -251,7 +210,7 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
             "config={config_path_label}"
         )))
         .stdout(predicate::str::contains("mappings=2"))
-        .stdout(predicate::str::contains("verify=molt@/work/molt-verify"))
+        .stdout(predicate::str::contains("verify=molt@/work/molt"))
         .stdout(predicate::str::contains(
             "tls=/config/certs/server.crt+/config/certs/server.key",
         ));

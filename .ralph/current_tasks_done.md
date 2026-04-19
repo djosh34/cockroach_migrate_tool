@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 08:32:43 AM CEST 2026
+Generated: Sun Apr 19 08:56:31 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -369,6 +369,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify direct Docker build and run works without wrapper scripts <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/03-task-verify-copyable-config-example-and-quick-start-clarity.md`
+
+```
+## Task: Verify the copyable config example and quick start are directly useful <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

@@ -5,6 +5,16 @@ mod runner_docker_contract_support;
 
 use readme_contract_support::RepositoryReadme;
 use runner_docker_contract_support::RunnerDockerContract;
+use assert_cmd::Command;
+use predicates::prelude::predicate;
+use std::{fs, path::PathBuf};
+
+fn fixture_path(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join(name)
+}
 
 #[test]
 fn readme_includes_a_write_freeze_cutover_runbook_with_repeated_verify_during_shadowing() {
@@ -121,4 +131,73 @@ fn docker_quick_start_forbids_wrapper_script_handoff_in_the_public_container_pat
     let docker_quick_start = readme.docker_quick_start();
 
     RunnerDockerContract::assert_readme_has_no_wrapper_handoff(docker_quick_start.text());
+}
+
+#[test]
+fn docker_quick_start_runner_config_is_copyable_and_starts_with_one_mapping() {
+    let readme = RepositoryReadme::load();
+    let docker_quick_start = readme.docker_quick_start();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    let fixture_text = fs::read_to_string(fixture_path("readme-runner-config.yml"))
+        .expect("README runner config fixture should be readable");
+    assert_eq!(
+        docker_quick_start.code_block("yaml"),
+        fixture_text.trim_end(),
+        "README runner YAML should match its canonical fixture"
+    );
+    fs::write(&config_path, fixture_text)
+        .expect("README runner config should be writable");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"))
+        .stdout(predicate::str::contains("mappings=1"));
+}
+
+#[test]
+fn docker_quick_start_explicitly_creates_tls_material_before_validate_config() {
+    let readme = RepositoryReadme::load();
+    let docker_quick_start = readme.docker_quick_start();
+
+    docker_quick_start.assert_contains(
+        "mkdir -p config/certs",
+        "README Docker quick start must create the config/certs directory before validate-config relies on it"
+    );
+    docker_quick_start.assert_contains(
+        "openssl req",
+        "README Docker quick start must include a copyable TLS-material generation command"
+    );
+    docker_quick_start.assert_in_order(
+        &[
+            "mkdir -p config/certs",
+            "openssl req",
+            "validate-config --config /config/runner.yml",
+        ],
+        "README Docker quick start must create TLS material before validate-config uses the mounted config"
+    );
+}
+
+#[test]
+fn docker_quick_start_explicitly_reuses_the_same_mapping_and_schema_artifacts() {
+    let readme = RepositoryReadme::load();
+    let docker_quick_start = readme.docker_quick_start();
+
+    docker_quick_start.assert_contains(
+        "Keep using the same `/config/runner.yml`, `app-a`, `/schema/crdb_schema.txt`, and `/schema/pg_schema.sql` values in the remaining quick-start commands unless you intentionally switch to a different mapping.",
+        "README Docker quick start must make mapping-id and schema-artifact reuse explicit for novices"
+    );
+    docker_quick_start.assert_in_order(
+        &[
+            "Keep using the same `/config/runner.yml`, `app-a`, `/schema/crdb_schema.txt`, and `/schema/pg_schema.sql` values in the remaining quick-start commands unless you intentionally switch to a different mapping.",
+            "compare-schema",
+            "render-helper-plan",
+        ],
+        "README Docker quick start must explain value reuse before the later mapping-scoped commands"
+    );
 }

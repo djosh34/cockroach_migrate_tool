@@ -20,6 +20,7 @@ cockroach:
   url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
 webhook:
   base_url: https://runner.example.internal:8443
+  ca_cert_path: ca.crt
   resolved: 5s
 mappings:
   - id: app-a
@@ -62,7 +63,16 @@ The rendered script:
 The destination runtime is one container that starts the `runner` binary directly. There is no wrapper shell script in the user path.
 You should not need to inspect `crates/`, `tests/`, or `investigations/` to complete this quick start.
 
-1. Create a config directory with one runner config file and the TLS material it references.
+1. Create a config directory, generate TLS material for local testing, and write one runner config file.
+
+```bash
+mkdir -p config/certs
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout config/certs/server.key \
+  -out config/certs/server.crt \
+  -days 365 \
+  -subj "/CN=runner.example.internal"
+```
 
 ```yaml
 # config/runner.yml
@@ -91,18 +101,6 @@ mappings:
         database: app_a
         user: migration_user_a
         password: runner-secret-a
-  - id: app-b
-    source:
-      database: demo_b
-      tables:
-        - public.invoices
-    destination:
-      connection:
-        host: pg-b.example.internal
-        port: 5432
-        database: app_b
-        user: migration_user_b
-        password: runner-secret-b
 ```
 
 2. Build the destination image directly from the repository root:
@@ -132,8 +130,10 @@ pg_dump \
   --no-owner \
   --no-privileges \
   --dbname "postgresql://postgres@pg-a.example.internal:5432/app_a?sslmode=require" \
-  > schema/pg_schema.sql
+ > schema/pg_schema.sql
 ```
+
+Keep using the same `/config/runner.yml`, `app-a`, `/schema/crdb_schema.txt`, and `/schema/pg_schema.sql` values in the remaining quick-start commands unless you intentionally switch to a different mapping.
 
 5. Validate the exported CockroachDB and PostgreSQL schemas semantically before starting the runtime. The compare command uses the selected mapping’s table list as the filter, ignores unrelated tables, and rejects structural mismatches without relying on a raw text diff.
 

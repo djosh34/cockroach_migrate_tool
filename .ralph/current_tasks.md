@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 08:32:43 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/03-task-verify-copyable-config-example-and-quick-start-clarity.md`
-
-```
-## Task: Verify the copyable config example and quick start are directly useful <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sun Apr 19 08:56:31 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-14-reports/01-task-report-novice-user-manual-experience.md`
 
