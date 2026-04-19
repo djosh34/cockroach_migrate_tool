@@ -4,13 +4,17 @@ pub struct ReadmePublishedImageContract;
 
 impl ReadmePublishedImageContract {
     pub fn assert_setup_sql_quick_start_uses_published_image(setup_sql_quick_start: &str) {
+        let setup_sql_image = PublishedImageContract::all()
+            .iter()
+            .find(|image| image.image_id() == "setup-sql")
+            .expect("setup-sql published image should be defined");
         let required_markers = [
             "export GITHUB_OWNER=<github-owner>".to_owned(),
             "export IMAGE_TAG=<published-commit-sha>".to_owned(),
             format!(
                 "export SETUP_SQL_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 PublishedImageContract::registry_host(),
-                PublishedImageContract::setup_sql_image_repository(),
+                setup_sql_image.repository(),
             ),
             "docker pull \"${SETUP_SQL_IMAGE}\"".to_owned(),
             "\"${SETUP_SQL_IMAGE}\" \\".to_owned(),
@@ -28,13 +32,17 @@ impl ReadmePublishedImageContract {
     }
 
     pub fn assert_runner_quick_start_uses_published_image(docker_quick_start: &str) {
+        let runner_image = PublishedImageContract::all()
+            .iter()
+            .find(|image| image.image_id() == "runner")
+            .expect("runner published image should be defined");
         let required_markers = [
             "export GITHUB_OWNER=<github-owner>".to_owned(),
             "export IMAGE_TAG=<published-commit-sha>".to_owned(),
             format!(
                 "export RUNNER_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 PublishedImageContract::registry_host(),
-                PublishedImageContract::runner_image_repository(),
+                runner_image.repository(),
             ),
             "docker pull \"${RUNNER_IMAGE}\"".to_owned(),
             "\"${RUNNER_IMAGE}\" \\".to_owned(),

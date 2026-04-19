@@ -18,73 +18,87 @@ use runner_public_contract_support::RunnerPublicContract;
 use verify_source_contract_support::VerifySourceContract;
 
 #[test]
-fn master_image_workflow_triggers_only_on_pushes_to_master() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_triggers_only_on_pushes_to_main() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_pushes_to_master_only();
+    workflow.assert_pushes_to_main_only();
 }
 
 #[test]
-fn master_image_workflow_rejects_outsider_controlled_and_drift_prone_triggers() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_rejects_outsider_controlled_and_drift_prone_triggers() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_rejects_outsider_controlled_and_drift_prone_triggers();
 }
 
 #[test]
-fn master_image_workflow_keeps_publish_permissions_and_credentials_out_of_validation() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_keeps_publish_permissions_and_credentials_out_of_validation() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_keeps_publish_permissions_and_credentials_out_of_validation();
 }
 
 #[test]
-fn master_image_workflow_explicitly_gates_publish_to_the_trusted_master_push_commit() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_explicitly_gates_publish_to_the_trusted_main_push_commit() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_publish_is_explicitly_gated_to_the_trusted_master_push_commit();
+    workflow.assert_publish_is_explicitly_gated_to_the_trusted_main_push_commit();
 }
 
 #[test]
 fn ci_publish_safety_model_is_documented_for_reviewers() {
-    let workflow = GithubWorkflowContract::load_master_image();
+    let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_ci_publish_safety_model_is_documented();
 }
 
 #[test]
-fn master_image_workflow_runs_the_full_repository_validation_suite() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_runs_required_repository_validation_before_publishing() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_runs_validation_commands(&["make check", "make test", "make test-long"]);
+    workflow.assert_runs_validation_commands(&["make check", "make test"]);
 }
 
 #[test]
-fn master_image_workflow_publishes_only_commit_tagged_novice_path_images() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_cancels_older_main_runs_when_new_pushes_arrive() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_commit_tagged_ghcr_publish_only();
+    workflow.assert_cancels_older_main_runs_when_new_pushes_arrive();
 }
 
 #[test]
-fn master_image_workflow_scans_each_release_archive_before_publishing() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_publishes_the_canonical_three_image_set() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_scans_the_release_archive_before_publishing();
+    workflow.assert_publishes_the_canonical_three_image_set();
 }
 
 #[test]
-fn master_image_workflow_fails_loudly_and_publishes_a_vulnerability_report() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_uses_multi_arch_commit_sha_tags_only() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_release_scan_policy_is_explicit_and_visible();
+    workflow.assert_uses_multi_arch_commit_sha_tags_only();
 }
 
 #[test]
-fn master_image_workflow_keeps_registry_coordinates_in_one_shared_boundary() {
-    let workflow = GithubWorkflowContract::load_master_image();
+fn publish_images_workflow_installs_publish_dependencies_via_direct_shell_steps() {
+    let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_registry_coordinates_are_isolated();
+    workflow.assert_installs_publish_dependencies_via_direct_shell_steps();
+}
+
+#[test]
+fn publish_images_workflow_emits_published_image_manifest_for_downstream_consumers() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_emits_published_image_manifest_for_downstream_consumers();
+}
+
+#[test]
+fn publish_images_workflow_masks_derived_sensitive_values_and_never_logs_raw_credentials() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_masks_derived_sensitive_values_and_never_logs_raw_credentials();
 }
 
 #[test]

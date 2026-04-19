@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use serde_yaml::{Mapping, Value};
 
-use crate::published_image_contract_support::PublishedImageContract;
+use crate::published_image_contract_support::{PublishedImageContract, PublishedImageSpec};
 
 pub struct GithubWorkflowContract {
     workflow_text: String,
@@ -11,12 +11,12 @@ pub struct GithubWorkflowContract {
 }
 
 impl GithubWorkflowContract {
-    pub fn load_master_image() -> Self {
-        let workflow_path = repo_root().join(".github/workflows/master-image.yml");
+    pub fn load_publish_images() -> Self {
+        let workflow_path = repo_root().join(".github/workflows/publish-images.yml");
         let readme_path = repo_root().join("README.md");
         let workflow_text = fs::read_to_string(&workflow_path).unwrap_or_else(|error| {
             panic!(
-                "master image workflow `{}` should be readable: {error}",
+                "publish images workflow `{}` should be readable: {error}",
                 workflow_path.display()
             )
         });
@@ -28,7 +28,7 @@ impl GithubWorkflowContract {
         });
         let document = serde_yaml::from_str(&workflow_text).unwrap_or_else(|error| {
             panic!(
-                "master image workflow `{}` should parse as YAML: {error}",
+                "publish images workflow `{}` should parse as YAML: {error}",
                 workflow_path.display()
             )
         });
@@ -40,11 +40,11 @@ impl GithubWorkflowContract {
         }
     }
 
-    pub fn assert_pushes_to_master_only(&self) {
+    pub fn assert_pushes_to_main_only(&self) {
         assert_eq!(
             self.push_branches(),
-            vec!["master"],
-            "workflow must trigger only on pushes to `master`",
+            vec!["main"],
+            "workflow must trigger only on pushes to `main`",
         );
         assert!(
             !self
@@ -57,8 +57,8 @@ impl GithubWorkflowContract {
     pub fn assert_rejects_outsider_controlled_and_drift_prone_triggers(&self) {
         assert_eq!(
             self.push_branches(),
-            vec!["master"],
-            "workflow must trigger only on pushes to `master`",
+            vec!["main"],
+            "workflow must trigger only on pushes to `main`",
         );
         assert!(
             self.push_tags().is_none(),
@@ -72,25 +72,15 @@ impl GithubWorkflowContract {
             "workflow_run",
             "workflow_call",
             "schedule",
+            "release",
+            "issues",
+            "issue_comment",
         ] {
             assert!(
                 !self
                     .workflow_on()
                     .contains_key(Value::String(forbidden_trigger.to_owned())),
                 "workflow must not define a `{forbidden_trigger}` trigger",
-            );
-        }
-    }
-
-    pub fn assert_runs_validation_commands(&self, expected_commands: &[&str]) {
-        let run_commands = self.run_commands();
-
-        for expected_command in expected_commands {
-            assert!(
-                run_commands.iter().any(|command| {
-                    command.lines().any(|line| line.trim() == *expected_command)
-                }),
-                "workflow must run `{expected_command}` as part of repository validation",
             );
         }
     }
@@ -129,13 +119,9 @@ impl GithubWorkflowContract {
             "publish job should be the only job with package publish permission",
         );
 
-        let validate_permissions = self.job_permissions("validate");
         assert!(
-            validate_permissions.is_none()
-                || !validate_permissions
-                    .expect("validate permissions presence already checked")
-                    .contains_key(Value::String("packages".to_owned())),
-            "validate job must not have package publish permission",
+            self.job_permissions("validate").is_none(),
+            "validate job must not elevate permissions",
         );
 
         for job_name in ["validate", "publish"] {
@@ -149,9 +135,19 @@ impl GithubWorkflowContract {
                 "job `{job_name}` checkout must disable credential persistence",
             );
         }
+
+        let validate_scripts = self.job_run_scripts("validate").join("\n");
+        assert!(
+            !validate_scripts.contains("GITHUB_TOKEN"),
+            "validate job must not touch publish credentials",
+        );
+        assert!(
+            !validate_scripts.contains("docker login"),
+            "validate job must not log in to the registry",
+        );
     }
 
-    pub fn assert_publish_is_explicitly_gated_to_the_trusted_master_push_commit(&self) {
+    pub fn assert_publish_is_explicitly_gated_to_the_trusted_main_push_commit(&self) {
         let publish_job = self.job("publish");
         let publish_condition = publish_job
             .get(Value::String("if".to_owned()))
@@ -162,61 +158,27 @@ impl GithubWorkflowContract {
             "publish job trust gate must require the push event",
         );
         assert!(
-            publish_condition.contains("github.ref == 'refs/heads/master'"),
-            "publish job trust gate must require the master branch ref",
+            publish_condition.contains("github.ref == 'refs/heads/main'"),
+            "publish job trust gate must require the main branch ref",
         );
-        assert!(
-            !publish_job.contains_key(Value::String("uses".to_owned())),
-            "publish job must not delegate publishing through a reusable workflow",
+
+        let publish_needs = publish_job
+            .get(Value::String("needs".to_owned()))
+            .map(value_as_str)
+            .expect("publish job should depend on repository validation");
+        assert_eq!(
+            publish_needs, "validate",
+            "publish job must wait for validation to pass",
         );
 
         let checkout_inputs = self.step_inputs(
             self.step_using_prefix(publish_job, "actions/checkout"),
-            "checkout",
+            "actions/checkout",
         );
         assert!(
             !checkout_inputs.contains_key(Value::String("ref".to_owned())),
             "publish checkout must not override the trusted pushed commit ref",
         );
-
-        for (step_name, dockerfile, repository_env) in [
-            (
-                "Build runner release image archive",
-                "./Dockerfile",
-                "RUNNER_IMAGE_REPOSITORY",
-            ),
-            (
-                "Build setup-sql release image archive",
-                "./crates/setup-sql/Dockerfile",
-                "SETUP_SQL_IMAGE_REPOSITORY",
-            ),
-        ] {
-            let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
-            let expected_tag = format!(
-                "${{{{ env.REGISTRY }}}}/${{{{ env.{repository_env} }}}}:${{{{ github.sha }}}}"
-            );
-            assert_eq!(
-                build_inputs
-                    .get(Value::String("context".to_owned()))
-                    .map(value_as_str),
-                Some("."),
-                "publish job must build `{step_name}` from the trusted repository root context",
-            );
-            assert_eq!(
-                build_inputs
-                    .get(Value::String("file".to_owned()))
-                    .map(value_as_str),
-                Some(dockerfile),
-                "publish job must pin `{step_name}` to its expected Dockerfile",
-            );
-            assert_eq!(
-                build_inputs
-                    .get(Value::String("tags".to_owned()))
-                    .map(value_as_str),
-                Some(expected_tag.as_str()),
-                "publish job must tag `{step_name}` only with the trusted pushed commit SHA",
-            );
-        }
     }
 
     pub fn assert_ci_publish_safety_model_is_documented(&self) {
@@ -224,11 +186,12 @@ impl GithubWorkflowContract {
             self.readme_text.contains("## CI Publish Safety"),
             "README should document the CI publish safety model",
         );
+
         for required_line in [
-            "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, and tag pushes do not trigger the protected image-publish workflow.",
-            "The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.",
-            "Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.",
-            "Before any push, the workflow builds each release-image archive, scans those exact archives with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifacts for review.",
+            "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.",
+            "The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.",
+            "Only the `publish` job gets `packages: write`, checkout disables credential persistence, derived registry credentials are masked before any diagnostic output, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.",
+            "Validation runs the repository lint and default test gates before publish, each image is pushed for both `linux/amd64` and `linux/arm64`, and the workflow emits a published-image manifest that downstream registry-only checks can consume directly.",
         ] {
             assert!(
                 self.readme_text.contains(required_line),
@@ -237,276 +200,61 @@ impl GithubWorkflowContract {
         }
     }
 
-    pub fn assert_commit_tagged_ghcr_publish_only(&self) {
-        let publish_job = self.job("publish");
-        let publish_needs = publish_job
-            .get(Value::String("needs".to_owned()))
+    pub fn assert_runs_validation_commands(&self, expected_commands: &[&str]) {
+        let validate_job = self.job("validate");
+        let validate_scripts = self
+            .steps(validate_job)
+            .iter()
+            .filter_map(Value::as_mapping)
+            .filter_map(|step| step.get(Value::String("run".to_owned())))
             .map(value_as_str)
-            .expect("publish job should depend on the validation job");
-        assert_eq!(
-            publish_needs, "validate",
-            "publish job must wait for the validation job",
+            .collect::<Vec<_>>();
+
+        for expected_command in expected_commands {
+            assert!(
+                validate_scripts.iter().any(|script| {
+                    script.lines().any(|line| line.trim() == *expected_command)
+                }),
+                "validate job must run `{expected_command}`",
+            );
+        }
+
+        assert!(
+            !validate_scripts.iter().any(|script| script.contains("make test-long")),
+            "workflow must not run `make test-long` for this task",
         );
+    }
 
-        let login_step = self.step_using_prefix(publish_job, "docker/login-action");
-        let registry = self
-            .step_inputs(login_step, "docker/login-action")
-            .get(Value::String("registry".to_owned()))
-            .map(value_as_str)
-            .expect("publish job should log in to a registry");
+    pub fn assert_cancels_older_main_runs_when_new_pushes_arrive(&self) {
+        let concurrency = self
+            .document
+            .as_mapping()
+            .expect("workflow document should be a mapping")
+            .get(Value::String("concurrency".to_owned()))
+            .and_then(Value::as_mapping)
+            .expect("workflow should define top-level concurrency");
         assert_eq!(
-            registry, "${{ env.REGISTRY }}",
-            "publish job should read registry coordinates from the shared env boundary",
+            concurrency
+                .get(Value::String("group".to_owned()))
+                .map(value_as_str),
+            Some("publish-images-${{ github.ref }}"),
+            "workflow concurrency group should track the pushed ref",
         );
-
-        for (step_name, repository_env) in [
-            (
-                "Build runner release image archive",
-                "RUNNER_IMAGE_REPOSITORY",
-            ),
-            (
-                "Build setup-sql release image archive",
-                "SETUP_SQL_IMAGE_REPOSITORY",
-            ),
-        ] {
-            let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
-            let tags = build_inputs
-                .get(Value::String("tags".to_owned()))
-                .map(value_as_str)
-                .expect("build-push step should define tags");
-            assert!(
-                tags.contains("${{ env.REGISTRY }}/"),
-                "published image must target GHCR through the shared registry boundary",
-            );
-            assert!(
-                tags.contains("${{ github.sha }}"),
-                "published image tag must be derived from the pushed commit SHA",
-            );
-            assert!(
-                tags.contains(&format!("${{{{ env.{repository_env} }}}}")),
-                "published image tags must consume the shared `{repository_env}` boundary",
-            );
-            for forbidden_tag in ["latest", "type=semver", "refs/tags/", "github.ref_name"] {
-                assert!(
-                    !tags.contains(forbidden_tag),
-                    "published image tags must not include `{forbidden_tag}`",
-                );
-            }
-        }
-
-        for (step_name, repository_env) in [
-            ("Push scanned runner image", "RUNNER_IMAGE_REPOSITORY"),
-            (
-                "Push scanned setup-sql image",
-                "SETUP_SQL_IMAGE_REPOSITORY",
-            ),
-        ] {
-            let push_script =
-                self.step_run_script(self.step_named(publish_job, step_name), step_name);
-            let expected_push = format!(
-                "docker push \"${{{{ env.REGISTRY }}}}/${{{{ env.{repository_env} }}}}:${{{{ github.sha }}}}\""
-            );
-            assert!(
-                push_script.contains(&expected_push),
-                "publish command `{step_name}` must push only the trusted commit SHA image tag",
-            );
-        }
+        assert_eq!(
+            concurrency
+                .get(Value::String("cancel-in-progress".to_owned()))
+                .map(value_as_bool),
+            Some(true),
+            "workflow should cancel the previous in-progress run for newer pushes",
+        );
     }
 
-    pub fn assert_scans_the_release_archive_before_publishing(&self) {
-        let publish_job = self.job("publish");
-        for (build_step, archive_env, scan_step, load_step, push_step, archive_suffix) in [
-            (
-                "Build runner release image archive",
-                "RUNNER_RELEASE_IMAGE_ARCHIVE",
-                "Scan runner release image archive",
-                "Load scanned runner release image archive",
-                "Push scanned runner image",
-                "runner-release-image.tar",
-            ),
-            (
-                "Build setup-sql release image archive",
-                "SETUP_SQL_RELEASE_IMAGE_ARCHIVE",
-                "Scan setup-sql release image archive",
-                "Load scanned setup-sql release image archive",
-                "Push scanned setup-sql image",
-                "setup-sql-release-image.tar",
-            ),
-        ] {
-            let archive_path = self
-                .workflow_env()
-                .get(Value::String(archive_env.to_owned()))
-                .map(value_as_str)
-                .unwrap_or_else(|| panic!("workflow should define a shared `{archive_env}` env"));
-            let build_inputs =
-                self.step_inputs(self.step_named(publish_job, build_step), build_step);
-            let expected_output = format!("type=docker,dest=${{{{ env.{archive_env} }}}}");
-            assert_eq!(
-                build_inputs
-                    .get(Value::String("push".to_owned()))
-                    .map(value_as_bool),
-                Some(false),
-                "publish job must build `{build_step}` before the scan gate pushes it",
-            );
-            assert_eq!(
-                build_inputs
-                    .get(Value::String("outputs".to_owned()))
-                    .map(value_as_str),
-                Some(expected_output.as_str()),
-                "publish job must export `{build_step}` once as a docker archive tarball",
-            );
-
-            let build_index = self.step_index_named(publish_job, build_step);
-            let scan_index = self.step_index_named(publish_job, scan_step);
-            let load_index = self.step_index_named(publish_job, load_step);
-            let push_index = self.step_index_named(publish_job, push_step);
-
-            assert!(
-                build_index < scan_index,
-                "publish job must build `{build_step}` before scanning it",
-            );
-            assert!(
-                scan_index < load_index,
-                "publish job must load `{build_step}` only after the scan passes",
-            );
-            assert!(
-                load_index < push_index,
-                "publish job must push `{build_step}` only after loading the scanned archive",
-            );
-
-            let scan_script =
-                self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
-            assert!(
-                scan_script.contains(&format!("${{{{ env.{archive_env} }}}}")),
-                "scan step `{scan_step}` must read the release archive through the shared env boundary",
-            );
-            assert!(
-                archive_path.ends_with(archive_suffix),
-                "release archive boundary `{archive_env}` should describe the built docker archive tarball",
-            );
-        }
-    }
-
-    pub fn assert_release_scan_policy_is_explicit_and_visible(&self) {
-        let publish_job = self.job("publish");
-        self.step_using_prefix(publish_job, "aquasecurity/setup-trivy");
-
-        for (report_env, scan_step, print_step, upload_step, report_suffix) in [
-            (
-                "RUNNER_VULNERABILITY_REPORT",
-                "Scan runner release image archive",
-                "Print runner vulnerability report",
-                "Upload runner vulnerability report",
-                "runner-vulnerability-report.txt",
-            ),
-            (
-                "SETUP_SQL_VULNERABILITY_REPORT",
-                "Scan setup-sql release image archive",
-                "Print setup-sql vulnerability report",
-                "Upload setup-sql vulnerability report",
-                "setup-sql-vulnerability-report.txt",
-            ),
-        ] {
-            let report_path = self
-                .workflow_env()
-                .get(Value::String(report_env.to_owned()))
-                .map(value_as_str)
-                .unwrap_or_else(|| panic!("workflow should define a shared `{report_env}` env"));
-            let scan_script =
-                self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
-            let expected_output_flag = format!("--output \"${{{{ env.{report_env} }}}}\"");
-            for required_flag in [
-                "--severity HIGH,CRITICAL",
-                "--exit-code 1",
-                "--format table",
-                expected_output_flag.as_str(),
-            ] {
-                assert!(
-                    scan_script.contains(required_flag),
-                    "scan step `{scan_step}` must define `{required_flag}` so the Trivy gate is explicit and actionable",
-                );
-            }
-
-            let print_step = self.step_named(publish_job, print_step);
-            assert_eq!(
-                print_step
-                    .get(Value::String("if".to_owned()))
-                    .map(value_as_str),
-                Some("always()"),
-                "report printing must still run when the vulnerability gate fails",
-            );
-
-            let upload_step = self.step_named(publish_job, upload_step);
-            let expected_report_path = format!("${{{{ env.{report_env} }}}}");
-            assert_eq!(
-                upload_step
-                    .get(Value::String("if".to_owned()))
-                    .map(value_as_str),
-                Some("always()"),
-                "report upload must still run when the vulnerability gate fails",
-            );
-            let upload_inputs = self.step_inputs(upload_step, "actions/upload-artifact");
-            assert_eq!(
-                upload_inputs
-                    .get(Value::String("path".to_owned()))
-                    .map(value_as_str),
-                Some(expected_report_path.as_str()),
-                "report upload must preserve the shared report path boundary",
-            );
-            assert_eq!(
-                upload_inputs
-                    .get(Value::String("if-no-files-found".to_owned()))
-                    .map(value_as_str),
-                Some("error"),
-                "report upload must fail loudly if the expected scan artifact is missing",
-            );
-            assert!(
-                report_path.ends_with(report_suffix),
-                "report boundary `{report_env}` should describe the persisted vulnerability report artifact",
-            );
-        }
-    }
-
-    pub fn assert_registry_coordinates_are_isolated(&self) {
+    pub fn assert_publishes_the_canonical_three_image_set(&self) {
         let env = self.workflow_env();
         assert_eq!(
-            env.get(Value::String("REGISTRY".to_owned()))
-                .map(value_as_str)
-                .expect("workflow should define a shared REGISTRY env"),
-            PublishedImageContract::registry_host(),
+            env.get(Value::String("REGISTRY".to_owned())).map(value_as_str),
+            Some(PublishedImageContract::registry_host()),
             "workflow should define GHCR once through a shared REGISTRY env boundary",
-        );
-        assert!(
-            env.contains_key(Value::String("RUNNER_IMAGE_REPOSITORY".to_owned())),
-            "workflow should define a shared RUNNER_IMAGE_REPOSITORY env boundary",
-        );
-        assert!(
-            env.contains_key(Value::String(
-                "SETUP_SQL_IMAGE_REPOSITORY".to_owned()
-            )),
-            "workflow should define a shared SETUP_SQL_IMAGE_REPOSITORY env boundary",
-        );
-        let expected_runner_repository = format!(
-            "${{{{ github.repository_owner }}}}/{}",
-            PublishedImageContract::runner_image_repository()
-        );
-        assert_eq!(
-            env.get(Value::String("RUNNER_IMAGE_REPOSITORY".to_owned()))
-                .map(value_as_str),
-            Some(expected_runner_repository.as_str()),
-            "workflow should define the runner image repository once through a shared env boundary",
-        );
-        let expected_setup_sql_repository = format!(
-            "${{{{ github.repository_owner }}}}/{}",
-            PublishedImageContract::setup_sql_image_repository()
-        );
-        assert_eq!(
-            env.get(Value::String(
-                "SETUP_SQL_IMAGE_REPOSITORY".to_owned()
-            ))
-            .map(value_as_str),
-            Some(expected_setup_sql_repository.as_str()),
-            "workflow should define the setup-sql image repository once through a shared env boundary",
         );
         assert_eq!(
             self.workflow_text.matches("ghcr.io").count(),
@@ -514,26 +262,236 @@ impl GithubWorkflowContract {
             "workflow should not scatter raw GHCR coordinates across multiple steps",
         );
 
-        for (step_name, repository_env) in [
-            (
-                "Build runner release image archive",
-                "RUNNER_IMAGE_REPOSITORY",
-            ),
-            (
-                "Build setup-sql release image archive",
-                "SETUP_SQL_IMAGE_REPOSITORY",
-            ),
-        ] {
-            let tags = self
-                .step_inputs(self.step_named(self.job("publish"), step_name), step_name)
-                .get(Value::String("tags".to_owned()))
-                .map(value_as_str)
-                .expect("build-push step should define tags");
+        for image in PublishedImageContract::all() {
+            let target = workflow_publish_target(image.image_id());
+            let expected_repository = format!(
+                "${{{{ github.repository_owner }}}}/{}",
+                image.repository()
+            );
+            assert_eq!(
+                env.get(Value::String(target.repository_env.to_owned()))
+                    .map(value_as_str),
+                Some(expected_repository.as_str()),
+                "workflow should define `{}` through the shared image contract",
+                target.repository_env,
+            );
+
+            let publish_step = self.step_named(self.job("publish"), &publish_step_name(image));
+            let publish_script = self.step_run_script(publish_step, &publish_step_name(image));
             assert!(
-                tags.contains(&format!("${{{{ env.{repository_env} }}}}")),
-                "build-push step `{step_name}` should consume the shared `{repository_env}` boundary",
+                publish_script.contains(target.dockerfile),
+                "publish step for `{}` should build the canonical Dockerfile `{}`",
+                image.image_id(),
+                target.dockerfile,
+            );
+            assert!(
+                publish_script.lines().any(|line| line.trim() == target.context),
+                "publish step for `{}` should build the canonical context `{}`",
+                image.image_id(),
+                target.context,
+            );
+            assert!(
+                publish_script.contains(&format!("${{{{ env.{} }}}}", target.repository_env)),
+                "publish step for `{}` should tag through `{}`",
+                image.image_id(),
+                target.repository_env,
             );
         }
+    }
+
+    pub fn assert_uses_multi_arch_commit_sha_tags_only(&self) {
+        for image in PublishedImageContract::all() {
+            let target = workflow_publish_target(image.image_id());
+            let publish_script = self.step_run_script(
+                self.step_named(self.job("publish"), &publish_step_name(image)),
+                &publish_step_name(image),
+            );
+            assert!(
+                publish_script.contains("docker buildx build"),
+                "publish step for `{}` must use `docker buildx build`",
+                image.image_id(),
+            );
+            assert!(
+                publish_script.contains("--platform linux/amd64,linux/arm64"),
+                "publish step for `{}` must publish both amd64 and arm64 images",
+                image.image_id(),
+            );
+            assert!(
+                publish_script.contains("${{ env.REGISTRY }}/"),
+                "publish step for `{}` must tag GHCR through the shared registry boundary",
+                image.image_id(),
+            );
+            assert!(
+                publish_script.contains(&format!("${{{{ env.{} }}}}", target.repository_env)),
+                "publish step for `{}` must tag through `{}`",
+                image.image_id(),
+                target.repository_env,
+            );
+            assert!(
+                publish_script.contains("${{ github.sha }}"),
+                "publish step for `{}` must tag only the pushed commit SHA",
+                image.image_id(),
+            );
+            assert!(
+                publish_script.contains("--push"),
+                "publish step for `{}` must push after a successful build",
+                image.image_id(),
+            );
+
+            for forbidden_marker in ["latest", "refs/tags/", "github.ref_name", "type=semver"] {
+                assert!(
+                    !publish_script.contains(forbidden_marker),
+                    "publish step for `{}` must not introduce `{forbidden_marker}` tags",
+                    image.image_id(),
+                );
+            }
+        }
+    }
+
+    pub fn assert_installs_publish_dependencies_via_direct_shell_steps(&self) {
+        let validate_install = self.step_run_script(
+            self.step_named(self.job("validate"), "Install Rust toolchain"),
+            "Install Rust toolchain",
+        );
+        assert!(
+            validate_install.contains("rustup toolchain install 1.93.0"),
+            "validation should install the pinned Rust toolchain directly via shell",
+        );
+        assert!(
+            validate_install.contains("rustup default 1.93.0"),
+            "validation should activate the pinned Rust toolchain directly via shell",
+        );
+
+        let publish_install = self.step_run_script(
+            self.step_named(self.job("publish"), "Install publish dependencies"),
+            "Install publish dependencies",
+        );
+        for required_marker in [
+            "sudo apt-get update",
+            "sudo apt-get install --yes jq qemu-user-static",
+            "curl -fsSL",
+            "docker buildx version",
+            "docker buildx create --name publish-builder --driver docker-container --use",
+            "docker buildx inspect --bootstrap",
+        ] {
+            assert!(
+                publish_install.contains(required_marker),
+                "publish dependency installation must include `{required_marker}`",
+            );
+        }
+
+        for forbidden_action in [
+            "dtolnay/rust-toolchain",
+            "docker/setup-buildx-action",
+            "docker/login-action",
+            "docker/build-push-action",
+            "aquasecurity/setup-trivy",
+        ] {
+            assert!(
+                !self.workflow_text.contains(forbidden_action),
+                "workflow must not depend on `{forbidden_action}`",
+            );
+        }
+    }
+
+    pub fn assert_emits_published_image_manifest_for_downstream_consumers(&self) {
+        let publish_job = self.job("publish");
+        let outputs = publish_job
+            .get(Value::String("outputs".to_owned()))
+            .and_then(Value::as_mapping)
+            .expect("publish job should expose outputs for downstream consumers");
+        assert_eq!(
+            outputs
+                .get(Value::String("publish_manifest".to_owned()))
+                .map(value_as_str),
+            Some("${{ steps.publish-manifest.outputs.publish_manifest }}"),
+            "publish job should expose the manifest output",
+        );
+
+        let manifest_step =
+            self.step_named(publish_job, "Publish manifest");
+        let manifest_script = self.step_run_script(manifest_step, "Publish manifest");
+        assert!(
+            manifest_script.contains("${{ env.PUBLISHED_IMAGE_MANIFEST }}"),
+            "manifest step should write the published image manifest through the shared env boundary",
+        );
+        assert!(
+            manifest_script.contains("GITHUB_OUTPUT"),
+            "manifest step should expose published image refs through job outputs",
+        );
+
+        for image in PublishedImageContract::all() {
+            let target = workflow_publish_target(image.image_id());
+            let expected_output = target.output_expression;
+            assert_eq!(
+                outputs
+                    .get(Value::String(target.manifest_key.to_owned()))
+                    .map(value_as_str),
+                Some(expected_output.as_str()),
+                "publish job should expose `{}` through the manifest step",
+                target.manifest_key,
+            );
+            assert!(
+                manifest_script.contains(target.manifest_key),
+                "manifest step should persist `{}` for downstream consumers",
+                target.manifest_key,
+            );
+        }
+
+        let upload_inputs = self.step_inputs(
+            self.step_using_prefix(publish_job, "actions/upload-artifact"),
+            "actions/upload-artifact",
+        );
+        assert_eq!(
+            upload_inputs
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("${{ env.PUBLISHED_IMAGE_MANIFEST }}"),
+            "manifest artifact upload should preserve the shared manifest path boundary",
+        );
+        assert_eq!(
+            upload_inputs
+                .get(Value::String("if-no-files-found".to_owned()))
+                .map(value_as_str),
+            Some("error"),
+            "manifest artifact upload must fail loudly if the manifest is missing",
+        );
+    }
+
+    pub fn assert_masks_derived_sensitive_values_and_never_logs_raw_credentials(&self) {
+        let mask_script = self.step_run_script(
+            self.step_named(self.job("publish"), "Mask derived publish credentials"),
+            "Mask derived publish credentials",
+        );
+        assert!(
+            mask_script.contains("derived_registry_auth"),
+            "workflow should derive a non-secret composite credential for masking verification",
+        );
+        assert!(
+            mask_script.contains("::add-mask::${derived_registry_auth}"),
+            "workflow should explicitly mask the derived credential before any output",
+        );
+        assert!(
+            mask_script.contains("derived registry auth (masked)"),
+            "workflow should print a masked diagnostic so hosted logs can prove redaction works",
+        );
+
+        let login_script = self.step_run_script(
+            self.step_named(self.job("publish"), "Login to registry"),
+            "Login to registry",
+        );
+        assert!(
+            login_script.contains("docker login"),
+            "publish job should log in to the registry explicitly through shell",
+        );
+        assert!(
+            login_script.contains("--password-stdin"),
+            "publish job must pass credentials through stdin instead of echoing them into the command line",
+        );
+        assert!(
+            !login_script.contains("--password "),
+            "publish job must not pass credentials as a shell argument",
+        );
     }
 
     fn workflow_on(&self) -> &Mapping {
@@ -557,6 +515,15 @@ impl GithubWorkflowContract {
             .expect("workflow document should be a mapping")
             .get(Value::String("permissions".to_owned()))
             .and_then(Value::as_mapping)
+    }
+
+    fn workflow_env(&self) -> &Mapping {
+        self.document
+            .as_mapping()
+            .expect("workflow document should be a mapping")
+            .get(Value::String("env".to_owned()))
+            .and_then(Value::as_mapping)
+            .expect("workflow should define a shared env mapping")
     }
 
     fn push_branches(&self) -> Vec<&str> {
@@ -605,6 +572,15 @@ impl GithubWorkflowContract {
             .and_then(Value::as_mapping)
     }
 
+    fn job_run_scripts(&self, name: &str) -> Vec<&str> {
+        self.steps(self.job(name))
+            .iter()
+            .filter_map(Value::as_mapping)
+            .filter_map(|step| step.get(Value::String("run".to_owned())))
+            .map(value_as_str)
+            .collect()
+    }
+
     fn steps<'a>(&self, job: &'a Mapping) -> &'a [Value] {
         job.get(Value::String("steps".to_owned()))
             .and_then(Value::as_sequence)
@@ -612,28 +588,12 @@ impl GithubWorkflowContract {
             .expect("workflow job should define steps")
     }
 
-    fn run_commands(&self) -> Vec<&str> {
-        self.jobs()
-            .values()
-            .filter_map(Value::as_mapping)
-            .flat_map(|job| {
-                job.get(Value::String("steps".to_owned()))
-                    .and_then(Value::as_sequence)
-                    .into_iter()
-                    .flatten()
-            })
-            .filter_map(Value::as_mapping)
-            .filter_map(|step| step.get(Value::String("run".to_owned())))
-            .map(value_as_str)
-            .collect()
-    }
-
-    fn step_index_named(&self, job: &Mapping, step_name: &str) -> usize {
+    fn step_named<'a>(&self, job: &'a Mapping, step_name: &str) -> &'a Mapping {
         self.steps(job)
             .iter()
-            .position(|step| {
-                step.as_mapping()
-                    .and_then(|mapping| mapping.get(Value::String("name".to_owned())))
+            .filter_map(Value::as_mapping)
+            .find(|step| {
+                step.get(Value::String("name".to_owned()))
                     .and_then(Value::as_str)
                     .is_some_and(|name| name == step_name)
             })
@@ -652,23 +612,11 @@ impl GithubWorkflowContract {
             .unwrap_or_else(|| panic!("workflow job should use `{uses_prefix}`"))
     }
 
-    fn step_named<'a>(&self, job: &'a Mapping, step_name: &str) -> &'a Mapping {
-        self.steps(job)
-            .iter()
-            .filter_map(Value::as_mapping)
-            .find(|step| {
-                step.get(Value::String("name".to_owned()))
-                    .and_then(Value::as_str)
-                    .is_some_and(|name| name == step_name)
-            })
-            .unwrap_or_else(|| panic!("workflow job should define a `{step_name}` step"))
-    }
-
-    fn step_inputs<'a>(&self, step: &'a Mapping, uses_prefix: &str) -> &'a Mapping {
+    fn step_inputs<'a>(&self, step: &'a Mapping, step_name: &str) -> &'a Mapping {
         step.get(Value::String("with".to_owned()))
             .and_then(Value::as_mapping)
             .unwrap_or_else(|| {
-                panic!("workflow step `{uses_prefix}` should define explicit inputs")
+                panic!("workflow step `{step_name}` should define explicit inputs")
             })
     }
 
@@ -677,23 +625,45 @@ impl GithubWorkflowContract {
             .map(value_as_str)
             .unwrap_or_else(|| panic!("workflow step `{step_name}` should define a run script"))
     }
+}
 
-    fn jobs(&self) -> &Mapping {
-        self.document
-            .as_mapping()
-            .expect("workflow document should be a mapping")
-            .get(Value::String("jobs".to_owned()))
-            .and_then(Value::as_mapping)
-            .expect("workflow should define jobs")
-    }
+fn publish_step_name(image: &PublishedImageSpec) -> String {
+    format!("Publish {} image", image.image_id())
+}
 
-    fn workflow_env(&self) -> &Mapping {
-        self.document
-            .as_mapping()
-            .expect("workflow document should be a mapping")
-            .get(Value::String("env".to_owned()))
-            .and_then(Value::as_mapping)
-            .expect("workflow should define a shared env mapping")
+struct WorkflowPublishTarget {
+    repository_env: &'static str,
+    dockerfile: &'static str,
+    context: &'static str,
+    manifest_key: &'static str,
+    output_expression: String,
+}
+
+fn workflow_publish_target(image_id: &str) -> WorkflowPublishTarget {
+    match image_id {
+        "runner" => WorkflowPublishTarget {
+            repository_env: "RUNNER_IMAGE_REPOSITORY",
+            dockerfile: "./Dockerfile",
+            context: ".",
+            manifest_key: "runner_image_ref",
+            output_expression: "${{ steps.publish-manifest.outputs.runner_image_ref }}".to_owned(),
+        },
+        "setup-sql" => WorkflowPublishTarget {
+            repository_env: "SETUP_SQL_IMAGE_REPOSITORY",
+            dockerfile: "./crates/setup-sql/Dockerfile",
+            context: ".",
+            manifest_key: "setup_sql_image_ref",
+            output_expression:
+                "${{ steps.publish-manifest.outputs.setup_sql_image_ref }}".to_owned(),
+        },
+        "verify" => WorkflowPublishTarget {
+            repository_env: "VERIFY_IMAGE_REPOSITORY",
+            dockerfile: "./cockroachdb_molt/molt/Dockerfile",
+            context: "./cockroachdb_molt/molt",
+            manifest_key: "verify_image_ref",
+            output_expression: "${{ steps.publish-manifest.outputs.verify_image_ref }}".to_owned(),
+        },
+        _ => panic!("unknown workflow publish target `{image_id}`"),
     }
 }
 

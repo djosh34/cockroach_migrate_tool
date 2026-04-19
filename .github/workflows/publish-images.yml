@@ -1,0 +1,137 @@
+name: publish-images
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: publish-images-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  RUNNER_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-runner
+  SETUP_SQL_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-setup-sql
+  VERIFY_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-verify
+  PUBLISHED_IMAGE_MANIFEST: ${{ runner.temp }}/published-images.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.93.0 --profile minimal --component clippy
+          rustup default 1.93.0
+      - name: Validate repository
+        run: |
+          set -euo pipefail
+          make check
+          make test
+
+  publish:
+    needs: validate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      publish_manifest: ${{ steps.publish-manifest.outputs.publish_manifest }}
+      runner_image_ref: ${{ steps.publish-manifest.outputs.runner_image_ref }}
+      setup_sql_image_ref: ${{ steps.publish-manifest.outputs.setup_sql_image_ref }}
+      verify_image_ref: ${{ steps.publish-manifest.outputs.verify_image_ref }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Install publish dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes jq qemu-user-static
+          BUILDX_VERSION=v0.30.1
+          mkdir -p "${HOME}/.docker/cli-plugins"
+          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" \
+            -o "${HOME}/.docker/cli-plugins/docker-buildx"
+          chmod +x "${HOME}/.docker/cli-plugins/docker-buildx"
+          docker buildx version
+          docker buildx create --name publish-builder --driver docker-container --use
+          docker buildx inspect --bootstrap
+      - name: Mask derived publish credentials
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${REGISTRY_PASSWORD}" | base64 -w0)"
+          echo "::add-mask::${derived_registry_auth}"
+          printf 'derived registry auth (masked): %s\n' "${derived_registry_auth}"
+      - name: Login to registry
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${{ env.REGISTRY }}" --username "${{ github.actor }}" --password-stdin
+      - name: Publish runner image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file ./Dockerfile \
+            --tag "${{ env.REGISTRY }}/${{ env.RUNNER_IMAGE_REPOSITORY }}:${{ github.sha }}" \
+            --push \
+            .
+      - name: Publish setup-sql image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file ./crates/setup-sql/Dockerfile \
+            --tag "${{ env.REGISTRY }}/${{ env.SETUP_SQL_IMAGE_REPOSITORY }}:${{ github.sha }}" \
+            --push \
+            .
+      - name: Publish verify image
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file ./cockroachdb_molt/molt/Dockerfile \
+            --tag "${{ env.REGISTRY }}/${{ env.VERIFY_IMAGE_REPOSITORY }}:${{ github.sha }}" \
+            --push \
+            ./cockroachdb_molt/molt
+      - name: Publish manifest
+        id: publish-manifest
+        run: |
+          set -euo pipefail
+          runner_image_ref="${{ env.REGISTRY }}/${{ env.RUNNER_IMAGE_REPOSITORY }}:${{ github.sha }}"
+          setup_sql_image_ref="${{ env.REGISTRY }}/${{ env.SETUP_SQL_IMAGE_REPOSITORY }}:${{ github.sha }}"
+          verify_image_ref="${{ env.REGISTRY }}/${{ env.VERIFY_IMAGE_REPOSITORY }}:${{ github.sha }}"
+          cat > "${{ env.PUBLISHED_IMAGE_MANIFEST }}" <<EOF
+          {
+            "runner_image_ref": "${runner_image_ref}",
+            "setup_sql_image_ref": "${setup_sql_image_ref}",
+            "verify_image_ref": "${verify_image_ref}"
+          }
+          EOF
+          {
+            echo "publish_manifest<<EOF"
+            cat "${{ env.PUBLISHED_IMAGE_MANIFEST }}"
+            echo "EOF"
+            echo "runner_image_ref=${runner_image_ref}"
+            echo "setup_sql_image_ref=${setup_sql_image_ref}"
+            echo "verify_image_ref=${verify_image_ref}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Upload published image manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-image-manifest
+          path: ${{ env.PUBLISHED_IMAGE_MANIFEST }}
+          if-no-files-found: error
