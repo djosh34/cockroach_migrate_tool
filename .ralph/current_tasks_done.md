@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 08:29:57 PM CEST 2026
+Generated: Sun Apr 19 08:50:32 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -9,6 +9,17 @@ Generated: Sun Apr 19 08:29:57 PM CEST 2026
 
 <description>
 The verify HTTP audit found that the listener accepts insecure remote-service modes such as plain HTTP and no client authentication. The CLI only prints `warning: no extra built-in protection is being provided by the verify service` and still treats those configurations as valid.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-exposes-job-results-and-metrics-without-auth.md`
+
+```
+## Bug: Verify HTTP exposes job results and metrics without auth <status>completed</status> <passes>true</passes> <priority>ultra high</priority>
+
+<description>
+The verify HTTP audit found that `GET /jobs/{job_id}` and `GET /metrics` expose operational details to any caller on the listener. The current behavior includes job IDs, timestamps, failure reasons, mismatch details, source and destination database names, schema names, table names, and mismatch counts, with no authentication or authorization layer in the service itself.
 ```
 
 ==============

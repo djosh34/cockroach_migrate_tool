@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 08:29:57 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-exposes-job-results-and-metrics-without-auth.md`
-
-```
-## Bug: Verify HTTP exposes job results and metrics without auth <status>not_started</status> <passes>false</passes> <priority>ultra high</priority>
-
-<description>
-The verify HTTP audit found that `GET /jobs/{job_id}` and `GET /metrics` expose operational details to any caller on the listener. The current behavior includes job IDs, timestamps, failure reasons, mismatch details, source and destination database names, schema names, table names, and mismatch counts, with no authentication or authorization layer in the service itself.
-```
-
-==============
+Generated: Sun Apr 19 08:50:32 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-https-runtime-does-not-load-server-certificate.md`
 

@@ -94,17 +94,77 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, getResponse.StatusCode)
 
-	var payload struct {
-		JobID      string  `json:"job_id"`
-		Status     string  `json:"status"`
-		StartedAt  string  `json:"started_at"`
-		FinishedAt *string `json:"finished_at"`
-	}
-	require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
-	require.Equal(t, "job-000001", payload.JobID)
-	require.Equal(t, "running", payload.Status)
-	require.Equal(t, "2026-04-19T18:31:00Z", payload.StartedAt)
-	require.Nil(t, payload.FinishedAt)
+	body, err := io.ReadAll(getResponse.Body)
+	require.NoError(t, err)
+
+	var payload map[string]any
+	require.NoError(t, json.Unmarshal(body, &payload))
+	require.Equal(t, map[string]any{
+		"job_id": "job-000001",
+		"status": "running",
+	}, payload)
+}
+
+func TestGetJobReturnsOnlySafeStatusFieldsAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.StatusReport{Info: `verification in progress; $(whoami) "quoted"`})
+		reporter.Report(inconsistency.SummaryReport{
+			Info: `table verification summary; $(echo accounts)`,
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 7,
+				NumMismatch: 1,
+			},
+		})
+		return nil
+	})
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		getResponse, err := http.Get(server.URL + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = getResponse.Body.Close()
+		}()
+		if getResponse.StatusCode != http.StatusOK {
+			return false
+		}
+
+		body, err := io.ReadAll(getResponse.Body)
+		require.NoError(t, err)
+
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(body, &payload))
+		if payload["status"] != "succeeded" {
+			return false
+		}
+
+		require.Equal(t, map[string]any{
+			"job_id": "job-000001",
+			"status": "succeeded",
+		}, payload)
+		require.NotContains(t, string(body), "verification in progress")
+		require.NotContains(t, string(body), "accounts")
+		require.NotContains(t, string(body), "public")
+		return true
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func TestMetricsExposesRunningJobState(t *testing.T) {
@@ -137,14 +197,11 @@ func TestMetricsExposesRunningJobState(t *testing.T) {
 
 	body, err := io.ReadAll(response.Body)
 	require.NoError(t, err)
-	require.Contains(
-		t,
-		string(body),
-		`cockroach_migration_tool_verify_job_state{job_id="job-000001",status="running"} 1`,
-	)
+	require.Contains(t, string(body), "cockroach_migration_tool_verify_active_jobs 1")
+	require.Contains(t, string(body), `cockroach_migration_tool_verify_jobs_total{status="running"} 1`)
 }
 
-func TestMetricsExposeRunningTableProgress(t *testing.T) {
+func TestMetricsExposeOnlyCoarseLifecycleState(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(ctx context.Context, reporter inconsistency.Reporter) error {
@@ -155,6 +212,7 @@ func TestMetricsExposeRunningTableProgress(t *testing.T) {
 				Schema:      "public",
 				Table:       "accounts",
 				NumVerified: 7,
+				NumMismatch: 2,
 			},
 		})
 		<-ctx.Done()
@@ -198,104 +256,21 @@ func TestMetricsExposeRunningTableProgress(t *testing.T) {
 		body, err := io.ReadAll(response.Body)
 		require.NoError(t, err)
 		metrics := string(body)
-		return strings.Contains(metrics, `cockroach_migration_tool_verify_job_state{job_id="job-000001",status="running"} 1`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} 7`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_checked_rows_total{job_id="job-000001",schema="public",table="accounts"} 7`) &&
-			!strings.Contains(metrics, "molt_verify_")
+		require.Contains(t, metrics, "cockroach_migration_tool_verify_active_jobs 1")
+		require.Contains(t, metrics, `cockroach_migration_tool_verify_jobs_total{status="running"} 1`)
+		require.NotContains(t, metrics, "job_id")
+		require.NotContains(t, metrics, "source_db")
+		require.NotContains(t, metrics, "target_db")
+		require.NotContains(t, metrics, "schema=")
+		require.NotContains(t, metrics, "table=")
+		require.NotContains(t, metrics, "kind=")
+		require.NotContains(t, metrics, "accounts")
+		require.NotContains(t, metrics, "public")
+		return true
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestMetricsKeepLatestTableTotalsAndExposeMismatchKinds(t *testing.T) {
-	t.Parallel()
-
-	runner := reportingRunner(func(ctx context.Context, reporter inconsistency.Reporter) error {
-		reporter.Report(inconsistency.SummaryReport{
-			Info: "accounts summary 1",
-			Stats: inconsistency.RowStats{
-				Schema:      "public",
-				Table:       "accounts",
-				NumVerified: 3,
-				NumSuccess:  1,
-				NumMissing:  1,
-				NumMismatch: 1,
-			},
-		})
-		reporter.Report(inconsistency.SummaryReport{
-			Info: "accounts summary 2",
-			Stats: inconsistency.RowStats{
-				Schema:                "public",
-				Table:                 "accounts",
-				NumVerified:           7,
-				NumSuccess:            2,
-				NumConditionalSuccess: 3,
-				NumMissing:            1,
-				NumMismatch:           4,
-				NumColumnMismatch:     5,
-				NumExtraneous:         6,
-			},
-		})
-		reporter.Report(inconsistency.MismatchingTableDefinition{
-			DBTable: dbtable.DBTable{
-				Name: dbtable.Name{
-					Schema: "public",
-					Table:  "accounts",
-				},
-			},
-			Info: "table definition mismatch",
-		})
-		<-ctx.Done()
-		return ctx.Err()
-	})
-	service := verifyservice.NewService(verifyservice.Config{
-		Verify: verifyservice.VerifyConfig{
-			Source: verifyservice.DatabaseConfig{
-				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
-			},
-			Destination: verifyservice.DatabaseConfig{
-				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
-			},
-		},
-	}, verifyservice.Dependencies{
-		Runner:      runner,
-		IDGenerator: sequentialIDGenerator("job-000001"),
-	})
-	t.Cleanup(service.Close)
-
-	server := httptest.NewServer(service.Handler())
-	t.Cleanup(server.Close)
-
-	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = startResponse.Body.Close()
-	})
-	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
-
-	require.Eventually(t, func() bool {
-		response, err := http.Get(server.URL + "/metrics")
-		require.NoError(t, err)
-		defer func() {
-			_ = response.Body.Close()
-		}()
-		if response.StatusCode != http.StatusOK {
-			return false
-		}
-
-		body, err := io.ReadAll(response.Body)
-		require.NoError(t, err)
-		metrics := string(body)
-		return strings.Count(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} `) == 1 &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} 7`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_destination_rows_total{database="target_db",job_id="job-000001",schema="public",table="accounts"} 15`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="missing",schema="public",table="accounts"} 1`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="mismatch",schema="public",table="accounts"} 4`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="column_mismatch",schema="public",table="accounts"} 5`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="extraneous",schema="public",table="accounts"} 6`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="table_definition",schema="public",table="accounts"} 1`)
-	}, 2*time.Second, 20*time.Millisecond)
-}
-
-func TestMetricsExposeFailedJobStateAndErrors(t *testing.T) {
+func TestMetricsExposeFailedJobLifecycleState(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
@@ -331,8 +306,8 @@ func TestMetricsExposeFailedJobStateAndErrors(t *testing.T) {
 		body, err := io.ReadAll(response.Body)
 		require.NoError(t, err)
 		metrics := string(body)
-		return strings.Contains(metrics, `cockroach_migration_tool_verify_job_state{job_id="job-000001",status="failed"} 1`) &&
-			strings.Contains(metrics, `cockroach_migration_tool_verify_errors_total{job_id="job-000001"} 1`)
+		return strings.Contains(metrics, "cockroach_migration_tool_verify_active_jobs 0") &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_jobs_total{status="failed"} 1`)
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
@@ -399,19 +374,15 @@ func TestMetricsKeepLabelSetsNarrowAndExcludeFreeText(t *testing.T) {
 		body, err := io.ReadAll(response.Body)
 		require.NoError(t, err)
 		metrics := string(body)
-		if !strings.Contains(metrics, `cockroach_migration_tool_verify_errors_total{job_id="job-000001"} 1`) {
+		if !strings.Contains(metrics, `cockroach_migration_tool_verify_jobs_total{status="failed"} 1`) {
 			return false
 		}
 
 		parser := expfmt.TextParser{}
 		families, err := parser.TextToMetricFamilies(strings.NewReader(metrics))
 		require.NoError(t, err)
-		require.Equal(t, []string{"job_id", "status"}, metricLabelNames(t, families["cockroach_migration_tool_verify_job_state"]))
-		require.Equal(t, []string{"database", "job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_source_rows_total"]))
-		require.Equal(t, []string{"database", "job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_destination_rows_total"]))
-		require.Equal(t, []string{"job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_checked_rows_total"]))
-		require.Equal(t, []string{"job_id", "kind", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_mismatches_total"]))
-		require.Equal(t, []string{"job_id"}, metricLabelNames(t, families["cockroach_migration_tool_verify_errors_total"]))
+		require.Empty(t, metricLabelNames(t, families["cockroach_migration_tool_verify_active_jobs"]))
+		require.Equal(t, []string{"status"}, metricLabelNames(t, families["cockroach_migration_tool_verify_jobs_total"]))
 		require.NotContains(t, metrics, "verifying public.accounts with free text")
 		require.NotContains(t, metrics, "accounts summary with free text")
 		require.NotContains(t, metrics, "table definition mismatch with free text")
@@ -497,95 +468,7 @@ func TestPostStopWithoutJobIDStopsTheActiveJob(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestGetJobReturnsCompletedTypedVerifyResult(t *testing.T) {
-	t.Parallel()
-
-	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
-		reporter.Report(inconsistency.StatusReport{Info: `verification in progress; $(whoami) "quoted"`})
-		reporter.Report(inconsistency.SummaryReport{
-			Info: `table verification summary; $(echo accounts)`,
-			Stats: inconsistency.RowStats{
-				Schema:      "public",
-				Table:       "accounts",
-				NumVerified: 7,
-				NumMismatch: 1,
-			},
-		})
-		return nil
-	})
-	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
-		Runner:      runner,
-		IDGenerator: sequentialIDGenerator("job-000001"),
-		Now: sequentialTimeGenerator(
-			time.Date(2026, 4, 19, 18, 32, 0, 0, time.UTC),
-			time.Date(2026, 4, 19, 18, 32, 5, 0, time.UTC),
-		),
-	})
-	t.Cleanup(service.Close)
-
-	server := httptest.NewServer(service.Handler())
-	t.Cleanup(server.Close)
-
-	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		_ = startResponse.Body.Close()
-	})
-	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
-
-	require.Eventually(t, func() bool {
-		getResponse, err := http.Get(server.URL + "/jobs/job-000001")
-		require.NoError(t, err)
-		defer func() {
-			_ = getResponse.Body.Close()
-		}()
-		if getResponse.StatusCode != http.StatusOK {
-			return false
-		}
-
-		var payload struct {
-			JobID         string  `json:"job_id"`
-			Status        string  `json:"status"`
-			StartedAt     string  `json:"started_at"`
-			FinishedAt    *string `json:"finished_at"`
-			FailureReason *string `json:"failure_reason"`
-			Result        struct {
-				StatusMessages []struct {
-					Info string `json:"info"`
-				} `json:"status_messages"`
-				Summaries []struct {
-					Info  string `json:"info"`
-					Stats struct {
-						Schema      string `json:"schema"`
-						Table       string `json:"table"`
-						NumVerified int    `json:"num_verified"`
-						NumMismatch int    `json:"num_mismatch"`
-					} `json:"stats"`
-				} `json:"summaries"`
-			} `json:"result"`
-		}
-		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
-		if payload.Status != "succeeded" {
-			return false
-		}
-		require.Equal(t, "job-000001", payload.JobID)
-		require.Equal(t, "2026-04-19T18:32:00Z", payload.StartedAt)
-		require.NotNil(t, payload.FinishedAt)
-		require.Equal(t, "2026-04-19T18:32:05Z", *payload.FinishedAt)
-		require.Nil(t, payload.FailureReason)
-		require.Len(t, payload.Result.StatusMessages, 1)
-		require.Equal(t, `verification in progress; $(whoami) "quoted"`, payload.Result.StatusMessages[0].Info)
-		require.Len(t, payload.Result.Summaries, 1)
-		require.Equal(t, `table verification summary; $(echo accounts)`, payload.Result.Summaries[0].Info)
-		require.Equal(t, "public", payload.Result.Summaries[0].Stats.Schema)
-		require.Equal(t, "accounts", payload.Result.Summaries[0].Stats.Table)
-		require.Equal(t, 7, payload.Result.Summaries[0].Stats.NumVerified)
-		require.Equal(t, 1, payload.Result.Summaries[0].Stats.NumMismatch)
-		return true
-	}, 2*time.Second, 20*time.Millisecond)
-}
-
-func TestGetJobReturnsFailedResultWithMismatchAndFailureReason(t *testing.T) {
+func TestGetJobReturnsOnlySafeStatusFieldsAfterFailure(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
@@ -630,34 +513,23 @@ func TestGetJobReturnsFailedResultWithMismatchAndFailureReason(t *testing.T) {
 			return false
 		}
 
-		var payload struct {
-			Status        string  `json:"status"`
-			FinishedAt    *string `json:"finished_at"`
-			FailureReason *string `json:"failure_reason"`
-			Result        struct {
-				Mismatches []struct {
-					Kind   string `json:"kind"`
-					Schema string `json:"schema"`
-					Table  string `json:"table"`
-					Info   string `json:"info"`
-				} `json:"mismatches"`
-				Errors []string `json:"errors"`
-			} `json:"result"`
-		}
-		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
-		if payload.Status != "failed" {
+		body, err := io.ReadAll(getResponse.Body)
+		require.NoError(t, err)
+
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(body, &payload))
+		if payload["status"] != "failed" {
 			return false
 		}
-		require.NotNil(t, payload.FinishedAt)
-		require.Equal(t, "2026-04-19T18:33:04Z", *payload.FinishedAt)
-		require.NotNil(t, payload.FailureReason)
-		require.Equal(t, `verify exploded; $(curl attacker) "quoted"`, *payload.FailureReason)
-		require.Len(t, payload.Result.Mismatches, 1)
-		require.Equal(t, "table_definition", payload.Result.Mismatches[0].Kind)
-		require.Equal(t, "public", payload.Result.Mismatches[0].Schema)
-		require.Equal(t, "accounts", payload.Result.Mismatches[0].Table)
-		require.Equal(t, `primary key mismatch; $(touch /tmp/pwned) "quoted"`, payload.Result.Mismatches[0].Info)
-		require.Equal(t, []string{`verify exploded; $(curl attacker) "quoted"`}, payload.Result.Errors)
+
+		require.Equal(t, map[string]any{
+			"job_id": "job-000001",
+			"status": "failed",
+		}, payload)
+		require.NotContains(t, string(body), "table_definition")
+		require.NotContains(t, string(body), "public")
+		require.NotContains(t, string(body), "accounts")
+		require.NotContains(t, string(body), "verify exploded")
 		return true
 	}, 2*time.Second, 20*time.Millisecond)
 }

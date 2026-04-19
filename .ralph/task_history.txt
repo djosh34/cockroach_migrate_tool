@@ -98,3 +98,4 @@
 .ralph/tasks/story-18-verify-http-image/08-task-expose-verify-job-progress-and-result-metrics.md
 .ralph/tasks/story-18-verify-http-image/09-task-run-a-five-pass-security-audit-of-the-verify-http-surface-and-file-bugs-for-each-issue.md
 .ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md
+.ralph/tasks/bugs/bug-verify-http-exposes-job-results-and-metrics-without-auth.md

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,8 +38,6 @@ type Service struct {
 	runner      Runner
 	idGenerator func() string
 	now         func() time.Time
-	sourceDB    string
-	targetDB    string
 	jobs        map[string]*job
 	activeJobID string
 }
@@ -52,43 +49,11 @@ type job struct {
 	finishedAt    *time.Time
 	cancel        context.CancelFunc
 	failureReason *string
-	progress      jobProgressSnapshot
 }
 
-type jobResult struct {
-	StatusMessages []jobStatusMessage `json:"status_messages"`
-	Summaries      []jobSummary       `json:"summaries"`
-	Mismatches     []jobMismatch      `json:"mismatches"`
-	Errors         []string           `json:"errors"`
-}
-
-type jobStatusMessage struct {
-	Info string `json:"info"`
-}
-
-type jobSummary struct {
-	Info  string      `json:"info"`
-	Stats rowStatsDTO `json:"stats"`
-}
-
-type rowStatsDTO struct {
-	Schema                string `json:"schema"`
-	Table                 string `json:"table"`
-	NumVerified           int    `json:"num_verified"`
-	NumSuccess            int    `json:"num_success"`
-	NumConditionalSuccess int    `json:"num_conditional_success"`
-	NumMissing            int    `json:"num_missing"`
-	NumMismatch           int    `json:"num_mismatch"`
-	NumColumnMismatch     int    `json:"num_column_mismatch"`
-	NumExtraneous         int    `json:"num_extraneous"`
-	NumLiveRetry          int    `json:"num_live_retry"`
-}
-
-type jobMismatch struct {
-	Kind   string `json:"kind"`
-	Schema string `json:"schema,omitempty"`
-	Table  string `json:"table,omitempty"`
-	Info   string `json:"info,omitempty"`
+type jobStatusView struct {
+	JobID  string    `json:"job_id"`
+	Status JobStatus `json:"status"`
 }
 
 func NewService(cfg Config, deps Dependencies) *Service {
@@ -101,20 +66,10 @@ func NewService(cfg Config, deps Dependencies) *Service {
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
-	sourceDB, err := databaseNameFromURL(cfg.Verify.Source.URL)
-	if err != nil {
-		panic(err)
-	}
-	targetDB, err := databaseNameFromURL(cfg.Verify.Destination.URL)
-	if err != nil {
-		panic(err)
-	}
 	return &Service{
 		runner:      deps.Runner,
 		idGenerator: deps.IDGenerator,
 		now:         deps.Now,
-		sourceDB:    sourceDB,
-		targetDB:    targetDB,
 		jobs:        make(map[string]*job),
 	}
 }
@@ -184,7 +139,6 @@ func (s *Service) startJob(request RunRequest) (*job, error) {
 		status:    JobStatusRunning,
 		startedAt: s.now(),
 		cancel:    cancel,
-		progress:  newJobProgressSnapshot(),
 	}
 	s.jobs[job.id] = job
 	s.activeJobID = job.id
@@ -217,7 +171,6 @@ func (s *Service) finishJob(jobID string, err error) {
 		job.status = JobStatusFailed
 		failureReason := err.Error()
 		job.failureReason = &failureReason
-		job.progress.recordError(failureReason)
 	}
 
 	if s.activeJobID == jobID {
@@ -312,25 +265,9 @@ func (s *Service) stopJob(jobID string) ([]string, error) {
 }
 
 func (j job) response() any {
-	var finishedAt *string
-	if j.finishedAt != nil {
-		formatted := j.finishedAt.UTC().Format(time.RFC3339)
-		finishedAt = &formatted
-	}
-	return struct {
-		JobID         string    `json:"job_id"`
-		Status        JobStatus `json:"status"`
-		StartedAt     string    `json:"started_at"`
-		FinishedAt    *string   `json:"finished_at"`
-		FailureReason *string   `json:"failure_reason"`
-		Result        jobResult `json:"result"`
-	}{
-		JobID:         j.id,
-		Status:        j.status,
-		StartedAt:     j.startedAt.UTC().Format(time.RFC3339),
-		FinishedAt:    finishedAt,
-		FailureReason: j.failureReason,
-		Result:        j.progress.result(),
+	return jobStatusView{
+		JobID:  j.id,
+		Status: j.status,
 	}
 }
 
@@ -405,38 +342,6 @@ func max(left int, right int) int {
 }
 
 func (s *Service) recordReport(jobID string, obj inconsistency.ReportableObject) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	job, ok := s.jobs[jobID]
-	if !ok {
-		return
-	}
-	job.progress.record(obj)
-}
-
-func toRowStatsDTO(stats inconsistency.RowStats) rowStatsDTO {
-	return rowStatsDTO{
-		Schema:                stats.Schema,
-		Table:                 stats.Table,
-		NumVerified:           stats.NumVerified,
-		NumSuccess:            stats.NumSuccess,
-		NumConditionalSuccess: stats.NumConditionalSuccess,
-		NumMissing:            stats.NumMissing,
-		NumMismatch:           stats.NumMismatch,
-		NumColumnMismatch:     stats.NumColumnMismatch,
-		NumExtraneous:         stats.NumExtraneous,
-		NumLiveRetry:          stats.NumLiveRetry,
-	}
-}
-
-func databaseNameFromURL(rawURL string) (string, error) {
-	if rawURL == "" {
-		return "", nil
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimPrefix(parsed.Path, "/"), nil
+	_ = jobID
+	_ = obj
 }
