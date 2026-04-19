@@ -1,4 +1,4 @@
-## Task: Assert the end-to-end suite has no cheating <status>not_started</status> <passes>false</passes>
+## Task: Assert the end-to-end suite has no cheating <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -19,12 +19,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers assertions that the E2E suite uses the real migration path only
-- [ ] The suite rejects fake migrations, shortcuts, and extra magic
-- [ ] The integrity checks are part of the repository and run automatically
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers assertions that the E2E suite uses the real migration path only
+- [x] The suite rejects fake migrations, shortcuts, and extra magic
+- [x] The integrity checks are part of the repository and run automatically
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-12-verify-e2e-integrity/01-task-assert-e2e-suite-has-no-cheating_plans/2026-04-19-e2e-suite-integrity-plan.md</plan>

@@ -9,6 +9,7 @@ use std::{
 
 use tempfile::TempDir;
 
+use crate::e2e_integrity::VerifyAudit;
 use crate::e2e_harness::{
     DockerEnvironment, ensure_source_bootstrap_binary, https_client, investigation_ca_cert_path,
     investigation_server_cert_path, investigation_server_key_path, pick_unused_port, prepend_path,
@@ -214,6 +215,7 @@ pub struct MultiMappingHarness {
     wrapper_bin_dir: PathBuf,
     report_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
+    molt_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     runner_process: RefCell<Option<Child>>,
@@ -254,6 +256,7 @@ impl MultiMappingHarness {
             wrapper_bin_dir,
             report_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
+            molt_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             runner_process: RefCell::new(None),
@@ -491,33 +494,11 @@ VALUES (5003, 1, 'expansion-pack', 2);
     }
 
     pub fn verify_migrations(&self) {
-        let app_a_output = self.verify_mapping(APP_A);
-        assert!(
-            !app_a_output.contains("public.invoices"),
-            "app-a verify output should mention only app-a tables: {app_a_output}"
-        );
-        assert!(
-            !app_a_output.contains("public.invoice_lines"),
-            "app-a verify output should mention only app-a tables: {app_a_output}"
-        );
-        assert!(
-            !app_a_output.contains("_cockroach_migration_tool"),
-            "app-a verify output should never mention helper tables: {app_a_output}"
-        );
+        let app_a_audit = self.verify_mapping(APP_A);
+        app_a_audit.assert_excludes_tables(APP_B.selected_tables);
 
-        let app_b_output = self.verify_mapping(APP_B);
-        assert!(
-            !app_b_output.contains("public.customers"),
-            "app-b verify output should mention only app-b tables: {app_b_output}"
-        );
-        assert!(
-            !app_b_output.contains("public.order_items"),
-            "app-b verify output should mention only app-b tables: {app_b_output}"
-        );
-        assert!(
-            !app_b_output.contains("_cockroach_migration_tool"),
-            "app-b verify output should never mention helper tables: {app_b_output}"
-        );
+        let app_b_audit = self.verify_mapping(APP_B);
+        app_b_audit.assert_excludes_tables(APP_A.selected_tables);
     }
 
     fn materialize(&mut self) {
@@ -525,6 +506,7 @@ VALUES (5003, 1, 'expansion-pack', 2);
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
         self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
+        self.molt_wrapper_log_path = self.temp_dir.path().join("molt-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
 
@@ -535,6 +517,7 @@ VALUES (5003, 1, 'expansion-pack', 2);
         );
         write_molt_wrapper_script(
             &self.wrapper_bin_dir.join("molt"),
+            &self.molt_wrapper_log_path,
             &self.docker.cockroach_container,
         );
         self.write_runner_config();
@@ -697,7 +680,7 @@ mappings:
         .expect("source-bootstrap config should be written");
     }
 
-    fn verify_mapping(&self, mapping: MappingSpec) -> String {
+    fn verify_mapping(&self, mapping: MappingSpec) -> VerifyAudit {
         self.assert_runner_alive();
         let output = run_command_capture(
             Command::new(env!("CARGO_BIN_EXE_runner"))
@@ -708,19 +691,12 @@ mappings:
                 .arg("--allow-tls-mode-disable"),
             "runner verify",
         );
-        assert!(
-            output.contains("verification"),
-            "verify output should include a verification summary: {output}"
-        );
-        assert!(
-            output.contains("verdict=matched"),
-            "verify output should report a matched verdict: {output}"
-        );
-        assert!(
-            output.contains(&format!("tables={}", mapping.selected_tables.join(","))),
-            "verify output should mention only the real migrated tables: {output}"
-        );
-        output
+        VerifyAudit::from_runner_verify(
+            output,
+            &self.molt_wrapper_log_path,
+            mapping.destination_database,
+            mapping.selected_tables,
+        )
     }
 
     fn wait_for_destination_query(

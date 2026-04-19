@@ -229,15 +229,8 @@ VALUES (2, 'live-write', 'should stay excluded');
     }
 
     pub fn verify_migration(&self) {
-        let output = self.inner.verify_migration();
-        assert!(
-            !output.contains("public.audit_events"),
-            "verify output should mention only included real tables: {output}"
-        );
-        assert!(
-            !output.contains("_cockroach_migration_tool"),
-            "verify output should never mention helper tables: {output}"
-        );
+        let audit = self.inner.verify_migration();
+        audit.assert_excludes_tables(&["public.audit_events"]);
     }
 
     fn wait_for_included_state(

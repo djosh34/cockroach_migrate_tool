@@ -2,6 +2,8 @@
 mod composite_pk_exclusion_harness;
 #[path = "support/default_bootstrap_harness.rs"]
 mod default_bootstrap_harness;
+#[path = "support/e2e_integrity.rs"]
+mod e2e_integrity;
 #[path = "support/e2e_harness.rs"]
 mod e2e_harness;
 #[path = "support/multi_mapping_harness.rs"]
@@ -88,6 +90,30 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
 
 #[test]
 #[ignore = "long lane"]
+fn ignored_long_lane_proves_customer_live_update_flows_through_webhook_then_helper_then_reconcile()
+{
+    let harness =
+        DefaultBootstrapHarness::start_with_observed_webhook_gateway_and_reconcile_interval(30);
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    let baseline = harness.customer_tracking_progress();
+    harness.update_source_customer_email(1, "alice+live-path@example.com");
+    let live_update = harness.wait_for_customer_update_received_before_reconcile(
+        &baseline,
+        "1:alice+live-path@example.com,2:bob@example.com",
+        "1:alice@example.com,2:bob@example.com",
+        "alice+live-path@example.com",
+    );
+    harness.wait_for_customer_update_reconcile(
+        &live_update,
+        "1:alice+live-path@example.com,2:bob@example.com",
+    );
+    harness.verify_default_migration_audit();
+}
+
+#[test]
+#[ignore = "long lane"]
 fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converges() {
     let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
 
@@ -103,11 +129,7 @@ fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converg
         "1:alice+retry@example.com,2:bob@example.com",
         Duration::from_secs(3),
     );
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -148,11 +170,7 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
         "1:alice+network@example.com,2:bob+recovered@example.com",
         Duration::from_secs(3),
     );
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -181,11 +199,7 @@ fn ignored_long_lane_recovers_after_helper_persistence_transaction_failure() {
     harness
         .wait_for_helper_shadow_customers("1:alice+helper-failure@example.com,2:bob@example.com");
     harness.wait_for_destination_customers("1:alice+helper-failure@example.com,2:bob@example.com");
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -249,11 +263,7 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should remain monotonic after recovery",
     );
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -322,11 +332,7 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should stay monotonic across restart",
     );
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -380,11 +386,7 @@ fn ignored_long_lane_recovers_after_runner_crash_during_a_blocked_reconcile_pass
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should remain monotonic after the blocked reconcile restart",
     );
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -465,11 +467,7 @@ fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_po
     harness.wait_for_destination_customers("2:bob@example.com");
     harness.assert_helper_shadow_customers_stable("2:bob@example.com", Duration::from_secs(11));
     harness.assert_destination_customers_stable("2:bob@example.com", Duration::from_secs(11));
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -516,11 +514,7 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
         Duration::from_secs(3),
     );
     harness.assert_runner_alive();
-    let verify_output = harness.verify_default_migration_output();
-    assert!(
-        !verify_output.contains("_cockroach_migration_tool"),
-        "verify output should mention only the real migrated table: {verify_output}"
-    );
+    harness.verify_default_migration_audit();
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use crate::e2e_integrity::{CustomerLiveUpdateAudit, VerifyAudit};
 use crate::e2e_harness::{
     CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, DestinationWriteFailure,
     MappingTrackingProgress, WebhookSinkMode,
@@ -113,6 +114,17 @@ impl DefaultBootstrapHarness {
     pub fn start_with_observed_webhook_gateway() -> Self {
         Self {
             inner: Self::build_inner(1, WebhookSinkMode::ObservableChaosGateway),
+        }
+    }
+
+    pub fn start_with_observed_webhook_gateway_and_reconcile_interval(
+        reconcile_interval_secs: u64,
+    ) -> Self {
+        Self {
+            inner: Self::build_inner(
+                reconcile_interval_secs,
+                WebhookSinkMode::ObservableChaosGateway,
+            ),
         }
     }
 
@@ -240,6 +252,56 @@ impl DefaultBootstrapHarness {
             .wait_for_duplicate_gateway_delivery_of_request_body(email);
     }
 
+    pub fn wait_for_customer_update_received_before_reconcile(
+        &self,
+        baseline: &MappingTrackingProgress,
+        updated_helper_snapshot: &str,
+        previous_destination_snapshot: &str,
+        updated_email: &str,
+    ) -> CustomerLiveUpdateAudit {
+        self.inner
+            .wait_for_gateway_forwarded_status_sequence_for_request_body(
+                updated_email,
+                &[reqwest::StatusCode::OK],
+            );
+        self.wait_for_helper_shadow_customers(updated_helper_snapshot);
+        self.assert_destination_customers_stable(
+            previous_destination_snapshot,
+            Duration::from_secs(3),
+        );
+        let progress = self.wait_for_customer_tracking_progress(
+            "customer update should be durably received before reconcile catches up",
+            |progress| {
+                progress.stream.received_has_advanced_since(&baseline.stream)
+                    && progress.stream.latest_reconciled_resolved_watermark
+                        == baseline.stream.latest_reconciled_resolved_watermark
+                    && progress.table.last_successful_sync_watermark
+                        == baseline.table.last_successful_sync_watermark
+                    && progress.table.last_error.is_none()
+            },
+        );
+        let received_watermark = progress
+            .stream
+            .latest_received_resolved_watermark
+            .expect("received-before-reconcile progress should capture a received watermark");
+        CustomerLiveUpdateAudit::new(received_watermark)
+    }
+
+    pub fn wait_for_customer_update_reconcile(
+        &self,
+        audit: &CustomerLiveUpdateAudit,
+        expected_destination_snapshot: &str,
+    ) -> MappingTrackingProgress {
+        self.wait_for_destination_customers(expected_destination_snapshot);
+        self.wait_for_customer_tracking_progress(
+            "customer update should reconcile through the received watermark without storing errors",
+            |progress| {
+                progress.has_reconciled_through(audit.received_watermark())
+                    && progress.table.last_error.is_none()
+            },
+        )
+    }
+
     pub fn wait_for_gateway_transport_abort_then_success_for_customer_email(&self, email: &str) {
         self.inner
             .wait_for_gateway_fault_then_success_for_request_body(
@@ -260,10 +322,10 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn verify_default_migration(&self) {
-        let _ = self.verify_default_migration_output();
+        let _ = self.verify_default_migration_audit();
     }
 
-    pub fn verify_default_migration_output(&self) -> String {
+    pub fn verify_default_migration_audit(&self) -> VerifyAudit {
         self.inner.verify_migration()
     }
 
