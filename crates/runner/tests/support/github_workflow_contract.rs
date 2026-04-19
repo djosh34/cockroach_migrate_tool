@@ -4,17 +4,22 @@ use serde_yaml::{Mapping, Value};
 
 pub struct GithubWorkflowContract {
     workflow_text: String,
+    readme_text: String,
     document: Value,
 }
 
 impl GithubWorkflowContract {
     pub fn load_master_image() -> Self {
         let workflow_path = repo_root().join(".github/workflows/master-image.yml");
+        let readme_path = repo_root().join("README.md");
         let workflow_text = fs::read_to_string(&workflow_path).unwrap_or_else(|error| {
             panic!(
                 "master image workflow `{}` should be readable: {error}",
                 workflow_path.display()
             )
+        });
+        let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
+            panic!("README `{}` should be readable: {error}", readme_path.display())
         });
         let document = serde_yaml::from_str(&workflow_text).unwrap_or_else(|error| {
             panic!(
@@ -25,34 +30,48 @@ impl GithubWorkflowContract {
 
         Self {
             workflow_text,
+            readme_text,
             document,
         }
     }
 
     pub fn assert_pushes_to_master_only(&self) {
-        let workflow_on = self.workflow_on();
-        let push = workflow_on
-            .get(Value::String("push".to_owned()))
-            .and_then(Value::as_mapping)
-            .expect("workflow `on.push` should be a mapping");
-        let branches = push
-            .get(Value::String("branches".to_owned()))
-            .and_then(Value::as_sequence)
-            .expect("workflow `on.push.branches` should be a sequence");
-        let actual_branches = branches
-            .iter()
-            .map(value_as_str)
-            .collect::<Vec<_>>();
-
         assert_eq!(
-            actual_branches,
+            self.push_branches(),
             vec!["master"],
             "workflow must trigger only on pushes to `master`",
         );
         assert!(
-            !workflow_on.contains_key(Value::String("pull_request".to_owned())),
+            !self.workflow_on().contains_key(Value::String("pull_request".to_owned())),
             "workflow must not define a pull_request trigger",
         );
+    }
+
+    pub fn assert_rejects_outsider_controlled_and_drift_prone_triggers(&self) {
+        assert_eq!(
+            self.push_branches(),
+            vec!["master"],
+            "workflow must trigger only on pushes to `master`",
+        );
+        assert!(
+            self.push_tags().is_none(),
+            "workflow must not trigger on tag pushes",
+        );
+
+        for forbidden_trigger in [
+            "pull_request",
+            "pull_request_target",
+            "workflow_dispatch",
+            "workflow_run",
+            "workflow_call",
+            "schedule",
+        ] {
+            assert!(
+                !self.workflow_on()
+                    .contains_key(Value::String(forbidden_trigger.to_owned())),
+                "workflow must not define a `{forbidden_trigger}` trigger",
+            );
+        }
     }
 
     pub fn assert_runs_validation_commands(&self, expected_commands: &[&str]) {
@@ -70,6 +89,125 @@ impl GithubWorkflowContract {
         }
     }
 
+    pub fn assert_keeps_publish_permissions_and_credentials_out_of_validation(&self) {
+        let workflow_permissions = self
+            .workflow_permissions()
+            .expect("workflow should define top-level permissions");
+        assert_eq!(
+            workflow_permissions
+                .get(Value::String("contents".to_owned()))
+                .map(value_as_str),
+            Some("read"),
+            "workflow should keep top-level permissions read-only",
+        );
+        assert!(
+            !workflow_permissions.contains_key(Value::String("packages".to_owned())),
+            "workflow must not grant package publish permission at the workflow level",
+        );
+
+        let publish_permissions = self
+            .job_permissions("publish")
+            .expect("publish job should define explicit permissions");
+        assert_eq!(
+            publish_permissions
+                .get(Value::String("contents".to_owned()))
+                .map(value_as_str),
+            Some("read"),
+            "publish job should retain read access for checkout",
+        );
+        assert_eq!(
+            publish_permissions
+                .get(Value::String("packages".to_owned()))
+                .map(value_as_str),
+            Some("write"),
+            "publish job should be the only job with package publish permission",
+        );
+
+        let validate_permissions = self.job_permissions("validate");
+        assert!(
+            validate_permissions.is_none()
+                || !validate_permissions
+                    .expect("validate permissions presence already checked")
+                    .contains_key(Value::String("packages".to_owned())),
+            "validate job must not have package publish permission",
+        );
+
+        for job_name in ["validate", "publish"] {
+            let checkout_step = self.step_using_prefix(self.job(job_name), "actions/checkout");
+            let checkout_inputs = self.step_inputs(checkout_step, "actions/checkout");
+            assert_eq!(
+                checkout_inputs
+                    .get(Value::String("persist-credentials".to_owned()))
+                    .map(value_as_bool),
+                Some(false),
+                "job `{job_name}` checkout must disable credential persistence",
+            );
+        }
+    }
+
+    pub fn assert_publish_is_explicitly_gated_to_the_trusted_master_push_commit(&self) {
+        let publish_job = self.job("publish");
+        let publish_condition = publish_job
+            .get(Value::String("if".to_owned()))
+            .map(value_as_str)
+            .expect("publish job should define an explicit trust gate");
+        assert!(
+            publish_condition.contains("github.event_name == 'push'"),
+            "publish job trust gate must require the push event",
+        );
+        assert!(
+            publish_condition.contains("github.ref == 'refs/heads/master'"),
+            "publish job trust gate must require the master branch ref",
+        );
+        assert!(
+            !publish_job.contains_key(Value::String("uses".to_owned())),
+            "publish job must not delegate publishing through a reusable workflow",
+        );
+
+        let checkout_inputs =
+            self.step_inputs(self.step_using_prefix(publish_job, "actions/checkout"), "checkout");
+        assert!(
+            !checkout_inputs.contains_key(Value::String("ref".to_owned())),
+            "publish checkout must not override the trusted pushed commit ref",
+        );
+
+        let build_inputs = self.step_inputs(
+            self.step_using_prefix(publish_job, "docker/build-push-action"),
+            "docker/build-push-action",
+        );
+        assert_eq!(
+            build_inputs
+                .get(Value::String("context".to_owned()))
+                .map(value_as_str),
+            Some("."),
+            "publish job must build from the repository root of the trusted checked-out commit",
+        );
+        assert_eq!(
+            build_inputs
+                .get(Value::String("tags".to_owned()))
+                .map(value_as_str),
+            Some("${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}"),
+            "publish job must tag the real image only with the trusted pushed commit SHA",
+        );
+    }
+
+    pub fn assert_ci_publish_safety_model_is_documented(&self) {
+        assert!(
+            self.readme_text.contains("## CI Publish Safety"),
+            "README should document the CI publish safety model",
+        );
+        for required_line in [
+            "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, and tag pushes do not trigger the protected image-publish workflow.",
+            "The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.",
+            "Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.",
+        ] {
+            assert!(
+                self.readme_text.contains(required_line),
+                "README should explain CI publish safety invariant: {required_line}",
+            );
+        }
+    }
+
     pub fn assert_commit_tagged_ghcr_publish_only(&self) {
         let publish_job = self.job("publish");
         let publish_needs = publish_job
@@ -82,10 +220,9 @@ impl GithubWorkflowContract {
         );
 
         let login_step = self.step_using_prefix(publish_job, "docker/login-action");
-        let registry = login_step
-            .get(Value::String("with".to_owned()))
-            .and_then(Value::as_mapping)
-            .and_then(|with| with.get(Value::String("registry".to_owned())))
+        let registry = self
+            .step_inputs(login_step, "docker/login-action")
+            .get(Value::String("registry".to_owned()))
             .map(value_as_str)
             .expect("publish job should log in to a registry");
         assert_eq!(
@@ -94,18 +231,15 @@ impl GithubWorkflowContract {
         );
 
         let build_step = self.step_using_prefix(publish_job, "docker/build-push-action");
-        let with = build_step
-            .get(Value::String("with".to_owned()))
-            .and_then(Value::as_mapping)
-            .expect("build-push step should define with inputs");
-        let push = with
+        let build_inputs = self.step_inputs(build_step, "docker/build-push-action");
+        let push = build_inputs
             .get(Value::String("push".to_owned()))
             .expect("build-push step should set push");
         assert!(
             value_as_bool(push),
             "build-push step must push the validated image to GHCR",
         );
-        let tags = with
+        let tags = build_inputs
             .get(Value::String("tags".to_owned()))
             .map(value_as_str)
             .expect("build-push step should define tags");
@@ -146,10 +280,9 @@ impl GithubWorkflowContract {
 
         let publish_job = self.job("publish");
         let build_step = self.step_using_prefix(publish_job, "docker/build-push-action");
-        let tags = build_step
-            .get(Value::String("with".to_owned()))
-            .and_then(Value::as_mapping)
-            .and_then(|with| with.get(Value::String("tags".to_owned())))
+        let tags = self
+            .step_inputs(build_step, "docker/build-push-action")
+            .get(Value::String("tags".to_owned()))
             .map(value_as_str)
             .expect("build-push step should define tags");
         assert!(
@@ -173,6 +306,43 @@ impl GithubWorkflowContract {
             .expect("workflow should define an `on` mapping")
     }
 
+    fn workflow_permissions(&self) -> Option<&Mapping> {
+        self.document
+            .as_mapping()
+            .expect("workflow document should be a mapping")
+            .get(Value::String("permissions".to_owned()))
+            .and_then(Value::as_mapping)
+    }
+
+    fn push_branches(&self) -> Vec<&str> {
+        self.push_mapping()
+            .get(Value::String("branches".to_owned()))
+            .and_then(Value::as_sequence)
+            .expect("workflow `on.push.branches` should be a sequence")
+            .iter()
+            .map(value_as_str)
+            .collect()
+    }
+
+    fn push_tags(&self) -> Option<Vec<&str>> {
+        self.push_mapping()
+            .get(Value::String("tags".to_owned()))
+            .map(|tags| {
+                tags.as_sequence()
+                    .expect("workflow `on.push.tags` should be a sequence")
+                    .iter()
+                    .map(value_as_str)
+                    .collect()
+            })
+    }
+
+    fn push_mapping(&self) -> &Mapping {
+        self.workflow_on()
+            .get(Value::String("push".to_owned()))
+            .and_then(Value::as_mapping)
+            .expect("workflow `on.push` should be a mapping")
+    }
+
     fn job(&self, name: &str) -> &Mapping {
         self.document
             .as_mapping()
@@ -182,6 +352,12 @@ impl GithubWorkflowContract {
             .and_then(|jobs| jobs.get(Value::String(name.to_owned())))
             .and_then(Value::as_mapping)
             .unwrap_or_else(|| panic!("workflow should define a `{name}` job"))
+    }
+
+    fn job_permissions(&self, name: &str) -> Option<&Mapping> {
+        self.job(name)
+            .get(Value::String("permissions".to_owned()))
+            .and_then(Value::as_mapping)
     }
 
     fn run_commands(&self) -> Vec<&str> {
@@ -212,6 +388,12 @@ impl GithubWorkflowContract {
                     .is_some_and(|uses| uses.starts_with(uses_prefix))
             })
             .unwrap_or_else(|| panic!("workflow job should use `{uses_prefix}`"))
+    }
+
+    fn step_inputs<'a>(&self, step: &'a Mapping, uses_prefix: &str) -> &'a Mapping {
+        step.get(Value::String("with".to_owned()))
+            .and_then(Value::as_mapping)
+            .unwrap_or_else(|| panic!("workflow step `{uses_prefix}` should define explicit inputs"))
     }
 
     fn jobs(&self) -> &Mapping {

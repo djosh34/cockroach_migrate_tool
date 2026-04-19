@@ -14,6 +14,34 @@ fn master_image_workflow_triggers_only_on_pushes_to_master() {
 }
 
 #[test]
+fn master_image_workflow_rejects_outsider_controlled_and_drift_prone_triggers() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_rejects_outsider_controlled_and_drift_prone_triggers();
+}
+
+#[test]
+fn master_image_workflow_keeps_publish_permissions_and_credentials_out_of_validation() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_keeps_publish_permissions_and_credentials_out_of_validation();
+}
+
+#[test]
+fn master_image_workflow_explicitly_gates_publish_to_the_trusted_master_push_commit() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_publish_is_explicitly_gated_to_the_trusted_master_push_commit();
+}
+
+#[test]
+fn ci_publish_safety_model_is_documented_for_reviewers() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_ci_publish_safety_model_is_documented();
+}
+
+#[test]
 fn master_image_workflow_runs_the_full_repository_validation_suite() {
     let workflow = GithubWorkflowContract::load_master_image();
 

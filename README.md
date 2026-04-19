@@ -203,6 +203,14 @@ Use one mapping-scoped runbook for cutover. Before handover starts, run `runner 
 
 Do not switch traffic until writes are frozen, `runner cutover-readiness` has drained to zero with `ready=true`, and the final `runner verify` reports equality.
 
+## CI Publish Safety
+
+Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, and tag pushes do not trigger the protected image-publish workflow.
+
+The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.
+
+Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.
+
 ## Command Contract
 
 - `make check`: run the workspace lint gate.

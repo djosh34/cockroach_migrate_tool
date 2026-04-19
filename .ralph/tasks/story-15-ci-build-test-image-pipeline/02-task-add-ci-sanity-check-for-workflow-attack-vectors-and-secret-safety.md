@@ -1,4 +1,4 @@
-## Task: Add a CI sanity and security check task that audits workflow attack vectors, secret exposure, and untrusted PR behavior <status>not_started</status> <passes>false</passes>
+## Task: Add a CI sanity and security check task that audits workflow attack vectors, secret exposure, and untrusted PR behavior <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -32,13 +32,15 @@ This task should assume the repository is greenfield and should fail loudly rath
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the sanity checks or assertions that guard the workflow against unsafe trigger and permission expansion
-- [ ] The repository has a concrete sanity-check mechanism that reviews workflow attack vectors instead of relying on tribal knowledge
-- [ ] The checks explicitly cover pull requests, forks, outsider-controlled events, secret availability, package-publish permissions, and trusted-source guarantees for the published image
-- [ ] The checks fail loudly if workflow configuration drifts into a state that could leak secrets, waste CPU on untrusted events, or publish an image from untrusted code
-- [ ] The final documented outcome makes clear why random PRs cannot trigger the protected publish path or influence the real published image
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers the sanity checks or assertions that guard the workflow against unsafe trigger and permission expansion
+- [x] The repository has a concrete sanity-check mechanism that reviews workflow attack vectors instead of relying on tribal knowledge
+- [x] The checks explicitly cover pull requests, forks, outsider-controlled events, secret availability, package-publish permissions, and trusted-source guarantees for the published image
+- [x] The checks fail loudly if workflow configuration drifts into a state that could leak secrets, waste CPU on untrusted events, or publish an image from untrusted code
+- [x] The final documented outcome makes clear why random PRs cannot trigger the protected publish path or influence the real published image
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-15-ci-build-test-image-pipeline/02-task-add-ci-sanity-check-for-workflow-attack-vectors-and-secret-safety_plans/2026-04-19-workflow-attack-safety-plan.md</plan>

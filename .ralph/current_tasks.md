@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 09:22:55 AM CEST 2026
+Generated: Sun Apr 19 09:53:01 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-14-reports/01-task-report-novice-user-manual-experience.md`
 
@@ -20,17 +20,6 @@ Generated: Sun Apr 19 09:22:55 AM CEST 2026
 
 <description>
 **Goal:** Read the code as it actually exists and produce a very exhaustive Markdown report on code complexity, structure, module interactions, simplicity, stability, and signs of overengineering. The higher order goal is to evaluate whether the implementation is staying faithful to KISS rather than drifting into complexity for its own sake.
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/02-task-add-ci-sanity-check-for-workflow-attack-vectors-and-secret-safety.md`
-
-```
-## Task: Add a CI sanity and security check task that audits workflow attack vectors, secret exposure, and untrusted PR behavior <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
 ```
 
 ==============
