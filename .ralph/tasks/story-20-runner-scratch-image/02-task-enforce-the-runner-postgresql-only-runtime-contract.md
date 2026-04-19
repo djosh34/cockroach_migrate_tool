@@ -33,3 +33,5 @@ Decisions already made:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-20-runner-scratch-image/02-task-enforce-the-runner-postgresql-only-runtime-contract_plans/2026-04-19-runner-postgresql-only-runtime-contract-plan.md</plan>
