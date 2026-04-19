@@ -101,7 +101,9 @@ fn verify_succeeds_for_a_clean_molt_summary() {
         .stdout(predicate::str::contains("verification"))
         .stdout(predicate::str::contains("mapping=app-a"))
         .stdout(predicate::str::contains("verdict=matched"))
-        .stdout(predicate::str::contains(format!("artifacts={artifact_label}")));
+        .stdout(predicate::str::contains(format!(
+            "artifacts={artifact_label}"
+        )));
 }
 
 #[test]
@@ -237,7 +239,10 @@ EOF
         ));
 
     let raw_log_path = report_dir.join("app-a.raw.log");
-    assert!(raw_log_path.is_file(), "raw log should be preserved on failure");
+    assert!(
+        raw_log_path.is_file(),
+        "raw log should be preserved on failure"
+    );
     let raw_log = fs::read_to_string(raw_log_path).expect("raw log should be readable");
     assert!(
         raw_log.contains("non-json prelude"),

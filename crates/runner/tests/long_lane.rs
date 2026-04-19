@@ -8,7 +8,10 @@ use runner_image_harness::RunnerImageHarness;
 fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image_against_real_postgres() {
     let harness = RunnerImageHarness::start();
 
-    assert_eq!(harness.image_entrypoint_json().trim(), "[\"/usr/local/bin/runner\"]");
+    assert_eq!(
+        harness.image_entrypoint_json().trim(),
+        "[\"/usr/local/bin/runner\"]"
+    );
 
     let validate_stdout = harness.validate_mounted_config();
     assert!(validate_stdout.contains("config=/config/container-runner-config.yml"));

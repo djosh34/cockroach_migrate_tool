@@ -62,13 +62,14 @@ impl TestPostgres {
         let port = pick_unused_port();
 
         run_command(
-            Command::new("initdb").args([
-                "--auth-local=trust",
-                "--auth-host=trust",
-                "--username=postgres",
-                "--pgdata",
-            ])
-            .arg(data_dir.path()),
+            Command::new("initdb")
+                .args([
+                    "--auth-local=trust",
+                    "--auth-host=trust",
+                    "--username=postgres",
+                    "--pgdata",
+                ])
+                .arg(data_dir.path()),
             "initdb",
         );
 
@@ -102,45 +103,41 @@ impl TestPostgres {
 
     fn exec(&self, database: &str, sql: &str) {
         run_command(
-            Command::new("psql")
-                .env("PGPASSWORD", "")
-                .args([
-                    "-h",
-                    "127.0.0.1",
-                    "-p",
-                    &self.port.to_string(),
-                    "-U",
-                    "postgres",
-                    "-d",
-                    database,
-                    "-v",
-                    "ON_ERROR_STOP=1",
-                    "-c",
-                    sql,
-                ]),
+            Command::new("psql").env("PGPASSWORD", "").args([
+                "-h",
+                "127.0.0.1",
+                "-p",
+                &self.port.to_string(),
+                "-U",
+                "postgres",
+                "-d",
+                database,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ]),
             "psql",
         );
     }
 
     fn query(&self, database: &str, sql: &str) -> String {
         run_command_stdout(
-            Command::new("psql")
-                .env("PGPASSWORD", "")
-                .args([
-                    "-h",
-                    "127.0.0.1",
-                    "-p",
-                    &self.port.to_string(),
-                    "-U",
-                    "postgres",
-                    "-d",
-                    database,
-                    "-v",
-                    "ON_ERROR_STOP=1",
-                    "-At",
-                    "-c",
-                    sql,
-                ]),
+            Command::new("psql").env("PGPASSWORD", "").args([
+                "-h",
+                "127.0.0.1",
+                "-p",
+                &self.port.to_string(),
+                "-U",
+                "postgres",
+                "-d",
+                database,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-At",
+                "-c",
+                sql,
+            ]),
             "psql",
         )
         .trim()
@@ -1179,7 +1176,10 @@ fn run_returns_non_200_and_rolls_back_partial_row_batch_failures() {
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );
-    assert_eq!(failing_row_batch.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        failing_row_batch.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
     assert_eq!(
         postgres.query(
             "app_a",

@@ -207,11 +207,7 @@ fn render_helper_plan_writes_parent_before_child_and_reverse_delete_order() {
 
     write_runner_config(
         &config_path,
-        &[
-            "public.order_items",
-            "public.orders",
-            "public.customers",
-        ],
+        &["public.order_items", "public.orders", "public.customers"],
     );
     fs::write(
         &cockroach_schema_path,

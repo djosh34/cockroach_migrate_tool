@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 01:45:56 AM CEST 2026
+Generated: Sun Apr 19 02:05:57 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md`
 
 ```
 ## Task: Document the API write-freeze cutover runbook <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/02-task-e2e-fk-heavy-initial-scan-and-live-catchup.md`
-
-```
-## Task: End-to-end test FK-heavy initial scan and live catch-up <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

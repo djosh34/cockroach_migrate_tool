@@ -94,7 +94,10 @@ impl RunnerImageHarness {
         let client = https_client(&fixtures_dir().join("certs").join("server.crt"));
         for _ in 0..60 {
             match client
-                .get(format!("https://localhost:{}/healthz", self.runner_host_port))
+                .get(format!(
+                    "https://localhost:{}/healthz",
+                    self.runner_host_port
+                ))
                 .send()
             {
                 Ok(response) if response.status().is_success() => return,
@@ -193,14 +196,8 @@ impl RunnerImageHarness {
             "postgres",
             "CREATE ROLE migration_user_b LOGIN PASSWORD 'runner-secret-b';",
         );
-        self.exec_psql(
-            "postgres",
-            "CREATE DATABASE app_a OWNER migration_user_a;",
-        );
-        self.exec_psql(
-            "postgres",
-            "CREATE DATABASE app_b OWNER migration_user_b;",
-        );
+        self.exec_psql("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+        self.exec_psql("postgres", "CREATE DATABASE app_b OWNER migration_user_b;");
         self.exec_psql(
             "app_a",
             "SET ROLE migration_user_a;
@@ -307,10 +304,9 @@ fn run_command_capture(command: &mut Command, context: &str) -> String {
 }
 
 fn https_client(certificate_path: &PathBuf) -> Client {
-    let certificate = Certificate::from_pem(
-        &fs::read(certificate_path).expect("certificate should be readable"),
-    )
-    .expect("certificate should parse");
+    let certificate =
+        Certificate::from_pem(&fs::read(certificate_path).expect("certificate should be readable"))
+            .expect("certificate should parse");
 
     Client::builder()
         .add_root_certificate(certificate)

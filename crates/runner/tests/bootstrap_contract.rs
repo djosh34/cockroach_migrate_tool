@@ -50,13 +50,14 @@ impl TestPostgres {
         let port = pick_unused_port();
 
         run_command(
-            Command::new("initdb").args([
-                "--auth-local=trust",
-                "--auth-host=trust",
-                "--username=postgres",
-                "--pgdata",
-            ])
-            .arg(data_dir.path()),
+            Command::new("initdb")
+                .args([
+                    "--auth-local=trust",
+                    "--auth-host=trust",
+                    "--username=postgres",
+                    "--pgdata",
+                ])
+                .arg(data_dir.path()),
             "initdb",
         );
 
@@ -94,22 +95,20 @@ impl TestPostgres {
 
     fn exec_as(&self, user: &str, database: &str, sql: &str) {
         run_command(
-            Command::new("psql")
-                .env("PGPASSWORD", "")
-                .args([
-                    "-h",
-                    "127.0.0.1",
-                    "-p",
-                    &self.port.to_string(),
-                    "-U",
-                    user,
-                    "-d",
-                    database,
-                    "-v",
-                    "ON_ERROR_STOP=1",
-                    "-c",
-                    sql,
-                ]),
+            Command::new("psql").env("PGPASSWORD", "").args([
+                "-h",
+                "127.0.0.1",
+                "-p",
+                &self.port.to_string(),
+                "-U",
+                user,
+                "-d",
+                database,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-c",
+                sql,
+            ]),
             "psql",
         );
     }
@@ -371,10 +370,7 @@ impl RunnerProcess {
         panic!("runner did not serve healthz at {url}");
     }
 
-    fn assert_exits_failure(
-        mut self,
-        stderr_predicate: impl predicates::Predicate<str>,
-    ) {
+    fn assert_exits_failure(mut self, stderr_predicate: impl predicates::Predicate<str>) {
         for _ in 0..50 {
             if let Some(status) = self
                 .child
@@ -917,10 +913,9 @@ fn run_fails_loudly_when_two_mappings_share_one_destination_table() {
     );
 
     RunnerProcess::start(&config_path).assert_exits_failure(
-        predicate::str::contains("destination database `127.0.0.1:")
-            .and(predicate::str::contains(
-                "`public.customers` is claimed by both mappings `app-a` and `app-b`",
-            )),
+        predicate::str::contains("destination database `127.0.0.1:").and(predicate::str::contains(
+            "`public.customers` is claimed by both mappings `app-a` and `app-b`",
+        )),
     );
 }
 
@@ -967,9 +962,8 @@ fn run_fails_loudly_when_two_mappings_share_one_destination_with_conflicting_cre
     );
 
     RunnerProcess::start(&config_path).assert_exits_failure(
-        predicate::str::contains("destination database `127.0.0.1:")
-            .and(predicate::str::contains(
-                "has conflicting connection contracts for mappings `app-a` and `app-b`",
-            )),
+        predicate::str::contains("destination database `127.0.0.1:").and(predicate::str::contains(
+            "has conflicting connection contracts for mappings `app-a` and `app-b`",
+        )),
     );
 }

@@ -49,13 +49,14 @@ impl TestPostgres {
         let port = pick_unused_port();
 
         run_command(
-            Command::new("initdb").args([
-                "--auth-local=trust",
-                "--auth-host=trust",
-                "--username=postgres",
-                "--pgdata",
-            ])
-            .arg(data_dir.path()),
+            Command::new("initdb")
+                .args([
+                    "--auth-local=trust",
+                    "--auth-host=trust",
+                    "--username=postgres",
+                    "--pgdata",
+                ])
+                .arg(data_dir.path()),
             "initdb",
         );
 
@@ -1344,7 +1345,12 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
     let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers", "public.orders"]);
+    postgres.write_runner_config(
+        &config_path,
+        bind_port,
+        2,
+        &["public.customers", "public.orders"],
+    );
 
     let client = https_client();
     let mut runner = RunnerProcess::start(&config_path);

@@ -45,16 +45,12 @@ fn render_bootstrap_script_emits_a_shell_script_for_configured_mappings() {
         .stdout(predicate::str::contains(
             "WEBHOOK_BASE_URL='https://runner.example.internal:8443'",
         ))
-        .stdout(predicate::str::contains(
-            format!(
-                "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-a?ca_cert={FIXTURE_CA_CERT_QUERY}'"
-            ),
-        ))
-        .stdout(predicate::str::contains(
-            format!(
-                "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-b?ca_cert={FIXTURE_CA_CERT_QUERY}'"
-            ),
-        ))
+        .stdout(predicate::str::contains(format!(
+            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-a?ca_cert={FIXTURE_CA_CERT_QUERY}'"
+        )))
+        .stdout(predicate::str::contains(format!(
+            "INTO 'webhook-$WEBHOOK_BASE_URL/ingest/app-b?ca_cert={FIXTURE_CA_CERT_QUERY}'"
+        )))
         .stdout(predicate::str::contains("cursor = '$START_CURSOR'"))
         .stdout(predicate::str::contains("initial_scan = 'yes'"))
         .stdout(predicate::str::contains("envelope = 'enriched'"))

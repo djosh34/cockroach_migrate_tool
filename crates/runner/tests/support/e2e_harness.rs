@@ -18,8 +18,50 @@ const POSTGRES_IMAGE: &str = "postgres:16";
 const MOLT_IMAGE: &str =
     "cockroachdb/molt@sha256:abe3c90bc42556ad6713cba207b971e6d55dbd54211b53cfcf27cdc14d49e358";
 
-pub struct DefaultBootstrapHarness {
+pub struct CdcE2eHarnessConfig<'a> {
+    pub mapping_id: &'a str,
+    pub source_database: &'a str,
+    pub destination_database: &'a str,
+    pub destination_user: &'a str,
+    pub destination_password: &'a str,
+    pub selected_tables: &'a [&'a str],
+    pub source_setup_sql: &'a str,
+    pub destination_setup_sql: &'a str,
+}
+
+struct OwnedHarnessConfig {
+    mapping_id: String,
+    source_database: String,
+    destination_database: String,
+    destination_user: String,
+    destination_password: String,
+    selected_tables: Vec<String>,
+    source_setup_sql: String,
+    destination_setup_sql: String,
+}
+
+impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
+    fn from(config: CdcE2eHarnessConfig<'a>) -> Self {
+        Self {
+            mapping_id: config.mapping_id.to_owned(),
+            source_database: config.source_database.to_owned(),
+            destination_database: config.destination_database.to_owned(),
+            destination_user: config.destination_user.to_owned(),
+            destination_password: config.destination_password.to_owned(),
+            selected_tables: config
+                .selected_tables
+                .iter()
+                .map(|table| (*table).to_owned())
+                .collect(),
+            source_setup_sql: config.source_setup_sql.to_owned(),
+            destination_setup_sql: config.destination_setup_sql.to_owned(),
+        }
+    }
+}
+
+pub struct CdcE2eHarness {
     docker: DockerEnvironment,
+    config: OwnedHarnessConfig,
     temp_dir: TempDir,
     runner_port: u16,
     runner_config_path: PathBuf,
@@ -33,16 +75,22 @@ pub struct DefaultBootstrapHarness {
     runner_process: RefCell<Option<Child>>,
 }
 
-impl DefaultBootstrapHarness {
-    pub fn start() -> Self {
+impl CdcE2eHarness {
+    pub fn start(config: CdcE2eHarnessConfig<'_>) -> Self {
+        let config = OwnedHarnessConfig::from(config);
         let docker = DockerEnvironment::new();
         docker.create_network();
         docker.start_cockroach();
         docker.start_postgres();
         docker.wait_for_cockroach();
         docker.wait_for_postgres();
-        docker.prepare_default_source_schema_and_seed();
-        docker.prepare_default_destination_schema();
+        docker.prepare_source_schema_and_seed(&config.source_setup_sql);
+        docker.prepare_destination_database(
+            &config.destination_database,
+            &config.destination_user,
+            &config.destination_password,
+            &config.destination_setup_sql,
+        );
 
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let runner_port = pick_unused_port();
@@ -53,6 +101,7 @@ impl DefaultBootstrapHarness {
 
         let harness = Self {
             docker,
+            config,
             temp_dir,
             runner_port,
             runner_config_path: PathBuf::new(),
@@ -68,7 +117,7 @@ impl DefaultBootstrapHarness {
         harness.materialize()
     }
 
-    pub fn bootstrap_default_migration(&self) {
+    pub fn bootstrap_migration(&self) {
         self.start_runner_process();
         wait_for_runner_health(
             &https_client(&investigation_ca_cert_path()),
@@ -79,24 +128,48 @@ impl DefaultBootstrapHarness {
         self.execute_bootstrap_script();
     }
 
-    pub fn wait_for_destination_customers(&self, expected: &str) {
+    pub fn wait_for_destination_query(&self, sql: &str, expected: &str, description: &str) {
         for _ in 0..120 {
             self.assert_runner_alive();
-            if self
-                .docker
-                .query_postgres_customers("app_a")
-                .trim()
-                .eq(expected)
-            {
+            let actual = self.query_destination(sql);
+            if actual.trim() == expected {
                 return;
             }
             thread::sleep(Duration::from_secs(1));
         }
 
         panic!(
-            "destination customers did not converge to `{expected}`\nsource={}\ndestination={}\nrunner stderr:\n{}",
-            self.docker.query_cockroach_customers("demo_a").trim(),
-            self.docker.query_postgres_customers("app_a").trim(),
+            "{description} did not converge to `{expected}`\nactual={}\nrunner stderr:\n{}",
+            self.query_destination(sql).trim(),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
+    pub fn wait_for_helper_table_row_counts(&self, expectations: &[(&str, usize)]) {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            if expectations
+                .iter()
+                .all(|(table, expected_rows)| self.helper_table_row_count(table) == *expected_rows)
+            {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let actual = expectations
+            .iter()
+            .map(|(table, expected_rows)| {
+                format!(
+                    "{table}: expected={expected_rows} actual={}",
+                    self.helper_table_row_count(table)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        panic!(
+            "helper shadow tables did not converge to expected row counts: {actual}\nhelper tables={}\nrunner stderr:\n{}",
+            self.helper_tables().trim(),
             read_file(&self.runner_stderr_path),
         );
     }
@@ -121,45 +194,27 @@ impl DefaultBootstrapHarness {
                 .any(|command| command.contains("SELECT cluster_logical_timestamp();")),
             "bootstrap should capture the start cursor explicitly: {log}"
         );
+        let expected_changefeed_fragment = format!(
+            "CREATE CHANGEFEED FOR TABLE {}",
+            self.config.selected_tables.join(", ")
+        );
         assert!(
-            commands.iter().any(|command| command.contains(
-                "CREATE CHANGEFEED FOR TABLE public.customers"
-            )),
-            "bootstrap should create the changefeed explicitly: {log}"
+            commands
+                .iter()
+                .any(|command| command.contains(&expected_changefeed_fragment)),
+            "bootstrap should create the expected changefeed explicitly: {log}"
         );
     }
 
-    pub fn assert_helper_shadow_customers(&self, expected_rows: usize) {
-        let tables = self.helper_tables("app_a");
-        assert!(
-            tables.contains("app-a__public__customers"),
-            "helper bootstrap should create the customers shadow table: {tables}"
-        );
-        let row_count = self.docker.exec_psql(
-            "app_a",
-            "SELECT count(*)::text
-             FROM _cockroach_migration_tool.\"app-a__public__customers\";",
-        );
-        assert_eq!(
-            row_count.trim(),
-            expected_rows.to_string(),
-            "helper shadow table should contain the initial scan rows"
-        );
-    }
-
-    pub fn verify_default_migration(&self) {
+    pub fn verify_migration(&self) -> String {
         self.assert_runner_alive();
         let output = run_command_capture(
             Command::new(env!("CARGO_BIN_EXE_runner"))
                 .args(["verify", "--config"])
                 .arg(&self.runner_config_path)
-                .args([
-                    "--mapping",
-                    "app-a",
-                    "--source-url",
-                    "postgresql://root@127.0.0.1:26257/demo_a?sslmode=disable",
-                    "--allow-tls-mode-disable",
-                ]),
+                .args(["--mapping", &self.config.mapping_id, "--source-url"])
+                .arg(self.source_url())
+                .arg("--allow-tls-mode-disable"),
             "runner verify",
         );
         assert!(
@@ -171,18 +226,70 @@ impl DefaultBootstrapHarness {
             "verify output should report a matched verdict: {output}"
         );
         assert!(
-            output.contains("tables=public.customers"),
-            "verify output should mention the real migrated table only: {output}"
+            output.contains(&format!("tables={}", self.config.selected_tables.join(","))),
+            "verify output should mention only the real migrated tables: {output}"
         );
+        output
     }
 
-    fn helper_tables(&self, database: &str) -> String {
+    pub fn execute_source_sql(&self, sql: &str) {
+        self.docker
+            .exec_cockroach_sql(&format!("USE {};\n{sql}", self.config.source_database));
+    }
+
+    pub fn query_destination(&self, sql: &str) -> String {
+        self.docker
+            .exec_psql(&self.config.destination_database, sql)
+    }
+
+    pub fn helper_tables(&self) -> String {
         self.docker.exec_psql(
-            database,
+            &self.config.destination_database,
             "SELECT string_agg(table_name, ',' ORDER BY table_name)
              FROM information_schema.tables
              WHERE table_schema = '_cockroach_migration_tool';",
         )
+    }
+
+    pub fn helper_table_row_count(&self, mapped_table: &str) -> usize {
+        let row_count = self.docker.exec_psql(
+            &self.config.destination_database,
+            &format!(
+                "SELECT count(*)::text
+                 FROM _cockroach_migration_tool.\"{}\";",
+                self.helper_table_name(mapped_table)
+            ),
+        );
+        row_count
+            .trim()
+            .parse::<usize>()
+            .expect("helper shadow row count should parse")
+    }
+
+    pub fn destination_constraint_snapshot(&self) -> String {
+        let selected_table_names = self
+            .config
+            .selected_tables
+            .iter()
+            .map(|table| {
+                let (_, table_name) = split_table_reference(table);
+                format!("'{}'", table_name.replace('\'', "''"))
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        self.query_destination(&format!(
+            "SELECT COALESCE(
+                 string_agg(
+                     table_name || ':' || constraint_name || ':' || constraint_type,
+                     ',' ORDER BY table_name, constraint_name
+                 ),
+                 '<empty>'
+             )
+             FROM information_schema.table_constraints
+             WHERE table_schema = 'public'
+               AND table_name IN ({selected_table_names})
+               AND constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY');"
+        ))
     }
 
     fn materialize(mut self) -> Self {
@@ -201,6 +308,9 @@ impl DefaultBootstrapHarness {
         write_molt_wrapper_script(
             &self.wrapper_bin_dir.join("molt"),
             &self.docker.cockroach_container,
+            &self.config.destination_user,
+            &self.config.destination_password,
+            &self.config.destination_database,
         );
         self.write_runner_config();
         self.write_source_bootstrap_config();
@@ -248,6 +358,13 @@ impl DefaultBootstrapHarness {
     }
 
     fn write_runner_config(&self) {
+        let selected_tables = self
+            .config
+            .selected_tables
+            .iter()
+            .map(|table| format!("        - {table}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         fs::write(
             &self.runner_config_path,
             format!(
@@ -263,31 +380,44 @@ verify:
     command: {molt_command}
     report_dir: {report_dir}
 mappings:
-  - id: app-a
+  - id: {mapping_id}
     source:
-      database: demo_a
+      database: {source_database}
       tables:
-        - public.customers
+{selected_tables}
     destination:
       connection:
         host: 127.0.0.1
         port: {postgres_port}
-        database: app_a
-        user: migration_user_a
-        password: runner-secret-a
+        database: {destination_database}
+        user: {destination_user}
+        password: {destination_password}
 "#,
                 runner_port = self.runner_port,
                 cert_path = investigation_server_cert_path().display(),
                 key_path = investigation_server_key_path().display(),
                 molt_command = self.wrapper_bin_dir.join("molt").display(),
                 report_dir = self.report_dir.display(),
+                mapping_id = self.config.mapping_id,
+                source_database = self.config.source_database,
+                selected_tables = selected_tables,
                 postgres_port = self.docker.postgres_host_port,
+                destination_database = self.config.destination_database,
+                destination_user = self.config.destination_user,
+                destination_password = self.config.destination_password,
             ),
         )
         .expect("runner config should be written");
     }
 
     fn write_source_bootstrap_config(&self) {
+        let selected_tables = self
+            .config
+            .selected_tables
+            .iter()
+            .map(|table| format!("        - {table}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         fs::write(
             &self.source_bootstrap_config_path,
             format!(
@@ -298,14 +428,17 @@ webhook:
   ca_cert_path: {ca_cert_path}
   resolved: 1s
 mappings:
-  - id: app-a
+  - id: {mapping_id}
     source:
-      database: demo_a
+      database: {source_database}
       tables:
-        - public.customers
+{selected_tables}
 "#,
                 runner_port = self.runner_port,
                 ca_cert_path = investigation_ca_cert_path().display(),
+                mapping_id = self.config.mapping_id,
+                source_database = self.config.source_database,
+                selected_tables = selected_tables,
             ),
         )
         .expect("source-bootstrap config should be written");
@@ -336,9 +469,21 @@ mappings:
             read_file(&self.runner_stderr_path),
         )
     }
+
+    fn source_url(&self) -> String {
+        format!(
+            "postgresql://root@127.0.0.1:26257/{}?sslmode=disable",
+            self.config.source_database
+        )
+    }
+
+    fn helper_table_name(&self, mapped_table: &str) -> String {
+        let (schema, table) = split_table_reference(mapped_table);
+        format!("{}__{}__{}", self.config.mapping_id, schema, table)
+    }
 }
 
-impl Drop for DefaultBootstrapHarness {
+impl Drop for CdcE2eHarness {
     fn drop(&mut self) {
         if let Some(child) = self.runner_process.borrow_mut().as_mut() {
             let _ = child.kill();
@@ -481,36 +626,34 @@ impl DockerEnvironment {
         panic!("postgres container did not become ready");
     }
 
-    fn prepare_default_source_schema_and_seed(&self) {
-        self.exec_cockroach_sql(
-            "CREATE DATABASE demo_a;
-             USE demo_a;
-             CREATE TABLE public.customers (
-                 id INT8 PRIMARY KEY,
-                 email STRING NOT NULL
-             );
-             INSERT INTO public.customers (id, email) VALUES
-                 (1, 'alice@example.com'),
-                 (2, 'bob@example.com');",
-        );
+    fn prepare_source_schema_and_seed(&self, sql: &str) {
+        self.exec_cockroach_sql(sql);
     }
 
-    fn prepare_default_destination_schema(&self) {
+    fn prepare_destination_database(
+        &self,
+        destination_database: &str,
+        destination_user: &str,
+        destination_password: &str,
+        destination_setup_sql: &str,
+    ) {
         self.exec_psql(
             "postgres",
-            "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+            &format!(
+                "CREATE ROLE {destination_user} LOGIN PASSWORD '{password}';",
+                password = destination_password.replace('\'', "''"),
+            ),
         );
         self.exec_psql(
             "postgres",
-            "CREATE DATABASE app_a OWNER migration_user_a;",
+            &format!("CREATE DATABASE {destination_database} OWNER {destination_user};"),
         );
         self.exec_psql(
-            "app_a",
-            "SET ROLE migration_user_a;
-             CREATE TABLE public.customers (
-                 id bigint PRIMARY KEY,
-                 email text NOT NULL
-             );",
+            destination_database,
+            &format!(
+                "SET ROLE {destination_user};
+                 {destination_setup_sql}"
+            ),
         );
     }
 
@@ -554,33 +697,6 @@ impl DockerEnvironment {
             ]),
             "docker exec psql",
         )
-    }
-
-    fn query_postgres_customers(&self, database: &str) -> String {
-        self.exec_psql(
-            database,
-            "SELECT COALESCE(
-                 string_agg(id::text || ':' || email, ',' ORDER BY id),
-                 '<empty>'
-             )
-             FROM public.customers;",
-        )
-    }
-
-    fn query_cockroach_customers(&self, database: &str) -> String {
-        self.exec_cockroach_sql(&format!(
-            "USE {database};
-             SELECT COALESCE(
-                 string_agg(CAST(id AS STRING) || ':' || email, ',' ORDER BY id),
-                 '<empty>'
-             )
-             FROM public.customers;"
-        ))
-        .lines()
-        .last()
-        .unwrap_or_default()
-        .trim()
-        .to_owned()
     }
 }
 
@@ -630,7 +746,10 @@ fn investigation_server_key_path() -> PathBuf {
 }
 
 fn source_bootstrap_binary_path() -> PathBuf {
-    repo_root().join("target").join("debug").join("source-bootstrap")
+    repo_root()
+        .join("target")
+        .join("debug")
+        .join("source-bootstrap")
 }
 
 fn ensure_source_bootstrap_binary() {
@@ -669,11 +788,20 @@ fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, container_name: 
     make_executable(path);
 }
 
-fn write_molt_wrapper_script(path: &Path, cockroach_container: &str) {
+fn write_molt_wrapper_script(
+    path: &Path,
+    cockroach_container: &str,
+    destination_user: &str,
+    destination_password: &str,
+    destination_database: &str,
+) {
     fs::write(
         path,
         format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nargs=()\nrewrite_target=0\nfor arg in \"$@\"; do\n  if [[ \"$rewrite_target\" == 1 ]]; then\n    args+=(\"postgresql://migration_user_a:runner-secret-a@postgres:5432/app_a\")\n    rewrite_target=0\n    continue\n  fi\n  args+=(\"$arg\")\n  if [[ \"$arg\" == \"--target\" ]]; then\n    rewrite_target=1\n  fi\ndone\nexec docker run --rm --network container:{cockroach_container} {image} \"${{args[@]}}\"\n",
+            "#!/usr/bin/env bash\nset -euo pipefail\nargs=()\nrewrite_target=0\nfor arg in \"$@\"; do\n  if [[ \"$rewrite_target\" == 1 ]]; then\n    args+=(\"postgresql://{destination_user}:{destination_password}@postgres:5432/{destination_database}\")\n    rewrite_target=0\n    continue\n  fi\n  args+=(\"$arg\")\n  if [[ \"$arg\" == \"--target\" ]]; then\n    rewrite_target=1\n  fi\ndone\nexec docker run --rm --network container:{cockroach_container} {image} \"${{args[@]}}\"\n",
+            destination_user = destination_user,
+            destination_password = destination_password,
+            destination_database = destination_database,
             cockroach_container = shell_quote_text(cockroach_container),
             image = shell_quote_text(MOLT_IMAGE),
         ),
@@ -696,10 +824,9 @@ fn make_executable(path: &Path) {
 }
 
 fn https_client(certificate_path: &Path) -> Client {
-    let certificate = Certificate::from_pem(
-        &fs::read(certificate_path).expect("certificate should be readable"),
-    )
-    .expect("certificate should parse");
+    let certificate =
+        Certificate::from_pem(&fs::read(certificate_path).expect("certificate should be readable"))
+            .expect("certificate should parse");
 
     Client::builder()
         .add_root_certificate(certificate)
@@ -712,7 +839,10 @@ where
     F: Fn() -> String,
 {
     for _ in 0..60 {
-        match client.get(format!("https://localhost:{port}/healthz")).send() {
+        match client
+            .get(format!("https://localhost:{port}/healthz"))
+            .send()
+        {
             Ok(response) if response.status().is_success() => return,
             Ok(_) | Err(_) => thread::sleep(Duration::from_secs(1)),
         }
@@ -782,6 +912,12 @@ fn read_file(path: &Path) -> String {
         Err(error) if error.kind() == io::ErrorKind::NotFound => String::new(),
         Err(error) => panic!("failed to read `{}`: {error}", path.display()),
     }
+}
+
+fn split_table_reference(table: &str) -> (&str, &str) {
+    table
+        .split_once('.')
+        .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
 }
 
 fn shell_quote(path: &Path) -> String {
