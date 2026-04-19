@@ -81,11 +81,12 @@ func (s *Service) metricsStatusSnapshot() metricsStatusSnapshot {
 			JobStatusStopped:   0,
 		},
 	}
-	if s.activeJobID != "" {
+	if s.activeJob != nil {
 		snapshot.activeJobs = 1
+		snapshot.statusCounts[s.activeJob.status]++
 	}
-	for _, job := range s.jobs {
-		snapshot.statusCounts[job.status]++
+	if s.lastCompletedJob != nil {
+		snapshot.statusCounts[s.lastCompletedJob.status]++
 	}
 	return snapshot
 }

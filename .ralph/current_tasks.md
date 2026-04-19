@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 09:11:13 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-retains-completed-jobs-and-metrics-forever.md`
-
-```
-## Bug: Verify HTTP retains completed jobs and metrics forever <status>not_started</status> <passes>false</passes> <priority>high</priority>
-
-<description>
-The verify HTTP audit found that completed jobs are never pruned from `Service.jobs`. Each finished job keeps its full in-memory progress snapshot, including status messages, summary events, mismatch records, and error strings. `/metrics` then iterates every remembered job on every scrape.
-```
-
-==============
+Generated: Sun Apr 19 09:21:18 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/10-task-prune-cockroachdb-molt-down-to-the-postgresql-cockroachdb-verify-hot-path-and-add-root-license-notices.md`
 

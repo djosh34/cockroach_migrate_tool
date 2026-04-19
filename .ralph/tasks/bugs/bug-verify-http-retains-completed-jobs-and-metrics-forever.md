@@ -1,4 +1,4 @@
-## Bug: Verify HTTP retains completed jobs and metrics forever <status>not_started</status> <passes>false</passes> <priority>high</priority>
+## Bug: Verify HTTP retains completed jobs and metrics forever <status>completed</status> <passes>true</passes> <priority>high</priority>
 
 <description>
 The verify HTTP audit found that completed jobs are never pruned from `Service.jobs`. Each finished job keeps its full in-memory progress snapshot, including status messages, summary events, mismatch records, and error strings. `/metrics` then iterates every remembered job on every scrape.
@@ -27,11 +27,11 @@ Then verify if bug still holds. If yes, create new Red test, and continue with R
 </mandatory_red_green_tdd>
 
 <acceptance_criteria>
-- [ ] I created a Red unit and/or integration test that captures the bug
-- [ ] I made the test green by fixing
-- [ ] I manually verified the bug, and created a new Red test if not working still
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+ - [x] I created a Red unit and/or integration test that captures the bug
+ - [x] I made the test green by fixing
+ - [x] I manually verified the bug, and created a new Red test if not working still
+ - [x] `make check` — passes cleanly
+ - [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+ - [x] `make lint` — passes cleanly
 - [ ] If this bug impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>

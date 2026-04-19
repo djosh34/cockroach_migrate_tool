@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 09:11:13 PM CEST 2026
+Generated: Sun Apr 19 09:21:18 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -42,6 +42,17 @@ The verify HTTP audit found that the HTTPS runtime path builds `server.TLSConfig
 
 <description>
 The verify HTTP audit found that `POST /jobs` and `POST /stop` decode directly from the full request body without a size cap. The new strict decoder rejects unknown fields and trailing documents, but it still allows arbitrarily large request bodies to be read into memory before validation completes.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-retains-completed-jobs-and-metrics-forever.md`
+
+```
+## Bug: Verify HTTP retains completed jobs and metrics forever <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+The verify HTTP audit found that completed jobs are never pruned from `Service.jobs`. Each finished job keeps its full in-memory progress snapshot, including status messages, summary events, mismatch records, and error strings. `/metrics` then iterates every remembered job on every scrape.
 ```
 
 ==============

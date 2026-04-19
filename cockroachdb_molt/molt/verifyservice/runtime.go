@@ -15,7 +15,6 @@ import (
 type RuntimeDependencies struct {
 	Runner      Runner
 	IDGenerator func() string
-	Now         func() time.Time
 	Logger      zerolog.Logger
 }
 
@@ -28,7 +27,6 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 	service := NewService(cfg, Dependencies{
 		Runner:      runner,
 		IDGenerator: deps.IDGenerator,
-		Now:         deps.Now,
 	})
 	defer service.Close()
 

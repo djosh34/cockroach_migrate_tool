@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/cockroachdb/molt/verify/inconsistency"
 )
@@ -32,25 +31,20 @@ type Runner interface {
 type Dependencies struct {
 	Runner      Runner
 	IDGenerator func() string
-	Now         func() time.Time
 }
 
 type Service struct {
-	mu          sync.Mutex
-	runner      Runner
-	idGenerator func() string
-	now         func() time.Time
-	jobs        map[string]*job
-	activeJobID string
+	mu               sync.Mutex
+	runner           Runner
+	idGenerator      func() string
+	activeJob        *job
+	lastCompletedJob *job
 }
 
 type job struct {
-	id            string
-	status        JobStatus
-	startedAt     time.Time
-	finishedAt    *time.Time
-	cancel        context.CancelFunc
-	failureReason *string
+	id     string
+	status JobStatus
+	cancel context.CancelFunc
 }
 
 type jobStatusView struct {
@@ -65,14 +59,9 @@ func NewService(cfg Config, deps Dependencies) *Service {
 	if deps.IDGenerator == nil {
 		deps.IDGenerator = newSequentialJobIDGenerator()
 	}
-	if deps.Now == nil {
-		deps.Now = time.Now
-	}
 	return &Service{
 		runner:      deps.Runner,
 		idGenerator: deps.IDGenerator,
-		now:         deps.Now,
-		jobs:        make(map[string]*job),
 	}
 }
 
@@ -131,19 +120,17 @@ func (s *Service) startJob(request RunRequest) (*job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.activeJobID != "" {
+	if s.activeJob != nil {
 		return nil, errJobAlreadyRunning
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	job := &job{
-		id:        s.idGenerator(),
-		status:    JobStatusRunning,
-		startedAt: s.now(),
-		cancel:    cancel,
+		id:     s.idGenerator(),
+		status: JobStatusRunning,
+		cancel: cancel,
 	}
-	s.jobs[job.id] = job
-	s.activeJobID = job.id
+	s.activeJob = job
 
 	go func() {
 		err := s.runner.Run(ctx, request, jobReporter{service: s, jobID: job.id})
@@ -157,8 +144,8 @@ func (s *Service) finishJob(jobID string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	job, ok := s.jobs[jobID]
-	if !ok {
+	job := s.activeJob
+	if job == nil || job.id != jobID {
 		return
 	}
 
@@ -167,20 +154,12 @@ func (s *Service) finishJob(jobID string, err error) {
 		job.status = JobStatusSucceeded
 	case errors.Is(err, context.Canceled):
 		job.status = JobStatusStopped
-		failureReason := "job stopped by request"
-		job.failureReason = &failureReason
 	default:
 		job.status = JobStatusFailed
-		failureReason := err.Error()
-		job.failureReason = &failureReason
 	}
-
-	if s.activeJobID == jobID {
-		s.activeJobID = ""
-	}
-	finishedAt := s.now()
-	job.finishedAt = &finishedAt
 	job.cancel = nil
+	s.lastCompletedJob = job
+	s.activeJob = nil
 }
 
 func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
@@ -229,11 +208,13 @@ func (s *Service) getJobResponse(jobID string) (any, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	storedJob, ok := s.jobs[jobID]
-	if !ok {
-		return nil, false
+	if s.activeJob != nil && s.activeJob.id == jobID {
+		return s.activeJob.response(), true
 	}
-	return storedJob.response(), true
+	if s.lastCompletedJob != nil && s.lastCompletedJob.id == jobID {
+		return s.lastCompletedJob.response(), true
+	}
+	return nil, false
 }
 
 var errJobNotFound = errors.New("job not found")
@@ -241,7 +222,10 @@ var errJobNotFound = errors.New("job not found")
 func (s *Service) stopAllJobs() []string {
 	s.mu.Lock()
 	cancel := s.activeCancelLocked()
-	activeJobID := s.activeJobID
+	activeJobID := ""
+	if s.activeJob != nil {
+		activeJobID = s.activeJob.id
+	}
 	s.mu.Unlock()
 
 	if cancel == nil || activeJobID == "" {
@@ -255,14 +239,13 @@ func (s *Service) stopJob(jobID string) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.activeJobID != jobID {
+	if s.activeJob == nil || s.activeJob.id != jobID {
 		return nil, errJobNotFound
 	}
-	activeJob := s.jobs[jobID]
-	if activeJob == nil || activeJob.cancel == nil {
+	if s.activeJob.cancel == nil {
 		return nil, errJobNotFound
 	}
-	activeJob.cancel()
+	s.activeJob.cancel()
 	return []string{jobID}, nil
 }
 
@@ -274,14 +257,10 @@ func (j job) response() any {
 }
 
 func (s *Service) activeCancelLocked() context.CancelFunc {
-	if s.activeJobID == "" {
+	if s.activeJob == nil {
 		return nil
 	}
-	activeJob := s.jobs[s.activeJobID]
-	if activeJob == nil {
-		return nil
-	}
-	return activeJob.cancel
+	return s.activeJob.cancel
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

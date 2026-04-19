@@ -30,9 +30,6 @@ func TestPostJobsStartsSingleVerifyJob(t *testing.T) {
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
-		Now: func() time.Time {
-			return time.Date(2026, 4, 19, 18, 30, 0, 0, time.UTC)
-		},
 	})
 	t.Cleanup(service.Close)
 
@@ -70,9 +67,6 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
-		Now: func() time.Time {
-			return time.Date(2026, 4, 19, 18, 31, 0, 0, time.UTC)
-		},
 	})
 	t.Cleanup(service.Close)
 
@@ -311,6 +305,93 @@ func TestMetricsExposeFailedJobLifecycleState(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
+func TestCompletedJobRetentionOnlyKeepsMostRecentJob(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		IDGenerator: sequentialIDGenerator("job-000001", "job-000002"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	firstResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = firstResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, firstResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+		return payload["status"] == "succeeded"
+	}, 2*time.Second, 20*time.Millisecond)
+
+	secondResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = secondResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, secondResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/jobs/job-000002")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+		return payload["status"] == "succeeded"
+	}, 2*time.Second, 20*time.Millisecond)
+
+	evictedResponse, err := http.Get(server.URL + "/jobs/job-000001")
+	require.NoError(t, err)
+	defer func() {
+		_ = evictedResponse.Body.Close()
+	}()
+	require.Equal(t, http.StatusNotFound, evictedResponse.StatusCode)
+
+	retainedResponse, err := http.Get(server.URL + "/jobs/job-000002")
+	require.NoError(t, err)
+	defer func() {
+		_ = retainedResponse.Body.Close()
+	}()
+	require.Equal(t, http.StatusOK, retainedResponse.StatusCode)
+
+	metricsResponse, err := http.Get(server.URL + "/metrics")
+	require.NoError(t, err)
+	defer func() {
+		_ = metricsResponse.Body.Close()
+	}()
+	require.Equal(t, http.StatusOK, metricsResponse.StatusCode)
+
+	metricsBody, err := io.ReadAll(metricsResponse.Body)
+	require.NoError(t, err)
+	metrics := string(metricsBody)
+	require.Contains(t, metrics, "cockroach_migration_tool_verify_active_jobs 0")
+	require.Contains(t, metrics, `cockroach_migration_tool_verify_jobs_total{status="succeeded"} 1`)
+	require.NotContains(t, metrics, `cockroach_migration_tool_verify_jobs_total{status="succeeded"} 2`)
+}
+
 func TestMetricsKeepLabelSetsNarrowAndExcludeFreeText(t *testing.T) {
 	t.Parallel()
 
@@ -486,10 +567,6 @@ func TestGetJobReturnsOnlySafeStatusFieldsAfterFailure(t *testing.T) {
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
-		Now: sequentialTimeGenerator(
-			time.Date(2026, 4, 19, 18, 33, 0, 0, time.UTC),
-			time.Date(2026, 4, 19, 18, 33, 4, 0, time.UTC),
-		),
 	})
 	t.Cleanup(service.Close)
 
@@ -909,17 +986,6 @@ func sequentialIDGenerator(ids ...string) func() string {
 		}
 		next := ids[0]
 		ids = ids[1:]
-		return next
-	}
-}
-
-func sequentialTimeGenerator(times ...time.Time) func() time.Time {
-	return func() time.Time {
-		if len(times) == 0 {
-			return time.Date(2026, 4, 19, 0, 0, 0, 0, time.UTC)
-		}
-		next := times[0]
-		times = times[1:]
 		return next
 	}
 }
