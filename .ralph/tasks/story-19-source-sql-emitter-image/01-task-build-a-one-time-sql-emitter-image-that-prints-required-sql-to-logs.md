@@ -1,4 +1,4 @@
-## Task: Build a one-time setup image that prints all required SQL to logs instead of executing bash scripts <status>not_started</status> <passes>false</passes>
+## Task: Build a one-time setup image that prints all required SQL to logs instead of executing bash scripts <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -33,11 +33,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers running the setup image and capturing the required SQL from logs
-- [ ] The setup image emits SQL only, does not require a generated shell script as the supported interface, exposes separate Cockroach-only and PostgreSQL-only subcommands, and supports simple JSON plus plain-text SQL output modes
-- [ ] The image is clearly separated from runner and verify runtime concerns
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers running the setup image and capturing the required SQL from logs
+- [x] The setup image emits SQL only, does not require a generated shell script as the supported interface, exposes separate Cockroach-only and PostgreSQL-only subcommands, and supports simple JSON plus plain-text SQL output modes
+- [x] The image is clearly separated from runner and verify runtime concerns
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-19-source-sql-emitter-image/01-task-build-a-one-time-sql-emitter-image-that-prints-required-sql-to-logs_plans/2026-04-19-one-time-setup-image-plan.md</plan>

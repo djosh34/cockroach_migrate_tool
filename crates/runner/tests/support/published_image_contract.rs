@@ -9,7 +9,7 @@ impl PublishedImageContract {
         "cockroach-migrate-runner"
     }
 
-    pub fn source_bootstrap_image_repository() -> &'static str {
-        "cockroach-migrate-source-bootstrap"
+    pub fn setup_sql_image_repository() -> &'static str {
+        "cockroach-migrate-setup-sql"
     }
 }

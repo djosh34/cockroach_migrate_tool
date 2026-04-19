@@ -5,6 +5,7 @@ impl RunnerPublicContract {
         &[
             "compare-schema",
             "render-helper-plan",
+            "render-postgres-setup",
             "verify",
             "cutover-readiness",
             "--source-url",

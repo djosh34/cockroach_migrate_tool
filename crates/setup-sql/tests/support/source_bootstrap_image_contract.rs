@@ -10,7 +10,7 @@ impl SourceBootstrapImageContract {
         let dockerfile_path = source_bootstrap_slice_root().join("Dockerfile");
         let dockerfile_text = fs::read_to_string(&dockerfile_path).unwrap_or_else(|error| {
             panic!(
-                "source-bootstrap image Dockerfile `{}` should be readable: {error}",
+                "setup-sql image Dockerfile `{}` should be readable: {error}",
                 dockerfile_path.display()
             )
         });
@@ -21,11 +21,11 @@ impl SourceBootstrapImageContract {
         }
     }
 
-    pub fn assert_source_bootstrap_slice_owns_the_dockerfile(&self) {
+    pub fn assert_setup_slice_owns_the_dockerfile(&self) {
         assert_eq!(
             self.dockerfile_path,
             source_bootstrap_slice_root().join("Dockerfile"),
-            "source-bootstrap image Dockerfile should live directly under the source-bootstrap slice",
+            "setup-sql image Dockerfile should live directly under the setup slice",
         );
     }
 
@@ -36,7 +36,7 @@ impl SourceBootstrapImageContract {
             .find(|stage| stage.starts_with("scratch"))
             .unwrap_or_else(|| {
                 panic!(
-                    "source-bootstrap image Dockerfile must define a `FROM scratch` runtime stage"
+                    "setup-sql image Dockerfile must define a `FROM scratch` runtime stage"
                 )
             });
         let runtime_commands = runtime_stage
@@ -54,11 +54,11 @@ impl SourceBootstrapImageContract {
             runtime_commands
                 .first()
                 .is_some_and(|line| *line == "scratch AS runtime"),
-            "source-bootstrap image runtime stage must start from `scratch`",
+            "setup-sql image runtime stage must start from `scratch`",
         );
         assert!(
             self.dockerfile_text.contains("ARG TARGETARCH"),
-            "source-bootstrap builder stage must derive its musl target from TARGETARCH",
+            "setup-sql builder stage must derive its musl target from TARGETARCH",
         );
         for required_target in [
             "x86_64-unknown-linux-musl",
@@ -67,38 +67,38 @@ impl SourceBootstrapImageContract {
         ] {
             assert!(
                 self.dockerfile_text.contains(required_target),
-                "source-bootstrap builder stage must handle `{required_target}` explicitly",
+                "setup-sql builder stage must handle `{required_target}` explicitly",
             );
         }
         assert!(
             self.dockerfile_text
-                .contains("-p source-bootstrap --bin source-bootstrap"),
-            "source-bootstrap image must build the dedicated source-bootstrap binary",
+                .contains("-p setup-sql --bin setup-sql"),
+            "setup-sql image must build the dedicated setup-sql binary",
         );
         assert_eq!(
             copy_commands,
             vec![
-                "COPY --from=builder /source-bootstrap/source-bootstrap /usr/local/bin/source-bootstrap",
+                "COPY --from=builder /setup-sql/setup-sql /usr/local/bin/setup-sql",
             ],
-            "source-bootstrap image runtime stage must copy only the compiled source-bootstrap binary",
+            "setup-sql image runtime stage must copy only the compiled setup-sql binary",
         );
         assert!(
             runtime_commands
                 .iter()
                 .all(|line| !line.starts_with("RUN ")),
-            "source-bootstrap image runtime stage must not install extra runtime payload",
+            "setup-sql image runtime stage must not install extra runtime payload",
         );
         assert!(
-            runtime_commands.contains(&"ENTRYPOINT [\"/usr/local/bin/source-bootstrap\"]"),
-            "source-bootstrap image runtime stage must start the binary directly",
+            runtime_commands.contains(&"ENTRYPOINT [\"/usr/local/bin/setup-sql\"]"),
+            "setup-sql image runtime stage must start the binary directly",
         );
     }
 
-    pub fn assert_image_entrypoint_is_direct_source_bootstrap(&self, image_entrypoint_json: &str) {
+    pub fn assert_image_entrypoint_is_direct_setup_sql(&self, image_entrypoint_json: &str) {
         assert_eq!(
             image_entrypoint_json.trim(),
-            "[\"/usr/local/bin/source-bootstrap\"]",
-            "source-bootstrap image must invoke the binary directly instead of using a shell wrapper",
+            "[\"/usr/local/bin/setup-sql\"]",
+            "setup-sql image must invoke the binary directly instead of using a shell wrapper",
         );
     }
 
@@ -121,5 +121,5 @@ fn repo_root() -> PathBuf {
 }
 
 fn source_bootstrap_slice_root() -> PathBuf {
-    repo_root().join("crates/source-bootstrap")
+    repo_root().join("crates/setup-sql")
 }

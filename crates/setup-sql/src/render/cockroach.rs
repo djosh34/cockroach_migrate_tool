@@ -1,12 +1,17 @@
-use crate::config::{BootstrapConfig, SourceMapping};
+use std::collections::BTreeMap;
+
+use crate::{
+    OutputFormat,
+    config::{BootstrapConfig, SourceMapping},
+};
 
 pub(crate) struct RenderedBootstrap {
-    text: String,
+    databases: Vec<RenderedDatabaseSql>,
 }
 
 impl RenderedBootstrap {
     pub(crate) fn from_config(config: &BootstrapConfig) -> Self {
-        let mut lines = vec![
+        let shared_prefix = vec![
             "-- Source bootstrap SQL".to_owned(),
             format!("-- Cockroach URL: {}", config.cockroach_url()),
             "-- Apply each statement with a Cockroach SQL client against the source cluster."
@@ -15,22 +20,55 @@ impl RenderedBootstrap {
             "SET CLUSTER SETTING kv.rangefeed.enabled = true;".to_owned(),
             "SELECT cluster_logical_timestamp();".to_owned(),
         ];
+        let mut grouped_mapping_lines: BTreeMap<String, Vec<String>> = BTreeMap::new();
 
         for mapping in config.mappings() {
-            lines.push(String::new());
-            lines.extend(render_mapping_block(config, mapping));
+            grouped_mapping_lines
+                .entry(mapping.source().database().to_owned())
+                .or_default()
+                .extend(render_mapping_block(config, mapping));
         }
 
         Self {
-            text: lines.join("\n"),
+            databases: grouped_mapping_lines
+                .into_iter()
+                .map(|(database, mut mapping_lines)| {
+                    let mut lines = shared_prefix.clone();
+                    lines.push(String::new());
+                    lines.push(format!("-- Source database: {database}"));
+                    lines.append(&mut mapping_lines);
+                    RenderedDatabaseSql {
+                        database,
+                        sql: lines.join("\n"),
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    pub(crate) fn render(&self, format: OutputFormat) -> String {
+        match format {
+            OutputFormat::Text => self
+                .databases
+                .iter()
+                .map(|database| database.sql.as_str())
+                .collect::<Vec<_>>()
+                .join("\n\n"),
+            OutputFormat::Json => serde_json::to_string_pretty(
+                &self
+                    .databases
+                    .iter()
+                    .map(|database| (database.database.clone(), database.sql.clone()))
+                    .collect::<BTreeMap<_, _>>(),
+            )
+            .expect("rendered bootstrap JSON should serialize"),
         }
     }
 }
 
-impl std::fmt::Display for RenderedBootstrap {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.text)
-    }
+struct RenderedDatabaseSql {
+    database: String,
+    sql: String,
 }
 
 fn render_mapping_block(config: &BootstrapConfig, mapping: &SourceMapping) -> Vec<String> {
@@ -61,7 +99,6 @@ fn render_mapping_block(config: &BootstrapConfig, mapping: &SourceMapping) -> Ve
 
     vec![
         format!("-- Mapping: {}", mapping.id()),
-        format!("-- Source database: {}", mapping.source().database()),
         format!("-- Selected tables: {selected_tables}"),
         changefeed_sql,
     ]

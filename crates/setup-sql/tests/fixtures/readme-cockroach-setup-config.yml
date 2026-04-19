@@ -1,4 +1,4 @@
-# config/source-bootstrap.yml
+# config/cockroach-setup.yml
 cockroach:
   url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
 webhook:

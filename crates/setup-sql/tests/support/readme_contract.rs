@@ -12,19 +12,19 @@ impl RepositoryReadme {
         }
     }
 
-    pub fn source_bootstrap_yaml_block(&self) -> String {
+    pub fn setup_sql_cockroach_yaml_block(&self) -> String {
         let section_start = self
             .text
-            .find("## Source Bootstrap Quick Start")
-            .expect("README should include the source bootstrap quick start");
+            .find("## Setup SQL Quick Start")
+            .expect("README should include the setup-sql quick start");
         let section = &self.text[section_start..];
         let yaml_start = section
             .find("```yaml")
-            .expect("source bootstrap quick start should include a YAML example");
+            .expect("setup-sql quick start should include a YAML example");
         let after_fence = &section[yaml_start + "```yaml".len()..];
         let yaml_end = after_fence
             .find("\n```")
-            .expect("source bootstrap YAML example should close its code fence");
+            .expect("setup-sql Cockroach YAML example should close its code fence");
 
         after_fence[..yaml_end].trim().to_owned()
     }

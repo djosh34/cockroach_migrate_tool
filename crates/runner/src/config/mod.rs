@@ -151,10 +151,6 @@ impl PostgresConnectionConfig {
     pub(crate) fn port(&self) -> u16 {
         self.port
     }
-
-    pub(crate) fn user(&self) -> &str {
-        &self.user
-    }
 }
 
 #[derive(Clone, Debug)]

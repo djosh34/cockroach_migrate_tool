@@ -831,7 +831,7 @@ impl CdcE2eHarness {
 
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
-        self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
+        self.source_bootstrap_config_path = self.temp_dir.path().join("cockroach-setup.yml");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
@@ -881,14 +881,14 @@ impl CdcE2eHarness {
 
     fn render_source_bootstrap_sql(&self) -> String {
         source_bootstrap::execute(source_bootstrap::Cli::parse_from([
-            "source-bootstrap",
-            "render-bootstrap-sql",
+            "setup-sql",
+            "emit-cockroach-sql",
             "--config",
             self.source_bootstrap_config_path
                 .to_str()
-                .expect("source-bootstrap config path should be utf-8"),
+                .expect("Cockroach setup config path should be utf-8"),
         ]))
-        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-sql failed: {error}"))
+        .unwrap_or_else(|error| panic!("setup-sql emit-cockroach-sql failed: {error}"))
     }
 
     fn apply_source_bootstrap_sql(&self, sql: &str) {
@@ -980,7 +980,7 @@ mappings:
                 selected_tables = selected_tables,
             ),
         )
-        .expect("source-bootstrap config should be written");
+        .expect("Cockroach setup config should be written");
     }
 
     fn assert_runner_process_alive(&self) {
@@ -1126,9 +1126,9 @@ impl DockerEnvironment {
                 "start-single-node",
                 "--certs-dir=/certs",
                 "--listen-addr=localhost:26257",
-                "--advertise-addr=cockroach:26257",
+                "--advertise-addr=localhost:26257",
                 "--sql-addr=0.0.0.0:26258",
-                "--advertise-sql-addr=cockroach:26258",
+                "--advertise-sql-addr=localhost:26258",
                 "--http-addr=0.0.0.0:8080",
             ]),
             "docker run cockroach",

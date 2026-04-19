@@ -26,9 +26,9 @@ impl RepositoryReadme {
         }
     }
 
-    pub fn source_bootstrap_quick_start(&self) -> ReadmeSection<'_> {
+    pub fn setup_sql_quick_start(&self) -> ReadmeSection<'_> {
         ReadmeSection {
-            text: self.section("## Source Bootstrap Quick Start"),
+            text: self.section("## Setup SQL Quick Start"),
         }
     }
 

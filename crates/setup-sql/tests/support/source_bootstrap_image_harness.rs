@@ -15,10 +15,7 @@ pub struct SourceBootstrapImageHarness {
 impl SourceBootstrapImageHarness {
     pub fn start() -> Self {
         let harness = Self {
-            image_tag: format!(
-                "cockroach-migrate-source-bootstrap-test-{}",
-                unique_suffix()
-            ),
+            image_tag: format!("cockroach-migrate-setup-sql-test-{}", unique_suffix()),
         };
         harness.build_image();
         harness
@@ -33,41 +30,41 @@ impl SourceBootstrapImageHarness {
                 "--format",
                 "{{json .Config.Entrypoint}}",
             ]),
-            "docker image inspect source-bootstrap entrypoint",
+            "docker image inspect setup-sql entrypoint",
         )
     }
 
-    pub fn assert_render_bootstrap_sql_output(&self) {
+    pub fn assert_emit_cockroach_sql_output(&self) {
         let temp_dir = fresh_temp_dir();
-        let config_path = temp_dir.join("source-bootstrap.yml");
+        let config_path = temp_dir.join("cockroach-setup.yml");
         let ca_cert_path = temp_dir.join("ca.crt");
         fs::write(
             &config_path,
-            fs::read_to_string(fixture_path("readme-source-bootstrap-config.yml"))
-                .expect("README source-bootstrap config fixture should be readable"),
+            fs::read_to_string(fixture_path("readme-cockroach-setup-config.yml"))
+                .expect("README Cockroach setup config fixture should be readable"),
         )
-        .expect("temp source-bootstrap config should be writable");
+        .expect("temp Cockroach setup config should be writable");
         fs::write(&ca_cert_path, b"dummy-ca\n").expect("temp CA cert fixture should be writable");
 
-        let output = self.render_bootstrap_sql(&temp_dir, "/work/source-bootstrap.yml");
+        let output = self.emit_cockroach_sql(&temp_dir, "/work/cockroach-setup.yml");
 
         assert!(
             output.starts_with("-- Source bootstrap SQL\n"),
-            "source-bootstrap image must emit the rendered SQL header",
+            "setup-sql image must emit the rendered SQL header",
         );
         assert!(
             output.contains(
                 "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"
             ),
-            "source-bootstrap image must render the README mapping changefeed through the container entrypoint",
+            "setup-sql image must render the README mapping changefeed through the container entrypoint",
         );
         assert!(
             output.contains("INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert=ZHVtbXktY2EK'"),
-            "source-bootstrap image must resolve the mounted CA cert from the config directory",
+            "setup-sql image must resolve the mounted CA cert from the config directory",
         );
     }
 
-    pub fn render_bootstrap_sql(&self, mounted_dir: &Path, config_path: &str) -> String {
+    pub fn emit_cockroach_sql(&self, mounted_dir: &Path, config_path: &str) -> String {
         let work_mount = format!("{}:/work:ro", mounted_dir.display());
         run_command_capture(
             Command::new("docker").args([
@@ -76,11 +73,11 @@ impl SourceBootstrapImageHarness {
                 "-v",
                 &work_mount,
                 &self.image_tag,
-                "render-bootstrap-sql",
+                "emit-cockroach-sql",
                 "--config",
                 config_path,
             ]),
-            "docker run source-bootstrap render-bootstrap-sql",
+            "docker run setup-sql emit-cockroach-sql",
         )
     }
 
@@ -89,7 +86,7 @@ impl SourceBootstrapImageHarness {
             Command::new("docker").args(SourceBootstrapImageContract::docker_build_image_args(
                 &self.image_tag,
             )),
-            "docker build source-bootstrap image",
+            "docker build setup-sql image",
         );
     }
 }
@@ -100,12 +97,12 @@ impl Drop for SourceBootstrapImageHarness {
             .args(["image", "inspect", &self.image_tag])
             .output()
             .unwrap_or_else(|error| {
-                panic!("docker image rm source-bootstrap image probe should start: {error}")
+                panic!("docker image rm setup-sql image probe should start: {error}")
             });
         if output.status.success() {
             run_command_capture(
                 Command::new("docker").args(["image", "rm", "-f", &self.image_tag]),
-                "docker image rm source-bootstrap image",
+                "docker image rm setup-sql image",
             );
         }
     }
@@ -120,10 +117,10 @@ fn fixture_path(name: &str) -> PathBuf {
 
 fn fresh_temp_dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
-        "source-bootstrap-image-contract-{}",
+        "setup-sql-image-contract-{}",
         unique_suffix()
     ));
-    fs::create_dir_all(&dir).expect("source-bootstrap image temp dir should be created");
+    fs::create_dir_all(&dir).expect("setup-sql image temp dir should be created");
     dir
 }
 

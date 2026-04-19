@@ -3,26 +3,26 @@ use crate::published_image_contract_support::PublishedImageContract;
 pub struct ReadmePublishedImageContract;
 
 impl ReadmePublishedImageContract {
-    pub fn assert_source_bootstrap_quick_start_uses_published_image(
-        source_bootstrap_quick_start: &str,
-    ) {
+    pub fn assert_setup_sql_quick_start_uses_published_image(setup_sql_quick_start: &str) {
         let required_markers = [
             "export GITHUB_OWNER=<github-owner>".to_owned(),
             "export IMAGE_TAG=<published-commit-sha>".to_owned(),
             format!(
-                "export SOURCE_BOOTSTRAP_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
+                "export SETUP_SQL_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 PublishedImageContract::registry_host(),
-                PublishedImageContract::source_bootstrap_image_repository(),
+                PublishedImageContract::setup_sql_image_repository(),
             ),
-            "docker pull \"${SOURCE_BOOTSTRAP_IMAGE}\"".to_owned(),
-            "\"${SOURCE_BOOTSTRAP_IMAGE}\" \\".to_owned(),
-            "render-bootstrap-sql \\".to_owned(),
-            "--config /config/source-bootstrap.yml > cockroach-bootstrap.sql".to_owned(),
+            "docker pull \"${SETUP_SQL_IMAGE}\"".to_owned(),
+            "\"${SETUP_SQL_IMAGE}\" \\".to_owned(),
+            "emit-cockroach-sql \\".to_owned(),
+            "--config /config/cockroach-setup.yml > cockroach-bootstrap.sql".to_owned(),
+            "emit-postgres-grants \\".to_owned(),
+            "--config /config/postgres-grants.yml > postgres-grants.sql".to_owned(),
         ];
         for required_marker in &required_markers {
             assert!(
-                source_bootstrap_quick_start.contains(required_marker),
-                "README source bootstrap quick start must include `{required_marker}`",
+                setup_sql_quick_start.contains(required_marker),
+                "README setup-sql quick start must include `{required_marker}`",
             );
         }
     }
@@ -39,8 +39,6 @@ impl ReadmePublishedImageContract {
             "docker pull \"${RUNNER_IMAGE}\"".to_owned(),
             "\"${RUNNER_IMAGE}\" \\".to_owned(),
             "validate-config --config /config/runner.yml".to_owned(),
-            "render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup"
-                .to_owned(),
             "run --config /config/runner.yml".to_owned(),
         ];
         for required_marker in &required_markers {
@@ -66,7 +64,7 @@ impl ReadmePublishedImageContract {
 
     pub fn assert_text_excludes_local_novice_steps(text: &str, context: &str) {
         for forbidden_marker in [
-            "cargo run -p source-bootstrap",
+            "cargo run -p setup-sql",
             "cargo install",
             "rustup",
             "docker build -t cockroach-migrate-runner .",

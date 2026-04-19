@@ -186,9 +186,9 @@ impl GithubWorkflowContract {
                 "RUNNER_IMAGE_REPOSITORY",
             ),
             (
-                "Build source-bootstrap release image archive",
-                "./crates/source-bootstrap/Dockerfile",
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+                "Build setup-sql release image archive",
+                "./crates/setup-sql/Dockerfile",
+                "SETUP_SQL_IMAGE_REPOSITORY",
             ),
         ] {
             let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
@@ -265,8 +265,8 @@ impl GithubWorkflowContract {
                 "RUNNER_IMAGE_REPOSITORY",
             ),
             (
-                "Build source-bootstrap release image archive",
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+                "Build setup-sql release image archive",
+                "SETUP_SQL_IMAGE_REPOSITORY",
             ),
         ] {
             let build_inputs = self.step_inputs(self.step_named(publish_job, step_name), step_name);
@@ -297,8 +297,8 @@ impl GithubWorkflowContract {
         for (step_name, repository_env) in [
             ("Push scanned runner image", "RUNNER_IMAGE_REPOSITORY"),
             (
-                "Push scanned source-bootstrap image",
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+                "Push scanned setup-sql image",
+                "SETUP_SQL_IMAGE_REPOSITORY",
             ),
         ] {
             let push_script =
@@ -325,12 +325,12 @@ impl GithubWorkflowContract {
                 "runner-release-image.tar",
             ),
             (
-                "Build source-bootstrap release image archive",
-                "SOURCE_BOOTSTRAP_RELEASE_IMAGE_ARCHIVE",
-                "Scan source-bootstrap release image archive",
-                "Load scanned source-bootstrap release image archive",
-                "Push scanned source-bootstrap image",
-                "source-bootstrap-release-image.tar",
+                "Build setup-sql release image archive",
+                "SETUP_SQL_RELEASE_IMAGE_ARCHIVE",
+                "Scan setup-sql release image archive",
+                "Load scanned setup-sql release image archive",
+                "Push scanned setup-sql image",
+                "setup-sql-release-image.tar",
             ),
         ] {
             let archive_path = self
@@ -400,11 +400,11 @@ impl GithubWorkflowContract {
                 "runner-vulnerability-report.txt",
             ),
             (
-                "SOURCE_BOOTSTRAP_VULNERABILITY_REPORT",
-                "Scan source-bootstrap release image archive",
-                "Print source-bootstrap vulnerability report",
-                "Upload source-bootstrap vulnerability report",
-                "source-bootstrap-vulnerability-report.txt",
+                "SETUP_SQL_VULNERABILITY_REPORT",
+                "Scan setup-sql release image archive",
+                "Print setup-sql vulnerability report",
+                "Upload setup-sql vulnerability report",
+                "setup-sql-vulnerability-report.txt",
             ),
         ] {
             let report_path = self
@@ -482,9 +482,9 @@ impl GithubWorkflowContract {
         );
         assert!(
             env.contains_key(Value::String(
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()
+                "SETUP_SQL_IMAGE_REPOSITORY".to_owned()
             )),
-            "workflow should define a shared SOURCE_BOOTSTRAP_IMAGE_REPOSITORY env boundary",
+            "workflow should define a shared SETUP_SQL_IMAGE_REPOSITORY env boundary",
         );
         let expected_runner_repository = format!(
             "${{{{ github.repository_owner }}}}/{}",
@@ -496,17 +496,17 @@ impl GithubWorkflowContract {
             Some(expected_runner_repository.as_str()),
             "workflow should define the runner image repository once through a shared env boundary",
         );
-        let expected_source_bootstrap_repository = format!(
+        let expected_setup_sql_repository = format!(
             "${{{{ github.repository_owner }}}}/{}",
-            PublishedImageContract::source_bootstrap_image_repository()
+            PublishedImageContract::setup_sql_image_repository()
         );
         assert_eq!(
             env.get(Value::String(
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()
+                "SETUP_SQL_IMAGE_REPOSITORY".to_owned()
             ))
             .map(value_as_str),
-            Some(expected_source_bootstrap_repository.as_str()),
-            "workflow should define the source-bootstrap image repository once through a shared env boundary",
+            Some(expected_setup_sql_repository.as_str()),
+            "workflow should define the setup-sql image repository once through a shared env boundary",
         );
         assert_eq!(
             self.workflow_text.matches("ghcr.io").count(),
@@ -520,8 +520,8 @@ impl GithubWorkflowContract {
                 "RUNNER_IMAGE_REPOSITORY",
             ),
             (
-                "Build source-bootstrap release image archive",
-                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
+                "Build setup-sql release image archive",
+                "SETUP_SQL_IMAGE_REPOSITORY",
             ),
         ] {
             let tags = self

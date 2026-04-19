@@ -21,7 +21,7 @@ impl RunnerDockerContract {
     }
 
     pub fn documented_subcommands() -> &'static [&'static str] {
-        &["validate-config", "render-postgres-setup", "run"]
+        &["validate-config", "run"]
     }
 
     pub fn assert_cli_help_covers_documented_subcommands(help_output: &str) {

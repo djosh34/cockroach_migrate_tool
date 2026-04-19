@@ -1,4 +1,5 @@
-mod parser;
+mod cockroach_parser;
+mod postgres_grants_parser;
 
 use std::path::Path;
 
@@ -15,7 +16,7 @@ pub(crate) struct BootstrapConfig {
 
 impl BootstrapConfig {
     pub(crate) fn load(path: &Path) -> Result<Self, BootstrapConfigError> {
-        parser::load(path)
+        cockroach_parser::load(path)
     }
 
     pub(crate) fn cockroach_url(&self) -> &str {
@@ -28,6 +29,58 @@ impl BootstrapConfig {
 
     pub(crate) fn mappings(&self) -> &[SourceMapping] {
         &self.mappings
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PostgresGrantsConfig {
+    mappings: Vec<PostgresGrantMapping>,
+}
+
+impl PostgresGrantsConfig {
+    pub(crate) fn load(path: &Path) -> Result<Self, BootstrapConfigError> {
+        postgres_grants_parser::load(path)
+    }
+
+    pub(crate) fn mappings(&self) -> &[PostgresGrantMapping] {
+        &self.mappings
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PostgresGrantMapping {
+    id: String,
+    destination: PostgresGrantDestination,
+}
+
+impl PostgresGrantMapping {
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    pub(crate) fn destination(&self) -> &PostgresGrantDestination {
+        &self.destination
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PostgresGrantDestination {
+    database: String,
+    runtime_role: String,
+    tables: Vec<TableName>,
+}
+
+impl PostgresGrantDestination {
+    pub(crate) fn database(&self) -> &str {
+        &self.database
+    }
+
+    pub(crate) fn runtime_role(&self) -> &str {
+        &self.runtime_role
+    }
+
+    pub(crate) fn tables(&self) -> &[TableName] {
+        &self.tables
     }
 }
 
@@ -95,8 +148,20 @@ pub(crate) struct TableName {
 }
 
 impl TableName {
+    pub(crate) fn new(schema: String, name: String) -> Self {
+        Self { schema, name }
+    }
+
     pub(crate) fn display_name(&self) -> String {
         format!("{}.{}", self.schema, self.name)
+    }
+
+    pub(crate) fn schema(&self) -> &str {
+        &self.schema
+    }
+
+    pub(crate) fn name(&self) -> &str {
+        &self.name
     }
 
     pub(crate) fn sql_reference_in_database(&self, database: &str) -> String {

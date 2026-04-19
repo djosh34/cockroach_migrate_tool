@@ -1,5 +1,5 @@
 [package]
-name = "source-bootstrap"
+name = "setup-sql"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,6 +7,7 @@ publish.workspace = true
 rust-version.workspace = true
 
 [lib]
+name = "source_bootstrap"
 path = "src/lib.rs"
 
 [dependencies]
@@ -15,6 +16,7 @@ clap.workspace = true
 ingest-contract = { path = "../ingest-contract" }
 percent-encoding = "2.3.2"
 serde.workspace = true
+serde_json.workspace = true
 serde_yaml.workspace = true
 thiserror.workspace = true
 

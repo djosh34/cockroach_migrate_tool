@@ -13,16 +13,16 @@ under the Apache License, Version 2.0. The retained Apache-2.0 text lives at
 `cockroachdb_molt/molt/LICENSE`, and the repository-level split is summarized
 in `THIRD_PARTY_NOTICES`.
 
-## Source Bootstrap Quick Start
+## Setup SQL Quick Start
 
 The supported novice-user path starts from pulling published images only. This flow does not require a repository checkout, a local Rust install, or any image build from source.
 
-The source-side bootstrap stays explicit. Pull the published `source-bootstrap` image, render the CockroachDB setup SQL, review it, then apply it yourself with a Cockroach SQL client; the tool does not hide source-side commands behind the CLI.
+The one-time setup flow stays explicit. Pull the published `setup-sql` image, emit the required SQL, review it, then apply it yourself with a CockroachDB or PostgreSQL client. The runtime image never absorbs one-time setup powers.
 
-Example source bootstrap config:
+Example Cockroach setup config:
 
 ```yaml
-# config/source-bootstrap.yml
+# config/cockroach-setup.yml
 cockroach:
   url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
 webhook:
@@ -43,18 +43,18 @@ mappings:
         - public.invoices
 ```
 
-Render the bootstrap SQL:
+Render the Cockroach bootstrap SQL:
 
 ```bash
 export GITHUB_OWNER=<github-owner>
 export IMAGE_TAG=<published-commit-sha>
-export SOURCE_BOOTSTRAP_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-source-bootstrap:${IMAGE_TAG}"
-docker pull "${SOURCE_BOOTSTRAP_IMAGE}"
+export SETUP_SQL_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-setup-sql:${IMAGE_TAG}"
+docker pull "${SETUP_SQL_IMAGE}"
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
-  "${SOURCE_BOOTSTRAP_IMAGE}" \
-  render-bootstrap-sql \
-  --config /config/source-bootstrap.yml > cockroach-bootstrap.sql
+  "${SETUP_SQL_IMAGE}" \
+  emit-cockroach-sql \
+  --config /config/cockroach-setup.yml > cockroach-bootstrap.sql
 ```
 
 Apply the rendered SQL yourself after review:
@@ -72,6 +72,38 @@ The rendered SQL:
 - creates one webhook changefeed per configured source database
 - renders each mapping to its own HTTPS ingest path at `/ingest/<mapping_id>`
 - keeps the operator-facing artifact to SQL statements plus SQL comments only
+
+Example PostgreSQL grants config:
+
+```yaml
+# config/postgres-grants.yml
+mappings:
+  - id: app-a
+    destination:
+      database: app_a
+      runtime_role: migration_user_a
+      tables:
+        - public.customers
+        - public.orders
+```
+
+Render the PostgreSQL grants SQL:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${SETUP_SQL_IMAGE}" \
+  emit-postgres-grants \
+  --config /config/postgres-grants.yml > postgres-grants.sql
+```
+
+Apply the emitted PostgreSQL grant SQL before starting the runtime:
+
+```bash
+psql \
+  "postgresql://postgres-admin@pg-a.example.internal:5432/app_a?sslmode=require" \
+  -f postgres-grants.sql
+```
 
 ## Docker Quick Start
 
@@ -132,15 +164,7 @@ docker run --rm \
   validate-config --config /config/runner.yml
 ```
 
-4. Render the PostgreSQL grant artifacts, review the generated `README.md`, and run each `grants.sql` before starting the runtime. These grants stay manual and explicit; no superuser role is assumed.
-
-```bash
-docker run --rm \
-  -v "$(pwd)/config:/config:ro" \
-  -v "$(pwd)/postgres-setup:/work/postgres-setup" \
-  "${RUNNER_IMAGE}" \
-  render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup
-```
+4. Before starting the runtime, use the `setup-sql` quick start above to emit the PostgreSQL grants, review them, and apply the emitted PostgreSQL grant SQL before starting the runtime. These grants stay manual and explicit; no superuser role is assumed.
 
 5. Start the destination runtime directly through the image entrypoint. On startup, `runner run --config <path>` connects to each destination database, creates `_cockroach_migration_tool`, creates the tracking tables, derives helper shadow tables from destination catalog state, adds the automatic minimal PK helper indexes when they are needed, and then keeps serving HTTPS from the same process.
 
@@ -157,7 +181,7 @@ After startup, the runtime serves:
 - `GET /healthz`
 - `POST /ingest/<mapping_id>`
 
-The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
+The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>` and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
 ## CI Publish Safety
 

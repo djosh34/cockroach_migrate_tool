@@ -25,10 +25,7 @@ pub(super) fn load(path: &Path) -> Result<BootstrapConfig, BootstrapConfigError>
     validate(raw, path.parent().unwrap_or_else(|| Path::new(".")))
 }
 
-pub(super) fn validate(
-    raw: RawBootstrapConfig,
-    config_dir: &Path,
-) -> Result<BootstrapConfig, BootstrapConfigError> {
+fn validate(raw: RawBootstrapConfig, config_dir: &Path) -> Result<BootstrapConfig, BootstrapConfigError> {
     let mappings = validate_mappings(raw.mappings)?;
     Ok(BootstrapConfig {
         cockroach_url: validate_text(raw.cockroach.url, "cockroach.url")?,
@@ -181,10 +178,7 @@ fn validate_table_name(value: String) -> Result<TableName, BootstrapConfigError>
         });
     }
 
-    Ok(TableName {
-        schema: schema.to_owned(),
-        name: name.to_owned(),
-    })
+    Ok(TableName::new(schema.to_owned(), name.to_owned()))
 }
 
 fn is_simple_identifier(value: &str) -> bool {
@@ -194,7 +188,7 @@ fn is_simple_identifier(value: &str) -> bool {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct RawBootstrapConfig {
+struct RawBootstrapConfig {
     cockroach: RawCockroachConfig,
     webhook: RawWebhookConfig,
     mappings: Vec<RawSourceMapping>,

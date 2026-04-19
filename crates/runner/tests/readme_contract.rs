@@ -22,24 +22,32 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 #[test]
-fn source_bootstrap_quick_start_shows_the_sql_only_contract() {
+fn setup_sql_quick_start_shows_the_two_sql_only_commands() {
     let readme = RepositoryReadme::load();
-    let source_bootstrap_quick_start = readme.source_bootstrap_quick_start();
+    let setup_sql_quick_start = readme.setup_sql_quick_start();
 
-    source_bootstrap_quick_start.assert_contains(
-        "render-bootstrap-sql",
-        "README source bootstrap quick start must show the SQL-only source setup command",
+    setup_sql_quick_start.assert_contains(
+        "emit-cockroach-sql",
+        "README setup-sql quick start must show the Cockroach SQL emission command",
     );
-    source_bootstrap_quick_start.assert_contains(
+    setup_sql_quick_start.assert_contains(
+        "emit-postgres-grants",
+        "README setup-sql quick start must show the PostgreSQL grant emission command",
+    );
+    setup_sql_quick_start.assert_contains(
         "cockroach-bootstrap.sql",
-        "README source bootstrap quick start must render a SQL artifact instead of a shell script",
+        "README setup-sql quick start must render a Cockroach SQL artifact instead of a shell script",
+    );
+    setup_sql_quick_start.assert_contains(
+        "postgres-grants.sql",
+        "README setup-sql quick start must render a PostgreSQL SQL artifact instead of README trees",
     );
     assert!(
-        !source_bootstrap_quick_start.contains("bash cockroach-bootstrap.sh"),
-        "README source bootstrap quick start must not tell operators to execute a rendered shell script"
+        !setup_sql_quick_start.contains("bash cockroach-bootstrap.sh"),
+        "README setup-sql quick start must not tell operators to execute a rendered shell script"
     );
-    ReadmePublishedImageContract::assert_source_bootstrap_quick_start_uses_published_image(
-        source_bootstrap_quick_start.text(),
+    ReadmePublishedImageContract::assert_setup_sql_quick_start_uses_published_image(
+        setup_sql_quick_start.text(),
     );
 }
 
@@ -49,8 +57,8 @@ fn docker_quick_start_tells_the_operator_to_run_generated_grants_before_startup(
     let docker_quick_start = readme.docker_quick_start();
 
     docker_quick_start.assert_contains(
-        "run each `grants.sql` before starting the runtime",
-        "README Docker quick start must tell the operator to apply the generated grants before `runner run`"
+        "apply the emitted PostgreSQL grant SQL before starting the runtime",
+        "README Docker quick start must tell the operator to apply the emitted PostgreSQL grants before `runner run`"
     );
 }
 
@@ -174,7 +182,6 @@ fn docker_quick_start_keeps_runner_destination_only() {
     docker_quick_start.assert_in_order(
         &[
             "validate-config --config /config/runner.yml",
-            "render-postgres-setup --config /config/runner.yml --output-dir /work/postgres-setup",
             "run --config /config/runner.yml",
         ],
         "README Docker quick start must present only the destination-side runner commands in operator order"
@@ -190,12 +197,12 @@ fn docker_quick_start_keeps_runner_destination_only() {
 }
 
 #[test]
-fn source_bootstrap_quick_start_forbids_repo_checkout_and_local_tooling_steps() {
+fn setup_sql_quick_start_forbids_repo_checkout_and_local_tooling_steps() {
     let readme = RepositoryReadme::load();
-    let source_bootstrap_quick_start = readme.source_bootstrap_quick_start();
+    let setup_sql_quick_start = readme.setup_sql_quick_start();
 
     ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
-        source_bootstrap_quick_start.text(),
-        "README source bootstrap quick start must keep the novice path on published images only",
+        setup_sql_quick_start.text(),
+        "README setup-sql quick start must keep the novice path on published images only",
     );
 }
