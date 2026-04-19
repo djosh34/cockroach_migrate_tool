@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 02:23:31 AM CEST 2026
+Generated: Sun Apr 19 02:37:14 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md`
 
 ```
 ## Task: Document the API write-freeze cutover runbook <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/04-task-e2e-composite-pk-and-excluded-table-handling.md`
-
-```
-## Task: End-to-end test composite primary keys and excluded tables <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

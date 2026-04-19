@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 02:23:31 AM CEST 2026
+Generated: Sun Apr 19 02:37:14 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -226,6 +226,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: End-to-end test delete propagation through helper shadow and real tables <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/04-task-e2e-composite-pk-and-excluded-table-handling.md`
+
+```
+## Task: End-to-end test composite primary keys and excluded tables <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

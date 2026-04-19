@@ -1,10 +1,13 @@
 #[path = "support/default_bootstrap_harness.rs"]
 mod default_bootstrap_harness;
+#[path = "support/composite_pk_exclusion_harness.rs"]
+mod composite_pk_exclusion_harness;
 #[path = "support/e2e_harness.rs"]
 mod e2e_harness;
 
 use std::{thread, time::Duration};
 
+use composite_pk_exclusion_harness::CompositePkExclusionHarness;
 use default_bootstrap_harness::DefaultBootstrapHarness;
 use e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
 
@@ -161,4 +164,18 @@ fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_po
         !verify_output.contains("_cockroach_migration_tool"),
         "verify output should mention only the real migrated table: {verify_output}"
     );
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_tables() {
+    let harness = CompositePkExclusionHarness::start();
+
+    harness.bootstrap_migration();
+    harness.wait_for_initial_scan();
+    harness.assert_explicit_source_bootstrap_commands();
+    harness.apply_live_source_changes();
+    harness.wait_for_live_catchup();
+    harness.assert_included_tables_stable(Duration::from_secs(3));
+    harness.verify_migration();
 }

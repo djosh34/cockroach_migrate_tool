@@ -201,6 +201,23 @@ impl CdcE2eHarness {
         );
     }
 
+    pub fn wait_for_helper_tables(&self, expected: &str, description: &str) {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let actual = self.helper_tables();
+            if actual.trim() == expected {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        panic!(
+            "{description} did not converge to `{expected}`\nactual={}\nrunner stderr:\n{}",
+            self.helper_tables().trim(),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
     pub fn assert_explicit_source_bootstrap_commands(&self) {
         let log = read_file(&self.cockroach_wrapper_log_path);
         let commands: Vec<_> = log.lines().collect();
