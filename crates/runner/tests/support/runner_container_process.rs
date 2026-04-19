@@ -3,6 +3,7 @@ use std::{path::Path, sync::OnceLock, time::Duration};
 use super::{
     container_running, docker_inspect_format, docker_logs, investigation_server_cert_path,
     repo_root, run_command_capture,
+    runner_docker_contract::{RunnerDockerContract, RunnerRuntimeLaunch},
 };
 
 pub(crate) struct RunnerContainerProcess {
@@ -21,26 +22,19 @@ impl RunnerContainerProcess {
         let config_mount = format!("{}:/work/runner.yml:ro", config_path.display());
         let cert_mount = format!("{}:{}:ro", cert_dir.display(), cert_dir.display());
         run_command_capture(
-            std::process::Command::new("docker").args([
-                "run",
-                "-d",
-                "--name",
-                &container_name,
-                "--network",
-                network_name,
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                "-p",
-                &format!("{host_port}:8443"),
-                "-v",
-                &config_mount,
-                "-v",
-                &cert_mount,
-                &image_tag,
-                "run",
-                "--config",
-                "/work/runner.yml",
-            ]),
+            std::process::Command::new("docker").args(
+                RunnerDockerContract::docker_run_runtime_args(RunnerRuntimeLaunch {
+                    image_tag: &image_tag,
+                    container_name: &container_name,
+                    network_name,
+                    auto_remove: false,
+                    host_bind_ip: None,
+                    host_port,
+                    mounts: &[&config_mount, &cert_mount],
+                    extra_docker_args: &["--add-host", "host.docker.internal:host-gateway"],
+                    config_path: "/work/runner.yml",
+                })
+            ),
             "docker run runner container",
         );
 
@@ -133,7 +127,7 @@ fn shared_runner_image_tag() -> &'static str {
         if !image_exists {
             run_command_capture(
                 std::process::Command::new("docker")
-                    .args(["build", "-t", &image_tag])
+                    .args(RunnerDockerContract::docker_build_image_args(&image_tag))
                     .arg(repo_root()),
                 "docker build runner image",
             );

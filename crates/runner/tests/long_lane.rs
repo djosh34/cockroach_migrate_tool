@@ -1,17 +1,17 @@
 #[path = "support/runner_image_harness.rs"]
 mod runner_image_harness;
+#[path = "support/runner_docker_contract.rs"]
+mod runner_docker_contract;
 
 use runner_image_harness::RunnerImageHarness;
+use runner_docker_contract::RunnerDockerContract;
 
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image_against_real_postgres() {
     let harness = RunnerImageHarness::start();
 
-    assert_eq!(
-        harness.image_entrypoint_json().trim(),
-        "[\"/usr/local/bin/runner\"]"
-    );
+    RunnerDockerContract::assert_image_entrypoint_is_direct_runner(&harness.image_entrypoint_json());
 
     let validate_stdout = harness.validate_mounted_config();
     assert!(validate_stdout.contains("config=/config/container-runner-config.yml"));

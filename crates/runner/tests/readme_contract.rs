@@ -1,7 +1,10 @@
 #[path = "support/readme_contract.rs"]
 mod readme_contract_support;
+#[path = "support/runner_docker_contract.rs"]
+mod runner_docker_contract_support;
 
 use readme_contract_support::RepositoryReadme;
+use runner_docker_contract_support::RunnerDockerContract;
 
 #[test]
 fn readme_includes_a_write_freeze_cutover_runbook_with_repeated_verify_during_shadowing() {
@@ -102,4 +105,20 @@ fn quick_start_explicitly_says_it_does_not_require_repo_internal_reading() {
         "You should not need to inspect `crates/`, `tests/`, or `investigations/` to complete this quick start.",
         "README quick start must explicitly forbid repo-internal reading as part of the operator path"
     );
+}
+
+#[test]
+fn docker_quick_start_documents_the_direct_runner_image_build_and_run_contract() {
+    let readme = RepositoryReadme::load();
+    let docker_quick_start = readme.docker_quick_start();
+
+    RunnerDockerContract::assert_readme_documents_direct_build_and_run(docker_quick_start.text());
+}
+
+#[test]
+fn docker_quick_start_forbids_wrapper_script_handoff_in_the_public_container_path() {
+    let readme = RepositoryReadme::load();
+    let docker_quick_start = readme.docker_quick_start();
+
+    RunnerDockerContract::assert_readme_has_no_wrapper_handoff(docker_quick_start.text());
 }

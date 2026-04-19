@@ -9,6 +9,8 @@ use std::{
 
 use reqwest::{Certificate, blocking::Client};
 
+use crate::runner_docker_contract::{RunnerDockerContract, RunnerRuntimeLaunch};
+
 pub struct RunnerImageHarness {
     image_tag: String,
     network_name: String,
@@ -51,18 +53,12 @@ impl RunnerImageHarness {
     pub fn validate_mounted_config(&self) -> String {
         let fixture_mount = format!("{}:/config:ro", fixtures_dir().display());
         run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "--rm",
-                "--network",
-                &self.network_name,
-                "-v",
-                &fixture_mount,
+            Command::new("docker").args(RunnerDockerContract::docker_validate_config_args(
                 &self.image_tag,
-                "validate-config",
-                "--config",
+                &fixture_mount,
                 "/config/container-runner-config.yml",
-            ]),
+                Some(&self.network_name),
+            )),
             "docker validate-config",
         )
     }
@@ -70,23 +66,19 @@ impl RunnerImageHarness {
     pub fn start_runner_container(&self) {
         let fixture_mount = format!("{}:/config:ro", fixtures_dir().display());
         run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "-d",
-                "--rm",
-                "--name",
-                &self.runner_container,
-                "--network",
-                &self.network_name,
-                "-p",
-                &format!("127.0.0.1:{}:8443", self.runner_host_port),
-                "-v",
-                &fixture_mount,
-                &self.image_tag,
-                "run",
-                "--config",
-                "/config/container-runner-config.yml",
-            ]),
+            Command::new("docker").args(RunnerDockerContract::docker_run_runtime_args(
+                RunnerRuntimeLaunch {
+                    image_tag: &self.image_tag,
+                    container_name: &self.runner_container,
+                    network_name: &self.network_name,
+                    auto_remove: true,
+                    host_bind_ip: Some("127.0.0.1"),
+                    host_port: self.runner_host_port,
+                    mounts: &[&fixture_mount],
+                    extra_docker_args: &[],
+                    config_path: "/config/container-runner-config.yml",
+                },
+            )),
             "docker run runner",
         );
     }
@@ -124,7 +116,7 @@ impl RunnerImageHarness {
     fn build_runner_image(&self) {
         run_command_capture(
             Command::new("docker")
-                .args(["build", "-t", &self.image_tag])
+                .args(RunnerDockerContract::docker_build_image_args(&self.image_tag))
                 .arg(repo_root()),
             "docker build",
         );

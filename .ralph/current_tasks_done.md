@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 07:39:01 CEST 2026
+Generated: Sun Apr 19 08:32:43 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -358,6 +358,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify the README alone is sufficient for a novice user <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-13-verify-novice-user/02-task-verify-direct-docker-build-and-run-without-wrapper-scripts.md`
+
+```
+## Task: Verify direct Docker build and run works without wrapper scripts <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

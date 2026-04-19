@@ -59,6 +59,10 @@ impl RepositoryReadme {
 }
 
 impl ReadmeSection<'_> {
+    pub fn text(&self) -> &str {
+        self.text
+    }
+
     pub fn assert_contains(&self, needle: &str, message: &str) {
         assert!(self.text.contains(needle), "{message}");
     }

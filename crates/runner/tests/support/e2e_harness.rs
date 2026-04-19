@@ -21,6 +21,7 @@ use tempfile::TempDir;
 
 mod destination_lock;
 mod destination_write_failure;
+mod runner_docker_contract;
 mod runner_container_process;
 mod runner_process;
 
