@@ -2,6 +2,7 @@ use std::{
     fs,
     path::PathBuf,
     process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -275,11 +276,17 @@ fn fixtures_dir() -> PathBuf {
 }
 
 fn unique_suffix() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos()
-        .to_string()
+    static UNIQUE_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos(),
+        UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed),
+    )
 }
 
 fn pick_unused_port() -> u16 {

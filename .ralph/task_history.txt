@@ -68,3 +68,4 @@
 .ralph/tasks/story-10-e2e-baseline/05-task-e2e-multiple-large-multi-db-migrations.md
 .ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md
 .ralph/tasks/story-11-e2e-chaos/01-task-e2e-http-retry-chaos-imposed-externally.md
+.ralph/tasks/story-11-e2e-chaos/02-task-e2e-receiver-crash-and-restart-recovery.md

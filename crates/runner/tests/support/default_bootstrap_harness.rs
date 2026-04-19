@@ -1,6 +1,9 @@
 use std::time::Duration;
 
-use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig, WebhookSinkMode};
+use crate::e2e_harness::{
+    CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, MappingTrackingProgress,
+    WebhookSinkMode,
+};
 
 const DEFAULT_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -154,6 +157,39 @@ impl DefaultBootstrapHarness {
 
     pub fn verify_default_migration_output(&self) -> String {
         self.inner.verify_migration()
+    }
+
+    pub fn kill_runner(&self) {
+        self.inner.kill_runner();
+    }
+
+    pub fn restart_runner(&self) {
+        self.inner.restart_runner();
+    }
+
+    pub fn customer_tracking_progress(&self) -> MappingTrackingProgress {
+        self.inner.tracking_progress("public.customers")
+    }
+
+    pub fn wait_for_customer_tracking_progress<F>(
+        &self,
+        description: &str,
+        predicate: F,
+    ) -> MappingTrackingProgress
+    where
+        F: FnMut(&MappingTrackingProgress) -> bool,
+    {
+        self.inner
+            .wait_for_tracking_progress("public.customers", description, predicate)
+    }
+
+    pub fn lock_destination_customers(&self) -> DestinationTableLock {
+        self.inner.lock_destination_table("public.customers")
+    }
+
+    pub fn wait_for_customer_reconcile_block(&self) {
+        self.inner
+            .wait_for_reconcile_block_on_destination_table("public.customers");
     }
 
     fn build_inner(

@@ -1,4 +1,4 @@
-## Task: End-to-end test receiver crash and restart recovery <status>not_started</status> <passes>false</passes>
+## Task: End-to-end test receiver crash and restart recovery <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -19,12 +19,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers crash-and-restart recovery end to end
-- [ ] No extra source-side commands are used to rescue the migration after CDC setup
-- [ ] Real target tables converge correctly after restart
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers crash-and-restart recovery end to end
+- [x] No extra source-side commands are used to rescue the migration after CDC setup
+- [x] Real target tables converge correctly after restart
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-11-e2e-chaos/02-task-e2e-receiver-crash-and-restart-recovery_plans/2026-04-19-receiver-crash-restart-recovery-plan.md</plan>

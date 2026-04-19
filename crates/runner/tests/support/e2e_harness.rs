@@ -2,16 +2,24 @@ use std::{
     cell::RefCell,
     env,
     ffi::OsString,
-    fs::{self, File},
+    fs::{self},
     io,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::Command,
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use reqwest::{Certificate, blocking::Client};
+use serde::Deserialize;
 use tempfile::TempDir;
+
+mod runner_process;
+mod destination_lock;
+
+pub(crate) use destination_lock::DestinationTableLock;
+use runner_process::RunnerProcess;
 
 use crate::webhook_chaos_gateway::WebhookChaosGateway;
 
@@ -36,6 +44,60 @@ pub struct CdcE2eHarnessConfig<'a> {
     pub selected_tables: &'a [&'a str],
     pub source_setup_sql: &'a str,
     pub destination_setup_sql: &'a str,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct StreamTrackingProgress {
+    pub latest_received_resolved_watermark: Option<String>,
+    pub latest_reconciled_resolved_watermark: Option<String>,
+}
+
+impl StreamTrackingProgress {
+    pub fn received_has_advanced_since(&self, earlier: &Self) -> bool {
+        watermark_has_advanced(
+            self.latest_received_resolved_watermark.as_deref(),
+            earlier.latest_received_resolved_watermark.as_deref(),
+        )
+    }
+
+    pub fn has_received_through(&self, watermark: &str) -> bool {
+        watermark_at_least(self.latest_received_resolved_watermark.as_deref(), watermark)
+    }
+
+    pub fn has_reconciled_through(&self, watermark: &str) -> bool {
+        watermark_at_least(
+            self.latest_reconciled_resolved_watermark.as_deref(),
+            watermark,
+        )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct TableTrackingProgress {
+    pub source_table_name: String,
+    pub helper_table_name: String,
+    pub last_successful_sync_watermark: Option<String>,
+    pub last_error: Option<String>,
+}
+
+impl TableTrackingProgress {
+    pub fn has_synced_through(&self, watermark: &str) -> bool {
+        watermark_at_least(self.last_successful_sync_watermark.as_deref(), watermark)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MappingTrackingProgress {
+    pub stream: StreamTrackingProgress,
+    pub table: TableTrackingProgress,
+}
+
+impl MappingTrackingProgress {
+    pub fn has_reconciled_through(&self, watermark: &str) -> bool {
+        self.stream.has_received_through(watermark)
+            && self.stream.has_reconciled_through(watermark)
+            && self.table.has_synced_through(watermark)
+    }
 }
 
 struct OwnedHarnessConfig {
@@ -85,7 +147,7 @@ pub struct CdcE2eHarness {
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
-    runner_process: RefCell<Option<Child>>,
+    runner_process: RefCell<Option<RunnerProcess>>,
 }
 
 impl CdcE2eHarness {
@@ -148,6 +210,26 @@ impl CdcE2eHarness {
         );
         self.render_source_bootstrap_script();
         self.execute_bootstrap_script();
+    }
+
+    pub fn kill_runner(&self) {
+        let mut runner_process = self.runner_process.borrow_mut();
+        let mut process = runner_process
+            .take()
+            .expect("runner process should exist before it can be killed");
+        process.kill();
+    }
+
+    pub fn restart_runner(&self) {
+        if self.runner_process.borrow().is_some() {
+            panic!("runner process should not already be running during restart");
+        }
+        self.start_runner_process();
+        wait_for_runner_health(
+            &https_client(&investigation_ca_cert_path()),
+            self.runner_port,
+            || self.runner_logs(),
+        );
     }
 
     pub fn wait_for_destination_query(&self, sql: &str, expected: &str, description: &str) {
@@ -386,6 +468,117 @@ impl CdcE2eHarness {
         ))
     }
 
+    pub fn tracking_progress(&self, mapped_table: &str) -> MappingTrackingProgress {
+        let mapping_id = sql_string_literal(&self.config.mapping_id);
+        let mapped_table = sql_string_literal(mapped_table);
+        let stream = self.query_destination(&format!(
+            "SELECT json_build_object(
+                 'latest_received_resolved_watermark', latest_received_resolved_watermark,
+                 'latest_reconciled_resolved_watermark', latest_reconciled_resolved_watermark
+             )::text
+             FROM _cockroach_migration_tool.stream_state
+             WHERE mapping_id = '{mapping_id}';"
+        ));
+        let table = self.query_destination(&format!(
+            "SELECT json_build_object(
+                 'source_table_name', source_table_name,
+                 'helper_table_name', helper_table_name,
+                 'last_successful_sync_watermark', last_successful_sync_watermark,
+                 'last_error', last_error
+             )::text
+             FROM _cockroach_migration_tool.table_sync_state
+             WHERE mapping_id = '{mapping_id}'
+               AND source_table_name = '{mapped_table}';"
+        ));
+        let stream = parse_json_snapshot::<StreamTrackingProgress>(
+            stream.trim(),
+            "stream tracking snapshot",
+        );
+        let table =
+            parse_json_snapshot::<TableTrackingProgress>(table.trim(), "table tracking snapshot");
+        MappingTrackingProgress { stream, table }
+    }
+
+    pub fn lock_destination_table(&self, mapped_table: &str) -> DestinationTableLock {
+        let suffix = mapped_table.replace('.', "__");
+        DestinationTableLock::acquire(
+            self.docker.postgres_host_port,
+            &self.config.destination_database,
+            mapped_table,
+            &format!("{suffix}-{}", unique_suffix()),
+            &self.temp_dir.path().join(format!("{suffix}.lock.stdout.log")),
+            &self.temp_dir.path().join(format!("{suffix}.lock.stderr.log")),
+        )
+    }
+
+    pub fn wait_for_tracking_progress<F>(
+        &self,
+        mapped_table: &str,
+        description: &str,
+        mut predicate: F,
+    ) -> MappingTrackingProgress
+    where
+        F: FnMut(&MappingTrackingProgress) -> bool,
+    {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let progress = self.tracking_progress(mapped_table);
+            if predicate(&progress) {
+                return progress;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let actual = self.tracking_progress(mapped_table);
+        panic!(
+            "{description} did not converge\nactual progress={actual:?}\nrunner stderr:\n{}",
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
+    pub fn wait_for_reconcile_block_on_destination_table(&self, mapped_table: &str) {
+        let destination_database = sql_string_literal(&self.config.destination_database);
+        let destination_user = sql_string_literal(&self.config.destination_user);
+        let (schema_name, table_name) = split_table_reference(mapped_table);
+        let quoted_upsert_prefix = sql_string_literal(&format!(
+            "INSERT INTO \"{schema_name}\".\"{table_name}\""
+        ));
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let blocked_sessions = self.query_destination(&format!(
+                "SELECT count(*)::text
+                 FROM pg_stat_activity
+                 WHERE datname = '{destination_database}'
+                   AND usename = '{destination_user}'
+                   AND wait_event_type = 'Lock'
+                   AND state = 'active'
+                   AND position('{quoted_upsert_prefix}' IN query) > 0;"
+            ));
+            if blocked_sessions.trim() != "0" {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        panic!(
+            "reconcile did not block on destination table `{mapped_table}`\npg_stat_activity:\n{}\nrunner stderr:\n{}",
+            self.query_destination(
+                "SELECT string_agg(
+                     pid::text || ':' ||
+                     usename || ':' ||
+                     COALESCE(wait_event_type, '<null>') || ':' ||
+                     COALESCE(state, '<null>') || ':' ||
+                     regexp_replace(query, '\\s+', ' ', 'g'),
+                     E'\\n' ORDER BY pid
+                 )
+                 FROM pg_stat_activity
+                 WHERE datname = current_database();"
+            )
+            .trim(),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
@@ -424,15 +617,11 @@ impl CdcE2eHarness {
             return;
         }
 
-        let stdout = File::create(&self.runner_stdout_path).expect("runner stdout log should open");
-        let stderr = File::create(&self.runner_stderr_path).expect("runner stderr log should open");
-        let child = Command::new(env!("CARGO_BIN_EXE_runner"))
-            .args(["run", "--config"])
-            .arg(&self.runner_config_path)
-            .stdout(Stdio::from(stdout))
-            .stderr(Stdio::from(stderr))
-            .spawn()
-            .expect("runner process should start");
+        let child = RunnerProcess::start(
+            &self.runner_config_path,
+            &self.runner_stdout_path,
+            &self.runner_stderr_path,
+        );
         *self.runner_process.borrow_mut() = Some(child);
     }
 
@@ -549,20 +738,11 @@ mappings:
 
     fn assert_runner_alive(&self) {
         let mut process = self.runner_process.borrow_mut();
-        let Some(child) = process.as_mut() else {
+        let Some(runner_process) = process.as_mut() else {
             return;
         };
 
-        if let Some(status) = child
-            .try_wait()
-            .expect("runner process status should be readable")
-        {
-            panic!(
-                "runner exited early with status {status}\nstdout:\n{}\nstderr:\n{}",
-                read_file(&self.runner_stdout_path),
-                read_file(&self.runner_stderr_path),
-            );
-        }
+        runner_process.assert_alive();
     }
 
     fn runner_logs(&self) -> String {
@@ -583,15 +763,6 @@ mappings:
     fn helper_table_name(&self, mapped_table: &str) -> String {
         let (schema, table) = split_table_reference(mapped_table);
         format!("{}__{}__{}", self.config.mapping_id, schema, table)
-    }
-}
-
-impl Drop for CdcE2eHarness {
-    fn drop(&mut self) {
-        if let Some(child) = self.runner_process.borrow_mut().as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
     }
 }
 
@@ -863,11 +1034,17 @@ pub(crate) fn ensure_source_bootstrap_binary() {
 }
 
 fn unique_suffix() -> String {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("system time should be after unix epoch")
-        .as_nanos()
-        .to_string()
+    static UNIQUE_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    format!(
+        "{}-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos(),
+        UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed),
+    )
 }
 
 pub(crate) fn pick_unused_port() -> u16 {
@@ -1012,6 +1189,34 @@ fn split_table_reference(table: &str) -> (&str, &str) {
     table
         .split_once('.')
         .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
+}
+
+fn parse_json_snapshot<T>(raw: &str, description: &str) -> T
+where
+    T: for<'de> Deserialize<'de>,
+{
+    assert!(
+        !raw.is_empty(),
+        "{description} query returned no rows when one was expected",
+    );
+    serde_json::from_str(raw)
+        .unwrap_or_else(|error| panic!("{description} should parse from JSON `{raw}`: {error}"))
+}
+
+fn sql_string_literal(value: &str) -> String {
+    value.replace('\'', "''")
+}
+
+fn watermark_at_least(actual: Option<&str>, expected: &str) -> bool {
+    actual.is_some_and(|actual| actual >= expected)
+}
+
+fn watermark_has_advanced(actual: Option<&str>, earlier: Option<&str>) -> bool {
+    match (actual, earlier) {
+        (Some(actual), Some(earlier)) => actual > earlier,
+        (Some(_), None) => true,
+        _ => false,
+    }
 }
 
 fn shell_quote(path: &Path) -> String {

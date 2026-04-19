@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 03:30:11 AM CEST 2026
+Generated: Sun Apr 19 04:26:59 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -270,6 +270,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: End-to-end test HTTP retry chaos imposed externally <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-11-e2e-chaos/02-task-e2e-receiver-crash-and-restart-recovery.md`
+
+```
+## Task: End-to-end test receiver crash and restart recovery <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
