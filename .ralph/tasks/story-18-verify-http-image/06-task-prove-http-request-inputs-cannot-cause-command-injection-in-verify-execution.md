@@ -1,4 +1,4 @@
-## Task: Prove HTTP request inputs cannot cause command injection in verify execution <status>not_started</status> <passes>false</passes>
+## Task: Prove HTTP request inputs cannot cause command injection in verify execution <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -30,12 +30,14 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers hostile-input cases for every live HTTP field accepted by the job-start, job-status, and stop APIs, including include/exclude filters and optional `job_id`
-- [ ] Verify execution is proven to avoid shell interpolation and to preserve strict argument boundaries for allowed inputs
-- [ ] Tests fail if request payloads can alter connection settings or turn allowed filters into command-injection vectors
-- [ ] Tests cover targeted-stop `404` handling and verify that status/reason/mismatch JSON fields are derived safely from execution results
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers hostile-input cases for every live HTTP field accepted by the job-start, job-status, and stop APIs, including include/exclude filters and optional `job_id`
+- [x] Verify execution is proven to avoid shell interpolation and to preserve strict argument boundaries for allowed inputs
+- [x] Tests fail if request payloads can alter connection settings or turn allowed filters into command-injection vectors
+- [x] Tests cover targeted-stop `404` handling and verify that status/reason/mismatch JSON fields are derived safely from execution results
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — not required; this task did not change the long-lane selection boundary
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/06-task-prove-http-request-inputs-cannot-cause-command-injection-in-verify-execution_plans/2026-04-19-verify-http-injection-hardening-plan.md</plan>

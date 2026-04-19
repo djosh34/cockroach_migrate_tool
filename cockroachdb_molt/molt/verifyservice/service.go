@@ -23,7 +23,7 @@ const (
 )
 
 type Runner interface {
-	Run(ctx context.Context, request JobRequest, reporter inconsistency.Reporter) error
+	Run(ctx context.Context, request RunRequest, reporter inconsistency.Reporter) error
 }
 
 type Dependencies struct {
@@ -123,17 +123,18 @@ func (s *Service) Close() {
 }
 
 func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
-	var request JobRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	var jobRequest JobRequest
+	if err := json.NewDecoder(r.Body).Decode(&jobRequest); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := request.Validate(); err != nil {
+	runRequest, err := jobRequest.Compile()
+	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	job, err := s.startJob(request)
+	job, err := s.startJob(runRequest)
 	if err != nil {
 		if errors.Is(err, errJobAlreadyRunning) {
 			writeJSONError(w, http.StatusConflict, err.Error())
@@ -154,7 +155,7 @@ func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 
 var errJobAlreadyRunning = errors.New("a verify job is already running")
 
-func (s *Service) startJob(request JobRequest) (*job, error) {
+func (s *Service) startJob(request RunRequest) (*job, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

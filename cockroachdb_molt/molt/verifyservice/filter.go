@@ -20,12 +20,38 @@ type NameFilters struct {
 	Table  string `json:"table,omitempty"`
 }
 
+type RunRequest struct {
+	filterConfig utils.FilterConfig
+}
+
+func (r JobRequest) Compile() (RunRequest, error) {
+	filterConfig := utils.FilterConfig{
+		SchemaFilter:        emptyDefaultsTo(r.Filters.Include.Schema, utils.DefaultFilterString),
+		TableFilter:         emptyDefaultsTo(r.Filters.Include.Table, utils.DefaultFilterString),
+		ExcludeSchemaFilter: r.Filters.Exclude.Schema,
+		ExcludeTableFilter:  r.Filters.Exclude.Table,
+	}
+	if err := validateFilters(filterConfig); err != nil {
+		return RunRequest{}, err
+	}
+	return RunRequest{filterConfig: filterConfig}, nil
+}
+
 func (r JobRequest) Validate() error {
+	_, err := r.Compile()
+	return err
+}
+
+func (r RunRequest) FilterConfig() utils.FilterConfig {
+	return r.filterConfig
+}
+
+func validateFilters(filterConfig utils.FilterConfig) error {
 	for _, pattern := range []string{
-		r.Filters.Include.Schema,
-		r.Filters.Include.Table,
-		r.Filters.Exclude.Schema,
-		r.Filters.Exclude.Table,
+		filterConfig.SchemaFilter,
+		filterConfig.TableFilter,
+		filterConfig.ExcludeSchemaFilter,
+		filterConfig.ExcludeTableFilter,
 	} {
 		if pattern == "" {
 			continue
@@ -35,15 +61,6 @@ func (r JobRequest) Validate() error {
 		}
 	}
 	return nil
-}
-
-func (r JobRequest) FilterConfig() utils.FilterConfig {
-	return utils.FilterConfig{
-		SchemaFilter:        emptyDefaultsTo(r.Filters.Include.Schema, utils.DefaultFilterString),
-		TableFilter:         emptyDefaultsTo(r.Filters.Include.Table, utils.DefaultFilterString),
-		ExcludeSchemaFilter: r.Filters.Exclude.Schema,
-		ExcludeTableFilter:  r.Filters.Exclude.Table,
-	}
 }
 
 func emptyDefaultsTo(value string, fallback string) string {

@@ -8,10 +8,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
 	"github.com/cockroachdb/molt/dbtable"
+	"github.com/cockroachdb/molt/utils"
 	"github.com/cockroachdb/molt/verify/inconsistency"
 	"github.com/cockroachdb/molt/verifyservice"
 	"github.com/stretchr/testify/require"
@@ -20,7 +22,7 @@ import (
 func TestPostJobsStartsSingleVerifyJob(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
@@ -51,7 +53,7 @@ func TestPostJobsStartsSingleVerifyJob(t *testing.T) {
 
 	select {
 	case request := <-runner.started:
-		require.Equal(t, verifyservice.JobRequest{}, request)
+		require.Equal(t, utils.DefaultFilterConfig(), request.FilterConfig())
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected verify job to start")
 	}
@@ -60,7 +62,7 @@ func TestPostJobsStartsSingleVerifyJob(t *testing.T) {
 func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
@@ -104,7 +106,7 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 func TestPostJobsRejectsConcurrentStartAttempts(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001", "job-000002"),
@@ -139,7 +141,7 @@ func TestPostJobsRejectsConcurrentStartAttempts(t *testing.T) {
 func TestPostStopWithoutJobIDStopsTheActiveJob(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
@@ -182,9 +184,9 @@ func TestGetJobReturnsCompletedTypedVerifyResult(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
-		reporter.Report(inconsistency.StatusReport{Info: "verification in progress"})
+		reporter.Report(inconsistency.StatusReport{Info: `verification in progress; $(whoami) "quoted"`})
 		reporter.Report(inconsistency.SummaryReport{
-			Info: "table verification summary",
+			Info: `table verification summary; $(echo accounts)`,
 			Stats: inconsistency.RowStats{
 				Schema:      "public",
 				Table:       "accounts",
@@ -255,9 +257,9 @@ func TestGetJobReturnsCompletedTypedVerifyResult(t *testing.T) {
 		require.Equal(t, "2026-04-19T18:32:05Z", *payload.FinishedAt)
 		require.Nil(t, payload.FailureReason)
 		require.Len(t, payload.Result.StatusMessages, 1)
-		require.Equal(t, "verification in progress", payload.Result.StatusMessages[0].Info)
+		require.Equal(t, `verification in progress; $(whoami) "quoted"`, payload.Result.StatusMessages[0].Info)
 		require.Len(t, payload.Result.Summaries, 1)
-		require.Equal(t, "table verification summary", payload.Result.Summaries[0].Info)
+		require.Equal(t, `table verification summary; $(echo accounts)`, payload.Result.Summaries[0].Info)
 		require.Equal(t, "public", payload.Result.Summaries[0].Stats.Schema)
 		require.Equal(t, "accounts", payload.Result.Summaries[0].Stats.Table)
 		require.Equal(t, 7, payload.Result.Summaries[0].Stats.NumVerified)
@@ -277,9 +279,9 @@ func TestGetJobReturnsFailedResultWithMismatchAndFailureReason(t *testing.T) {
 					Table:  "accounts",
 				},
 			},
-			Info: "primary key mismatch",
+			Info: `primary key mismatch; $(touch /tmp/pwned) "quoted"`,
 		})
-		return errors.New("verify exploded")
+		return errors.New(`verify exploded; $(curl attacker) "quoted"`)
 	})
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
@@ -332,13 +334,13 @@ func TestGetJobReturnsFailedResultWithMismatchAndFailureReason(t *testing.T) {
 		require.NotNil(t, payload.FinishedAt)
 		require.Equal(t, "2026-04-19T18:33:04Z", *payload.FinishedAt)
 		require.NotNil(t, payload.FailureReason)
-		require.Equal(t, "verify exploded", *payload.FailureReason)
+		require.Equal(t, `verify exploded; $(curl attacker) "quoted"`, *payload.FailureReason)
 		require.Len(t, payload.Result.Mismatches, 1)
 		require.Equal(t, "table_definition", payload.Result.Mismatches[0].Kind)
 		require.Equal(t, "public", payload.Result.Mismatches[0].Schema)
 		require.Equal(t, "accounts", payload.Result.Mismatches[0].Table)
-		require.Equal(t, "primary key mismatch", payload.Result.Mismatches[0].Info)
-		require.Equal(t, []string{"verify exploded"}, payload.Result.Errors)
+		require.Equal(t, `primary key mismatch; $(touch /tmp/pwned) "quoted"`, payload.Result.Mismatches[0].Info)
+		require.Equal(t, []string{`verify exploded; $(curl attacker) "quoted"`}, payload.Result.Errors)
 		return true
 	}, 2*time.Second, 20*time.Millisecond)
 }
@@ -346,7 +348,7 @@ func TestGetJobReturnsFailedResultWithMismatchAndFailureReason(t *testing.T) {
 func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
@@ -362,11 +364,11 @@ func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
 		bytes.NewBufferString(`{
 			"filters": {
 				"include": {
-					"schema": "^public$",
-					"table": "^(accounts|orders)$"
+					"schema": "^public$|tmp;curl attacker",
+					"table": "accounts;$(touch /tmp/pwned)|orders"
 				},
 				"exclude": {
-					"schema": "^audit$",
+					"schema": "audit|tmp;rm -rf /",
 					"table": "^tmp_"
 				}
 			}
@@ -380,10 +382,12 @@ func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
 
 	select {
 	case request := <-runner.started:
-		require.Equal(t, "^public$", request.Filters.Include.Schema)
-		require.Equal(t, "^(accounts|orders)$", request.Filters.Include.Table)
-		require.Equal(t, "^audit$", request.Filters.Exclude.Schema)
-		require.Equal(t, "^tmp_", request.Filters.Exclude.Table)
+		require.Equal(t, utils.FilterConfig{
+			SchemaFilter:        "^public$|tmp;curl attacker",
+			TableFilter:         "accounts;$(touch /tmp/pwned)|orders",
+			ExcludeSchemaFilter: "audit|tmp;rm -rf /",
+			ExcludeTableFilter:  "^tmp_",
+		}, request.FilterConfig())
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected verify job with filters to start")
 	}
@@ -392,7 +396,7 @@ func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
 func TestPostJobsRejectsInvalidFilterRegex(t *testing.T) {
 	t.Parallel()
 
-	runner := &blockingRunner{started: make(chan verifyservice.JobRequest, 1)}
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner: runner,
 	})
@@ -426,11 +430,13 @@ func TestPostJobsRejectsInvalidFilterRegex(t *testing.T) {
 	}
 }
 
-func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
+func TestPostJobsIgnoresConnectionLikeRequestFields(t *testing.T) {
 	t.Parallel()
 
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
-		Runner: &blockingRunner{started: make(chan verifyservice.JobRequest, 1)},
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
 	})
 	t.Cleanup(service.Close)
 
@@ -438,9 +444,64 @@ func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	response, err := http.Post(
+		server.URL+"/jobs",
+		"application/json",
+		bytes.NewBufferString(`{
+			"filters": {
+				"include": {
+					"schema": "^public$"
+				}
+			},
+			"verify": {
+				"source": {
+					"url": "postgres://attacker/override",
+					"tls": {
+						"ca_cert_path": "/tmp/evil-ca.pem"
+					}
+				}
+			},
+			"listener": {
+				"bind_addr": "0.0.0.0:1"
+			},
+			"command": "sh -c 'curl attacker'"
+		}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, response.StatusCode)
+
+	select {
+	case request := <-runner.started:
+		require.Equal(t, utils.FilterConfig{
+			SchemaFilter: "^public$",
+			TableFilter:  utils.DefaultFilterString,
+		}, request.FilterConfig())
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected verify job to start")
+	}
+}
+
+func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner: &blockingRunner{started: make(chan verifyservice.RunRequest, 1)},
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	hostileJobID := `job-999999;$(touch /tmp/pwned) "quoted"`
+	stopRequestBody, err := json.Marshal(map[string]string{"job_id": hostileJobID})
+	require.NoError(t, err)
+
+	response, err := http.Post(
 		server.URL+"/stop",
 		"application/json",
-		bytes.NewBufferString(`{"job_id":"job-999999"}`),
+		bytes.NewBuffer(stopRequestBody),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -448,6 +509,13 @@ func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusNotFound, response.StatusCode)
+
+	getResponse, err := http.Get(server.URL + "/jobs/" + url.PathEscape(hostileJobID))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = getResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusNotFound, getResponse.StatusCode)
 }
 
 func TestJobResultsAreLostAfterProcessRestart(t *testing.T) {
@@ -503,12 +571,12 @@ func TestJobResultsAreLostAfterProcessRestart(t *testing.T) {
 }
 
 type blockingRunner struct {
-	started chan verifyservice.JobRequest
+	started chan verifyservice.RunRequest
 }
 
 func (r *blockingRunner) Run(
 	ctx context.Context,
-	request verifyservice.JobRequest,
+	request verifyservice.RunRequest,
 	_ inconsistency.Reporter,
 ) error {
 	r.started <- request
@@ -520,7 +588,7 @@ type reportingRunner func(ctx context.Context, reporter inconsistency.Reporter) 
 
 func (r reportingRunner) Run(
 	ctx context.Context,
-	_ verifyservice.JobRequest,
+	_ verifyservice.RunRequest,
 	reporter inconsistency.Reporter,
 ) error {
 	return r(ctx, reporter)
