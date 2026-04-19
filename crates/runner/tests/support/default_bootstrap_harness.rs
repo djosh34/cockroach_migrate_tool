@@ -6,7 +6,9 @@ use crate::e2e_harness::{
 };
 use crate::e2e_integrity::{
     CustomerLiveUpdateAudit, DestinationRuntimeMode, PostSetupSourceAudit, RuntimeShapeAudit,
+    VerifyCorrectnessAudit,
 };
+use crate::verify_image_harness_support::VerifyImageHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
 const DEFAULT_SOURCE_SETUP_SQL: &str = r#"
@@ -26,14 +28,6 @@ CREATE TABLE public.customers (
     id bigint PRIMARY KEY,
     email text NOT NULL
 );
-"#;
-
-const DEFAULT_CUSTOMERS_SNAPSHOT_SQL: &str = r#"
-SELECT COALESCE(
-    string_agg(id::text || ':' || email, ',' ORDER BY id),
-    '<empty>'
-)
-FROM public.customers;
 "#;
 
 const HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL: &str = r#"
@@ -134,14 +128,6 @@ impl DefaultBootstrapHarness {
         self.inner.bootstrap_migration();
     }
 
-    pub fn wait_for_destination_customers(&self, expected: &str) {
-        self.inner.wait_for_destination_query(
-            DEFAULT_CUSTOMERS_SNAPSHOT_SQL,
-            expected,
-            "destination customers",
-        );
-    }
-
     pub fn assert_explicit_source_bootstrap_commands(&self) {
         self.inner.assert_explicit_source_bootstrap_commands();
     }
@@ -172,30 +158,6 @@ impl DefaultBootstrapHarness {
         }
     }
 
-    pub fn assert_destination_customer_count(&self, customer_id: i64, expected_count: usize) {
-        let actual = self
-            .inner
-            .query_destination(&format!(
-                "SELECT count(*)::text FROM public.customers WHERE id = {customer_id};"
-            ))
-            .trim()
-            .parse::<usize>()
-            .expect("destination customer count should parse");
-        assert_eq!(
-            actual, expected_count,
-            "destination customers should contain {expected_count} row(s) for id {customer_id}"
-        );
-    }
-
-    pub fn assert_destination_customers_snapshot(&self, expected: &str) {
-        let actual = self.inner.query_destination(DEFAULT_CUSTOMERS_SNAPSHOT_SQL);
-        assert_eq!(
-            actual.trim(),
-            expected,
-            "destination customers snapshot did not match"
-        );
-    }
-
     pub fn assert_helper_shadow_customers_snapshot(&self, expected: &str) {
         let actual = self
             .inner
@@ -216,11 +178,31 @@ impl DefaultBootstrapHarness {
         );
     }
 
-    pub fn assert_destination_customers_stable(&self, expected: &str, duration: Duration) {
-        self.inner.assert_destination_query_stable(
-            DEFAULT_CUSTOMERS_SNAPSHOT_SQL,
-            expected,
-            "destination customers",
+    pub fn verify_selected_tables_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> VerifyCorrectnessAudit {
+        self.inner.verify_selected_tables_via_image(verify_image)
+    }
+
+    pub fn wait_for_selected_tables_to_match_via_verify_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> VerifyCorrectnessAudit {
+        self.inner.wait_for_selected_tables_to_match_via_image(
+            verify_image,
+            "default selected tables should converge through the verify image",
+        )
+    }
+
+    pub fn assert_selected_tables_match_via_verify_image_stable(
+        &self,
+        verify_image: &VerifyImageHarness,
+        duration: Duration,
+    ) {
+        self.inner.assert_selected_tables_match_via_image_stable(
+            verify_image,
+            "default selected tables should remain matched through the verify image",
             duration,
         );
     }
@@ -269,7 +251,6 @@ impl DefaultBootstrapHarness {
         &self,
         baseline: &MappingTrackingProgress,
         updated_helper_snapshot: &str,
-        previous_destination_snapshot: &str,
         updated_email: &str,
     ) -> CustomerLiveUpdateAudit {
         self.inner
@@ -278,10 +259,6 @@ impl DefaultBootstrapHarness {
                 &[reqwest::StatusCode::OK],
             );
         self.wait_for_helper_shadow_customers(updated_helper_snapshot);
-        self.assert_destination_customers_stable(
-            previous_destination_snapshot,
-            Duration::from_secs(3),
-        );
         let progress = self.wait_for_customer_tracking_progress(
             "customer update should be durably received before reconcile catches up",
             |progress| {
@@ -304,10 +281,10 @@ impl DefaultBootstrapHarness {
 
     pub fn wait_for_customer_update_reconcile(
         &self,
+        verify_image: &VerifyImageHarness,
         audit: &CustomerLiveUpdateAudit,
-        expected_destination_snapshot: &str,
     ) -> MappingTrackingProgress {
-        self.wait_for_destination_customers(expected_destination_snapshot);
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
         self.wait_for_customer_tracking_progress(
             "customer update should reconcile through the received watermark without storing errors",
             |progress| {

@@ -1,13 +1,35 @@
 use std::{
+    fs,
+    net::TcpListener,
+    path::{Path, PathBuf},
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
+    thread,
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::verify_docker_contract_support::VerifyDockerContract;
+use reqwest::blocking::Client;
+use serde::Deserialize;
+use serde_json::json;
+use tempfile::TempDir;
+
+use crate::e2e_integrity::{VerifyCorrectnessAudit, VerifyJobResponse};
 
 pub struct VerifyImageHarness {
     image_tag: String,
+}
+
+pub struct VerifyImageRun {
+    pub network_name: String,
+    pub source_url: String,
+    pub source_ca_cert_path: PathBuf,
+    pub source_client_cert_path: PathBuf,
+    pub source_client_key_path: PathBuf,
+    pub destination_url: String,
+    pub destination_ca_cert_path: PathBuf,
+    pub include_schema_pattern: String,
+    pub include_table_pattern: String,
+    pub expected_tables: Vec<String>,
 }
 
 impl VerifyImageHarness {
@@ -19,93 +41,248 @@ impl VerifyImageHarness {
         harness
     }
 
-    pub fn assert_image_exists(&self) {
-        run_command_capture(
-            Command::new("docker").args([
-                "image",
-                "inspect",
-                &self.image_tag,
-                "--format",
-                "{{.Id}}",
-            ]),
-            "docker image inspect verify image",
-        );
-    }
-
-    pub fn image_entrypoint_json(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args([
-                "image",
-                "inspect",
-                &self.image_tag,
-                "--format",
-                "{{json .Config.Entrypoint}}",
-            ]),
-            "docker image inspect verify image entrypoint",
-        )
-    }
-
-    pub fn help_output(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args(["run", "--rm", &self.image_tag, "--help"]),
-            "docker run verify image --help",
-        )
-    }
-
-    pub fn exported_runtime_paths(&self) -> Vec<String> {
-        let container_id = run_command_capture(
-            Command::new("docker").args(["create", &self.image_tag]),
-            "docker create verify image",
-        );
-        let container_id = container_id.trim().to_owned();
-
-        let output = Command::new("bash")
-            .args([
-                "-lc",
-                &format!(
-                    "docker export {container_id} | tar -tf -",
-                    container_id = shell_escape(&container_id)
-                ),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("docker export verify image should start: {error}"));
-
-        let cleanup_output = Command::new("docker")
-            .args(["rm", "-f", &container_id])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker rm verify image export container should start: {error}")
-            });
-        assert!(
-            cleanup_output.status.success(),
-            "docker rm verify image export container failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&cleanup_output.stdout),
-            String::from_utf8_lossy(&cleanup_output.stderr)
-        );
-
-        assert!(
-            output.status.success(),
-            "docker export verify image failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("docker export verify image output should be utf-8")
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect()
+    pub fn run_correctness_audit(&self, run: &VerifyImageRun) -> VerifyCorrectnessAudit {
+        let runtime_files = VerifyRuntimeFiles::materialize(run);
+        let runtime = RunningVerifyImage::start(&self.image_tag, run, &runtime_files);
+        runtime.wait_until_ready();
+        let job_id = runtime.start_job(run);
+        let response = runtime.wait_for_job(&job_id);
+        VerifyCorrectnessAudit::new(run.expected_tables.clone(), response)
     }
 
     fn build_verify_image(&self) {
         run_command_capture(
-            Command::new("docker").args(VerifyDockerContract::docker_build_image_args(
-                &self.image_tag,
-            )),
+            Command::new("docker").args(docker_build_image_args(&self.image_tag)),
             "docker build verify image",
         );
+    }
+}
+
+struct VerifyRuntimeFiles {
+    _temp_dir: TempDir,
+    root_dir: PathBuf,
+}
+
+impl VerifyRuntimeFiles {
+    fn materialize(run: &VerifyImageRun) -> Self {
+        let temp_dir = tempfile::tempdir().expect("verify runtime temp dir should be created");
+        let root_dir = temp_dir.path().to_path_buf();
+        let certs_dir = root_dir.join("certs");
+        fs::create_dir_all(&certs_dir).expect("verify runtime cert dir should be created");
+
+        copy_cert(
+            &run.source_ca_cert_path,
+            &certs_dir.join("source-ca.crt"),
+            "verify runtime source ca",
+        );
+        copy_cert(
+            &run.source_client_cert_path,
+            &certs_dir.join("source-client.crt"),
+            "verify runtime source client cert",
+        );
+        copy_cert(
+            &run.source_client_key_path,
+            &certs_dir.join("source-client.key"),
+            "verify runtime source client key",
+        );
+        copy_cert(
+            &run.destination_ca_cert_path,
+            &certs_dir.join("destination-ca.crt"),
+            "verify runtime destination ca",
+        );
+
+        let config_path = root_dir.join("verify-service.yml");
+        fs::write(
+            &config_path,
+            format!(
+                r#"listener:
+  bind_addr: 0.0.0.0:8080
+  transport:
+    mode: http
+  tls:
+    client_auth:
+      mode: none
+verify:
+  source:
+    url: {source_url}
+    tls:
+      mode: verify-full
+      ca_cert_path: /work/config/certs/source-ca.crt
+      client_cert_path: /work/config/certs/source-client.crt
+      client_key_path: /work/config/certs/source-client.key
+  destination:
+    url: {destination_url}
+    tls:
+      mode: verify-ca
+      ca_cert_path: /work/config/certs/destination-ca.crt
+"#,
+                source_url = run.source_url,
+                destination_url = run.destination_url,
+            ),
+        )
+        .expect("verify runtime config should be written");
+
+        Self {
+            _temp_dir: temp_dir,
+            root_dir,
+        }
+    }
+}
+
+struct RunningVerifyImage {
+    container_name: String,
+    base_url: String,
+    client: Client,
+}
+
+impl RunningVerifyImage {
+    fn start(image_tag: &str, run: &VerifyImageRun, files: &VerifyRuntimeFiles) -> Self {
+        let container_name = format!("cockroach-migrate-verify-runtime-{}", unique_suffix());
+        let host_port = pick_unused_port();
+        let config_mount = format!("{}:/work/config:ro", files.root_dir.display());
+        run_command_capture(
+            Command::new("docker").args([
+                "run",
+                "-d",
+                "--rm",
+                "--name",
+                &container_name,
+                "--network",
+                &run.network_name,
+                "-p",
+                &format!("127.0.0.1:{host_port}:8080"),
+                "-v",
+                &config_mount,
+                image_tag,
+                "--config",
+                "/work/config/verify-service.yml",
+            ]),
+            "docker run verify image runtime",
+        );
+        Self {
+            container_name,
+            base_url: format!("http://127.0.0.1:{host_port}"),
+            client: Client::builder()
+                .build()
+                .expect("verify runtime client should build"),
+        }
+    }
+
+    fn wait_until_ready(&self) {
+        for _ in 0..60 {
+            self.assert_container_alive();
+            match self
+                .client
+                .get(format!("{}/jobs/readiness-probe", self.base_url))
+                .send()
+            {
+                Ok(response) if response.status() == reqwest::StatusCode::NOT_FOUND => return,
+                Ok(_) | Err(_) => thread::sleep(std::time::Duration::from_secs(1)),
+            }
+        }
+
+        panic!(
+            "verify image runtime did not become ready on {}\n{}",
+            self.base_url,
+            docker_logs(&self.container_name),
+        );
+    }
+
+    fn start_job(&self, run: &VerifyImageRun) -> String {
+        let response = self
+            .client
+            .post(format!("{}/jobs", self.base_url))
+            .header("content-type", "application/json")
+            .body(
+                json!({
+                    "filters": {
+                        "include": {
+                            "schema": run.include_schema_pattern,
+                            "table": run.include_table_pattern,
+                        }
+                    }
+                })
+                .to_string(),
+            )
+            .send()
+            .unwrap_or_else(|error| panic!("verify image POST /jobs should succeed: {error}"));
+        assert!(
+            response.status().is_success(),
+            "verify image POST /jobs failed with status {}\n{}",
+            response.status(),
+            docker_logs(&self.container_name),
+        );
+        let payload = parse_json::<VerifyStartResponse>(
+            response
+                .text()
+                .unwrap_or_else(|error| panic!("verify image start response should read: {error}"))
+                .as_str(),
+            "verify image start response",
+        );
+        payload.job_id
+    }
+
+    fn wait_for_job(&self, job_id: &str) -> VerifyJobResponse {
+        for _ in 0..120 {
+            self.assert_container_alive();
+            let response = self
+                .client
+                .get(format!("{}/jobs/{job_id}", self.base_url))
+                .send()
+                .unwrap_or_else(|error| {
+                    panic!("verify image GET /jobs/{job_id} should succeed: {error}")
+                });
+            assert!(
+                response.status().is_success(),
+                "verify image GET /jobs/{job_id} failed with status {}\n{}",
+                response.status(),
+                docker_logs(&self.container_name),
+            );
+            let payload = parse_json::<VerifyJobResponse>(
+                response
+                    .text()
+                    .unwrap_or_else(|error| {
+                        panic!("verify image job response should read: {error}")
+                    })
+                    .as_str(),
+                "verify image job response",
+            );
+            if !payload.is_running() {
+                return payload;
+            }
+            thread::sleep(std::time::Duration::from_secs(1));
+        }
+
+        panic!(
+            "verify image job `{job_id}` did not finish in time\n{}",
+            docker_logs(&self.container_name),
+        );
+    }
+
+    fn assert_container_alive(&self) {
+        if !container_running(&self.container_name) {
+            panic!(
+                "verify image runtime container exited early\n{}",
+                docker_logs(&self.container_name),
+            );
+        }
+    }
+}
+
+impl Drop for RunningVerifyImage {
+    fn drop(&mut self) {
+        let output = Command::new("docker")
+            .args(["container", "inspect", &self.container_name])
+            .output()
+            .unwrap_or_else(|error| {
+                panic!("docker inspect verify runtime container should start: {error}")
+            });
+        if output.status.success() {
+            run_command_capture(
+                Command::new("docker").args(["rm", "-f", &self.container_name]),
+                "docker rm verify runtime container",
+            );
+        }
     }
 }
 
@@ -126,6 +303,11 @@ impl Drop for VerifyImageHarness {
     }
 }
 
+#[derive(Debug, Deserialize)]
+struct VerifyStartResponse {
+    job_id: String,
+}
+
 fn unique_suffix() -> String {
     static UNIQUE_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -138,6 +320,14 @@ fn unique_suffix() -> String {
             .as_nanos(),
         UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed),
     )
+}
+
+fn pick_unused_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("ephemeral verify runtime port should bind")
+        .local_addr()
+        .expect("ephemeral verify runtime listener should have an address")
+        .port()
 }
 
 fn run_command_capture(command: &mut Command, context: &str) -> String {
@@ -153,6 +343,67 @@ fn run_command_capture(command: &mut Command, context: &str) -> String {
     String::from_utf8(output.stdout).expect("command stdout should be utf-8")
 }
 
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
+fn copy_cert(source: &Path, destination: &Path, description: &str) {
+    fs::copy(source, destination).unwrap_or_else(|error| {
+        panic!(
+            "{description} should copy from `{}` to `{}`: {error}",
+            source.display(),
+            destination.display(),
+        )
+    });
+}
+
+fn parse_json<T>(raw: &str, description: &str) -> T
+where
+    T: for<'de> Deserialize<'de>,
+{
+    serde_json::from_str(raw)
+        .unwrap_or_else(|error| panic!("{description} should parse from JSON `{raw}`: {error}"))
+}
+
+fn container_running(container: &str) -> bool {
+    let output = Command::new("docker")
+        .args([
+            "container",
+            "inspect",
+            "-f",
+            "{{.State.Running}}",
+            container,
+        ])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("docker inspect verify runtime container should start: {error}")
+        });
+    output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
+}
+
+fn docker_logs(container: &str) -> String {
+    let output = Command::new("docker")
+        .args(["logs", container])
+        .output()
+        .unwrap_or_else(|error| {
+            panic!("docker logs verify runtime container should start: {error}")
+        });
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    )
+}
+
+fn docker_build_image_args(image_tag: &str) -> Vec<String> {
+    vec![
+        String::from("build"),
+        String::from("-t"),
+        image_tag.to_owned(),
+        String::from("-f"),
+        verify_slice_root().join("Dockerfile").display().to_string(),
+        verify_slice_root().display().to_string(),
+    ]
+}
+
+fn verify_slice_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("cockroachdb_molt/molt")
 }

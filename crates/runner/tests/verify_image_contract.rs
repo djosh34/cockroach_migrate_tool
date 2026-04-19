@@ -1,10 +1,10 @@
 #[path = "support/verify_docker_contract.rs"]
 mod verify_docker_contract_support;
-#[path = "support/verify_image_harness.rs"]
-mod verify_image_harness_support;
+#[path = "support/verify_image_artifact_harness.rs"]
+mod verify_image_artifact_harness_support;
 
 use verify_docker_contract_support::VerifyDockerContract;
-use verify_image_harness_support::VerifyImageHarness;
+use verify_image_artifact_harness_support::VerifyImageArtifactHarness;
 
 #[test]
 fn verify_image_dockerfile_lives_in_the_verify_slice_and_uses_a_scratch_runtime() {
@@ -16,14 +16,14 @@ fn verify_image_dockerfile_lives_in_the_verify_slice_and_uses_a_scratch_runtime(
 
 #[test]
 fn verify_image_builds_from_the_verify_slice() {
-    let harness = VerifyImageHarness::start();
+    let harness = VerifyImageArtifactHarness::start();
 
     harness.assert_image_exists();
 }
 
 #[test]
 fn verify_image_exposes_only_the_verify_command_surface() {
-    let harness = VerifyImageHarness::start();
+    let harness = VerifyImageArtifactHarness::start();
     let contract = VerifyDockerContract::load();
 
     contract.assert_image_entrypoint_is_direct_verify_surface(&harness.image_entrypoint_json());
@@ -32,7 +32,7 @@ fn verify_image_exposes_only_the_verify_command_surface() {
 
 #[test]
 fn verify_image_runtime_filesystem_contains_only_the_binary_payload() {
-    let harness = VerifyImageHarness::start();
+    let harness = VerifyImageArtifactHarness::start();
     let contract = VerifyDockerContract::load();
 
     contract.assert_runtime_filesystem_is_minimal(&harness.exported_runtime_paths());

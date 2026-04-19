@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 06:34:46 PM CEST 2026
+Generated: Sun Apr 19 19:27:20 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -545,6 +545,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Prove HTTP request inputs cannot cause command injection in verify execution <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/07-task-route-all-correctness-tests-through-the-verify-http-image-only.md`
+
+```
+## Task: Route all correctness verification through the verify HTTP image only and remove all alternate test-harness paths <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

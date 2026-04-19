@@ -8,15 +8,18 @@ mod e2e_harness;
 mod e2e_integrity;
 #[path = "support/multi_mapping_harness.rs"]
 mod multi_mapping_harness;
+#[path = "support/verify_image_harness.rs"]
+mod verify_image_harness_support;
 #[path = "support/webhook_chaos_gateway.rs"]
 mod webhook_chaos_gateway;
 
-use std::{thread, time::Duration};
+use std::time::Duration;
 
 use composite_pk_exclusion_harness::CompositePkExclusionHarness;
 use default_bootstrap_harness::DefaultBootstrapHarness;
 use e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
 use multi_mapping_harness::MultiMappingHarness;
+use verify_image_harness_support::VerifyImageHarness;
 
 const FK_HEAVY_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -63,17 +66,6 @@ CREATE TABLE public.grandchildren (
 );
 "#;
 
-const FK_HEAVY_SNAPSHOT_SQL: &str = r#"
-SELECT string_agg(entry, ',' ORDER BY entry)
-FROM (
-    SELECT 'p:' || id::text || ':' || name AS entry FROM public.parents
-    UNION ALL
-    SELECT 'c:' || id::text || ':' || parent_id::text || ':' || name FROM public.children
-    UNION ALL
-    SELECT 'g:' || id::text || ':' || child_id::text || ':' || name FROM public.grandchildren
-) snapshot;
-"#;
-
 const FK_HEAVY_CONSTRAINTS: &str = "children:children_parent_id_fkey:FOREIGN KEY,children:children_pkey:PRIMARY KEY,grandchildren:grandchildren_child_id_fkey:FOREIGN KEY,grandchildren:grandchildren_pkey:PRIMARY KEY,parents:parents_pkey:PRIMARY KEY";
 
 fn apply_fk_heavy_live_source_changes(harness: &CdcE2eHarness) {
@@ -91,12 +83,51 @@ DELETE FROM public.parents WHERE id = 2;
 }
 
 #[test]
+fn verify_image_proves_default_e2e_correctness_through_the_real_http_contract() {
+    let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
+
+    harness.bootstrap_default_migration();
+
+    let audit = harness.verify_selected_tables_via_image(&verify_image);
+    audit.assert_finished_successfully();
+    audit.assert_selected_tables_match();
+}
+
+#[test]
+fn verify_image_reports_selected_table_mismatches_through_the_real_http_contract() {
+    let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
+    let destination_failure =
+        harness.fail_destination_customer_email_write(1, "alice+mismatch@example.com");
+    harness.update_source_customer_email(1, "alice+mismatch@example.com");
+    let stderr = harness.wait_for_runner_failed_exit();
+    assert!(
+        stderr.contains("failed to apply reconcile upsert"),
+        "runner stderr did not include forced mismatch failure context:\n{stderr}"
+    );
+    let audit = harness.verify_selected_tables_via_image(&verify_image);
+    drop(destination_failure);
+
+    audit.assert_finished_successfully();
+    audit.assert_detects_selected_table_mismatch();
+}
+
+#[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_tables() {
     let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_shadow_customers(2);
     harness
@@ -110,21 +141,20 @@ fn ignored_long_lane_proves_customer_live_update_flows_through_webhook_then_help
 {
     let harness =
         DefaultBootstrapHarness::start_with_observed_webhook_gateway_and_reconcile_interval(30);
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let baseline = harness.customer_tracking_progress();
     harness.update_source_customer_email(1, "alice+live-path@example.com");
     let live_update = harness.wait_for_customer_update_received_before_reconcile(
         &baseline,
         "1:alice+live-path@example.com,2:bob@example.com",
-        "1:alice@example.com,2:bob@example.com",
         "alice+live-path@example.com",
     );
-    harness.wait_for_customer_update_reconcile(
-        &live_update,
-        "1:alice+live-path@example.com,2:bob@example.com",
-    );
+    harness.wait_for_customer_update_reconcile(&verify_image, &live_update);
     harness
         .post_setup_source_audit()
         .assert_honest_workload_only(1);
@@ -134,17 +164,22 @@ fn ignored_long_lane_proves_customer_live_update_flows_through_webhook_then_help
 #[ignore = "long lane"]
 fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converges() {
     let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.arm_single_external_http_500_for_customer_email("alice+retry@example.com");
     harness.update_source_customer_email(1, "alice+retry@example.com");
     harness.wait_for_duplicate_customer_delivery("alice+retry@example.com");
     harness.wait_for_helper_shadow_customers("1:alice+retry@example.com,2:bob@example.com");
     harness.assert_helper_shadow_customers(2);
-    harness.wait_for_destination_customers("1:alice+retry@example.com,2:bob@example.com");
-    harness.assert_destination_customers_stable(
-        "1:alice+retry@example.com,2:bob@example.com",
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
 }
@@ -153,9 +188,12 @@ fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converg
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
     let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness
         .arm_single_external_transport_disconnect_for_customer_email("alice+network@example.com");
     harness.update_source_customer_email(1, "alice+network@example.com");
@@ -164,13 +202,15 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
     );
     harness.wait_for_helper_shadow_customers("1:alice+network@example.com,2:bob@example.com");
     harness.assert_helper_shadow_customers(2);
-    harness.wait_for_destination_customers("1:alice+network@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.assert_helper_shadow_customers_stable(
         "1:alice+network@example.com,2:bob@example.com",
         Duration::from_secs(3),
     );
-    harness.assert_destination_customers_stable(
-        "1:alice+network@example.com,2:bob@example.com",
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
     harness.update_source_customer_email(2, "bob+recovered@example.com");
@@ -178,13 +218,14 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
         "1:alice+network@example.com,2:bob+recovered@example.com",
     );
     harness
-        .wait_for_destination_customers("1:alice+network@example.com,2:bob+recovered@example.com");
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.assert_helper_shadow_customers_stable(
         "1:alice+network@example.com,2:bob+recovered@example.com",
         Duration::from_secs(3),
     );
-    harness.assert_destination_customers_stable(
-        "1:alice+network@example.com,2:bob+recovered@example.com",
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
 }
@@ -193,18 +234,17 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_after_helper_persistence_transaction_failure() {
     let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let helper_failure =
         harness.fail_helper_shadow_customer_email_write(1, "alice+helper-failure@example.com");
     harness.update_source_customer_email(1, "alice+helper-failure@example.com");
     harness.wait_for_duplicate_customer_delivery("alice+helper-failure@example.com");
     harness.assert_helper_shadow_customers_stable(
-        "1:alice@example.com,2:bob@example.com",
-        Duration::from_secs(3),
-    );
-    harness.assert_destination_customers_stable(
         "1:alice@example.com,2:bob@example.com",
         Duration::from_secs(3),
     );
@@ -214,16 +254,21 @@ fn ignored_long_lane_recovers_after_helper_persistence_transaction_failure() {
     );
     harness
         .wait_for_helper_shadow_customers("1:alice+helper-failure@example.com,2:bob@example.com");
-    harness.wait_for_destination_customers("1:alice+helper-failure@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
 }
 
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
     let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let baseline = harness.customer_tracking_progress();
     let destination_failure =
         harness.fail_destination_customer_email_write(1, "alice+reconcile-failure@example.com");
@@ -236,7 +281,9 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
     harness.assert_helper_shadow_customers_snapshot(
         "1:alice+reconcile-failure@example.com,2:bob@example.com",
     );
-    harness.assert_destination_customers_snapshot("1:alice@example.com,2:bob@example.com");
+    harness
+        .verify_selected_tables_via_image(&verify_image)
+        .assert_detects_selected_table_mismatch();
     let failed = harness.customer_tracking_progress();
     assert_eq!(
         failed.stream.latest_reconciled_resolved_watermark,
@@ -259,7 +306,8 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
     drop(destination_failure);
     harness.restart_runner();
     harness
-        .wait_for_destination_customers("1:alice+reconcile-failure@example.com,2:bob@example.com");
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let expected_reconciled_watermark = failed
         .stream
         .latest_received_resolved_watermark
@@ -284,9 +332,12 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_before_reconcile() {
     let harness = DefaultBootstrapHarness::start_with_reconcile_interval(30);
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let baseline = harness.customer_tracking_progress();
     assert_eq!(
         baseline.stream.latest_received_resolved_watermark,
@@ -304,10 +355,6 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
     );
     harness.update_source_customer_email(1, "alice+restart@example.com");
     harness.wait_for_helper_shadow_customers("1:alice+restart@example.com,2:bob@example.com");
-    harness.assert_destination_customers_stable(
-        "1:alice@example.com,2:bob@example.com",
-        Duration::from_secs(3),
-    );
     let pre_crash = harness.wait_for_customer_tracking_progress(
         "customer update should be durably received before reconcile catches up",
         |progress| {
@@ -323,9 +370,11 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
     );
     harness.kill_runner();
     harness.restart_runner();
-    harness.wait_for_destination_customers("1:alice+restart@example.com,2:bob@example.com");
-    harness.assert_destination_customers_stable(
-        "1:alice+restart@example.com,2:bob@example.com",
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
     let expected_reconciled_watermark = pre_crash
@@ -352,9 +401,12 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_after_runner_crash_during_a_blocked_reconcile_pass() {
     let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let baseline = harness.customer_tracking_progress();
     let destination_lock = harness.lock_destination_customers();
     harness.update_source_customer_email(1, "alice+locked@example.com");
@@ -376,9 +428,11 @@ fn ignored_long_lane_recovers_after_runner_crash_during_a_blocked_reconcile_pass
     harness.kill_runner();
     drop(destination_lock);
     harness.restart_runner();
-    harness.wait_for_destination_customers("1:alice+locked@example.com,2:bob@example.com");
-    harness.assert_destination_customers_stable(
-        "1:alice+locked@example.com,2:bob@example.com",
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
     let expected_reconciled_watermark = pre_crash
@@ -415,6 +469,7 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         source_setup_sql: FK_HEAVY_SOURCE_SETUP_SQL,
         destination_setup_sql: FK_HEAVY_DESTINATION_SETUP_SQL,
     });
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_migration();
     harness.wait_for_helper_table_row_counts(&[
@@ -422,11 +477,12 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         ("public.children", 2),
         ("public.grandchildren", 2),
     ]);
-    harness.wait_for_destination_query(
-        FK_HEAVY_SNAPSHOT_SQL,
-        "c:10:1:alpha child,c:20:2:beta child,g:100:10:alpha grandchild,g:200:20:beta grandchild,p:1:alpha parent,p:2:beta parent",
-        "initial FK-heavy snapshot",
-    );
+    harness
+        .wait_for_selected_tables_to_match_via_image(
+            &verify_image,
+            "initial FK-heavy selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
     assert_eq!(
         harness.destination_constraint_snapshot().trim(),
         FK_HEAVY_CONSTRAINTS,
@@ -434,23 +490,21 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
     );
     harness.assert_explicit_source_bootstrap_commands();
     apply_fk_heavy_live_source_changes(&harness);
-    harness.wait_for_destination_query(
-        FK_HEAVY_SNAPSHOT_SQL,
-        "c:10:1:alpha child,c:30:3:gamma child,g:100:10:alpha grandchild,g:300:30:gamma grandchild,p:1:alpha parent updated,p:3:gamma parent",
-        "live FK-heavy catch-up snapshot",
-    );
+    harness
+        .wait_for_selected_tables_to_match_via_image(
+            &verify_image,
+            "live FK-heavy selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
     assert_eq!(
         harness.destination_constraint_snapshot().trim(),
         FK_HEAVY_CONSTRAINTS,
         "destination real tables should retain PK/FK constraints after live catch-up",
     );
-
-    let converged_snapshot = harness.query_destination(FK_HEAVY_SNAPSHOT_SQL);
-    thread::sleep(Duration::from_secs(3));
-    harness.wait_for_destination_query(
-        FK_HEAVY_SNAPSHOT_SQL,
-        converged_snapshot.trim(),
-        "stable FK-heavy snapshot after repeated reconcile",
+    harness.assert_selected_tables_match_via_image_stable(
+        &verify_image,
+        "FK-heavy selected tables should stay matched after repeated reconcile",
+        Duration::from_secs(3),
     );
 }
 
@@ -458,30 +512,42 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
 #[ignore = "long lane"]
 fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_postgres_tables() {
     let harness = DefaultBootstrapHarness::start_with_reconcile_interval(5);
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.delete_source_customer(1);
     harness.wait_for_helper_shadow_customers("2:bob@example.com");
-    harness.assert_destination_customer_count(1, 1);
-    harness.wait_for_destination_customers("2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     harness.assert_helper_shadow_customers_stable("2:bob@example.com", Duration::from_secs(11));
-    harness.assert_destination_customers_stable("2:bob@example.com", Duration::from_secs(11));
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
+        Duration::from_secs(11),
+    );
 }
 
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_transfer() {
     let harness = DefaultBootstrapHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let baseline = harness.customer_tracking_progress();
 
     let expectation = harness.run_high_source_customer_write_churn_workload();
 
     harness.wait_for_helper_shadow_customers(expectation.final_customers_snapshot());
-    harness.wait_for_destination_customers(expectation.final_customers_snapshot());
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
     let received = harness.wait_for_customer_tracking_progress(
         "customer tracking should record source churn beyond the bootstrap watermark",
         |progress| {
@@ -512,8 +578,8 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
         expectation.final_customers_snapshot(),
         Duration::from_secs(3),
     );
-    harness.assert_destination_customers_stable(
-        expectation.final_customers_snapshot(),
+    harness.assert_selected_tables_match_via_verify_image_stable(
+        &verify_image,
         Duration::from_secs(3),
     );
     harness.assert_runner_alive();
@@ -523,13 +589,14 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
 #[ignore = "long lane"]
 fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_tables() {
     let harness = CompositePkExclusionHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_migration();
-    harness.wait_for_initial_scan();
+    harness.wait_for_initial_scan(&verify_image);
     harness.assert_explicit_source_bootstrap_commands();
     harness.apply_live_source_changes();
-    harness.wait_for_live_catchup();
-    harness.assert_included_tables_stable(Duration::from_secs(3));
+    harness.wait_for_live_catchup(&verify_image);
+    harness.assert_included_tables_stable(&verify_image, Duration::from_secs(3));
 }
 
 #[test]
@@ -537,12 +604,13 @@ fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_ta
 fn ignored_long_lane_runs_multiple_large_multi_database_migrations_under_one_destination_container()
 {
     let harness = MultiMappingHarness::start();
+    let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_migration();
-    harness.wait_for_initial_scan();
+    harness.wait_for_initial_scan(&verify_image);
     harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_state_is_mapping_scoped();
     harness.apply_live_source_changes();
-    harness.wait_for_live_catchup();
-    harness.assert_mapping_state_stable(Duration::from_secs(3));
+    harness.wait_for_live_catchup(&verify_image);
+    harness.assert_mapping_state_stable(&verify_image, Duration::from_secs(3));
 }

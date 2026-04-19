@@ -1,4 +1,4 @@
-## Task: Route all correctness verification through the verify HTTP image only and remove all alternate test-harness paths <status>not_started</status> <passes>false</passes>
+## Task: Route all correctness verification through the verify HTTP image only and remove all alternate test-harness paths <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -22,11 +22,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers correctness verification through the verify HTTP image contract only
-- [ ] Test suites fail if they bypass the verify image or use a hidden alternate verification route
-- [ ] The supported test path matches the supported production verify path
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers correctness verification through the verify HTTP image contract only
+- [x] Test suites fail if they bypass the verify image or use a hidden alternate verification route
+- [x] The supported test path matches the supported production verify path
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/07-task-route-all-correctness-tests-through-the-verify-http-image-only_plans/2026-04-19-route-correctness-through-verify-http-image-plan.md</plan>

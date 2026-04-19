@@ -72,11 +72,57 @@ impl E2eIntegrityContractAudit {
         }
     }
 
+    pub fn assert_no_selected_table_correctness_shortcuts(&self) {
+        assert!(
+            !self
+                .default_harness
+                .contains("pub fn wait_for_destination_customers"),
+            "default bootstrap harness should not expose a public direct destination correctness wait",
+        );
+        assert!(
+            !self
+                .default_harness
+                .contains("pub fn assert_destination_customers_snapshot"),
+            "default bootstrap harness should not expose a public destination correctness snapshot helper",
+        );
+        assert!(
+            !self
+                .default_harness
+                .contains("pub fn assert_destination_customers_stable"),
+            "default bootstrap harness should not expose a public destination correctness stability helper",
+        );
+        assert!(
+            !self
+                .composite_harness
+                .contains("const CUSTOMERS_SNAPSHOT_SQL"),
+            "composite-key harness should not keep a direct included-table destination correctness snapshot",
+        );
+        assert!(
+            !self
+                .composite_harness
+                .contains("const ORDER_ITEMS_SNAPSHOT_SQL"),
+            "composite-key harness should not keep a direct included-table order-item correctness snapshot",
+        );
+        assert!(
+            !self
+                .multi_mapping_harness
+                .contains("const APP_A_REAL_SNAPSHOT_SQL"),
+            "multi-mapping harness should not keep a direct app-a destination correctness snapshot",
+        );
+        assert!(
+            !self
+                .multi_mapping_harness
+                .contains("const APP_B_REAL_SNAPSHOT_SQL"),
+            "multi-mapping harness should not keep a direct app-b destination correctness snapshot",
+        );
+    }
+
     pub fn assert_only_approved_raw_docker_call_sites(&self) {
         let approved = [
             "tests/support/e2e_harness.rs",
             "tests/support/runner_container_process.rs",
             "tests/support/runner_image_harness.rs",
+            "tests/support/verify_image_artifact_harness.rs",
             "tests/support/verify_image_harness.rs",
         ];
         let tests_dir = repo_root().join("crates/runner/tests");

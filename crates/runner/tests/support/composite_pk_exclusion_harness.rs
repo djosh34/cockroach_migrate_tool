@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
+use crate::verify_image_harness_support::VerifyImageHarness;
 
 const SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -48,25 +49,6 @@ CREATE TABLE public.audit_events (
     event_type text NOT NULL,
     details text NOT NULL
 );
-"#;
-
-const CUSTOMERS_SNAPSHOT_SQL: &str = r#"
-SELECT COALESCE(
-    string_agg(id::text || ':' || email, ',' ORDER BY id),
-    '<empty>'
-)
-FROM public.customers;
-"#;
-
-const ORDER_ITEMS_SNAPSHOT_SQL: &str = r#"
-SELECT COALESCE(
-    string_agg(
-        order_id::text || '|' || line_id::text || '|' || sku || '|' || quantity::text,
-        ',' ORDER BY order_id, line_id
-    ),
-    '<empty>'
-)
-FROM public.order_items;
 "#;
 
 const AUDIT_EVENTS_SNAPSHOT_SQL: &str = r#"
@@ -132,8 +114,13 @@ impl CompositePkExclusionHarness {
         self.inner.bootstrap_migration();
     }
 
-    pub fn wait_for_initial_scan(&self) {
-        self.wait_for_included_state(INITIAL_CUSTOMERS, INITIAL_ORDER_ITEMS, "initial scan");
+    pub fn wait_for_initial_scan(&self, verify_image: &VerifyImageHarness) {
+        self.wait_for_included_state(
+            verify_image,
+            INITIAL_CUSTOMERS,
+            INITIAL_ORDER_ITEMS,
+            "initial scan",
+        );
         self.inner.wait_for_destination_query(
             AUDIT_EVENTS_SNAPSHOT_SQL,
             EXCLUDED_DESTINATION_AUDIT_EVENTS,
@@ -177,8 +164,13 @@ VALUES (2, 'live-write', 'should stay excluded');
         );
     }
 
-    pub fn wait_for_live_catchup(&self) {
-        self.wait_for_included_state(LIVE_CUSTOMERS, LIVE_ORDER_ITEMS, "live catch-up");
+    pub fn wait_for_live_catchup(&self, verify_image: &VerifyImageHarness) {
+        self.wait_for_included_state(
+            verify_image,
+            LIVE_CUSTOMERS,
+            LIVE_ORDER_ITEMS,
+            "live catch-up",
+        );
         self.inner.wait_for_destination_query(
             AUDIT_EVENTS_SNAPSHOT_SQL,
             EXCLUDED_DESTINATION_AUDIT_EVENTS,
@@ -190,17 +182,14 @@ VALUES (2, 'live-write', 'should stay excluded');
         );
     }
 
-    pub fn assert_included_tables_stable(&self, duration: Duration) {
-        self.inner.assert_destination_query_stable(
-            CUSTOMERS_SNAPSHOT_SQL,
-            LIVE_CUSTOMERS,
-            "destination customers after repeated reconcile",
-            duration,
-        );
-        self.inner.assert_destination_query_stable(
-            ORDER_ITEMS_SNAPSHOT_SQL,
-            LIVE_ORDER_ITEMS,
-            "destination order items after repeated reconcile",
+    pub fn assert_included_tables_stable(
+        &self,
+        verify_image: &VerifyImageHarness,
+        duration: Duration,
+    ) {
+        self.inner.assert_selected_tables_match_via_image_stable(
+            verify_image,
+            "included composite-key tables should stay matched through the verify image",
             duration,
         );
         self.inner.assert_destination_query_stable(
@@ -230,20 +219,19 @@ VALUES (2, 'live-write', 'should stay excluded');
 
     fn wait_for_included_state(
         &self,
+        verify_image: &VerifyImageHarness,
         expected_customers: &str,
         expected_order_items: &str,
         description: &str,
     ) {
-        self.inner.wait_for_destination_query(
-            CUSTOMERS_SNAPSHOT_SQL,
-            expected_customers,
-            &format!("destination customers during {description}"),
-        );
-        self.inner.wait_for_destination_query(
-            ORDER_ITEMS_SNAPSHOT_SQL,
-            expected_order_items,
-            &format!("destination order items during {description}"),
-        );
+        self.inner
+            .wait_for_selected_tables_to_match_via_image(
+                verify_image,
+                &format!(
+                    "included composite-key tables should match through the verify image during {description}"
+                ),
+            )
+            .assert_selected_tables_match();
         self.inner.wait_for_destination_query(
             HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL,
             expected_customers,

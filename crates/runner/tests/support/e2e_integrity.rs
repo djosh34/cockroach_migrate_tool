@@ -1,9 +1,175 @@
 use std::{fs, path::Path};
+
+use serde::Deserialize;
 const EXPECTED_COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CustomerLiveUpdateAudit {
     received_watermark: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct VerifyCorrectnessAudit {
+    expected_tables: Vec<String>,
+    job_id: String,
+    status: String,
+    failure_reason: Option<String>,
+    result: VerifyJobResult,
+}
+
+impl VerifyCorrectnessAudit {
+    pub fn new(expected_tables: Vec<String>, response: VerifyJobResponse) -> Self {
+        Self {
+            expected_tables,
+            job_id: response.job_id,
+            status: response.status,
+            failure_reason: response.failure_reason,
+            result: response.result,
+        }
+    }
+
+    pub fn assert_finished_successfully(&self) {
+        assert!(
+            self.finished_successfully(),
+            "verify image job `{}` should succeed without hidden fallback verification: {:?}",
+            self.job_id,
+            self
+        );
+    }
+
+    pub fn assert_selected_tables_match(&self) {
+        assert!(
+            self.selected_tables_match(),
+            "verify image job `{}` should report selected-table correctness through the dedicated verify boundary: {:?}",
+            self.job_id,
+            self
+        );
+    }
+
+    pub fn assert_detects_selected_table_mismatch(&self) {
+        assert!(
+            self.selected_tables_mismatch(),
+            "verify image job `{}` should expose selected-table mismatches through the dedicated verify boundary: {:?}",
+            self.job_id,
+            self
+        );
+    }
+
+    pub fn finished_successfully(&self) -> bool {
+        self.status == "succeeded" && self.failure_reason.is_none()
+    }
+
+    pub fn selected_tables_match(&self) -> bool {
+        if !self.finished_successfully() || !self.covers_expected_tables() {
+            return false;
+        }
+        if !self.result.errors.is_empty() || !self.result.mismatches.is_empty() {
+            return false;
+        }
+
+        self.expected_tables.iter().all(|expected_table| {
+            let table_summaries = self
+                .result
+                .summaries
+                .iter()
+                .filter(|summary| summary.table_name() == *expected_table)
+                .collect::<Vec<_>>();
+            !table_summaries.is_empty()
+                && table_summaries
+                    .iter()
+                    .all(|summary| summary.stats.num_mismatch == 0)
+                && table_summaries
+                    .iter()
+                    .any(|summary| summary.stats.num_verified > 0)
+        })
+    }
+
+    pub fn selected_tables_mismatch(&self) -> bool {
+        self.finished_successfully()
+            && self.result.errors.is_empty()
+            && self.covers_expected_tables()
+            && (self
+                .result
+                .summaries
+                .iter()
+                .any(|summary| summary.stats.num_mismatch > 0)
+                || !self.result.mismatches.is_empty())
+    }
+
+    fn covers_expected_tables(&self) -> bool {
+        let mut expected_tables = self.expected_tables.clone();
+        expected_tables.sort();
+
+        let mut summarized_tables = self
+            .result
+            .summaries
+            .iter()
+            .map(VerifyJobSummary::table_name)
+            .collect::<Vec<_>>();
+        summarized_tables.sort();
+        summarized_tables.dedup();
+
+        summarized_tables == expected_tables
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct VerifyJobResponse {
+    job_id: String,
+    status: String,
+    failure_reason: Option<String>,
+    result: VerifyJobResult,
+}
+
+impl VerifyJobResponse {
+    pub(crate) fn is_running(&self) -> bool {
+        self.status == "running"
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyJobResult {
+    #[serde(default, deserialize_with = "null_default")]
+    status_messages: Vec<VerifyStatusMessage>,
+    #[serde(default, deserialize_with = "null_default")]
+    summaries: Vec<VerifyJobSummary>,
+    #[serde(default, deserialize_with = "null_default")]
+    mismatches: Vec<VerifyJobMismatch>,
+    #[serde(default, deserialize_with = "null_default")]
+    errors: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyStatusMessage {
+    info: String,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyJobSummary {
+    info: String,
+    stats: VerifyRowStats,
+}
+
+impl VerifyJobSummary {
+    fn table_name(&self) -> String {
+        format!("{}.{}", self.stats.schema, self.stats.table)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyRowStats {
+    schema: String,
+    table: String,
+    num_verified: usize,
+    num_mismatch: usize,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyJobMismatch {
+    kind: String,
+    schema: Option<String>,
+    table: Option<String>,
+    info: Option<String>,
 }
 
 impl CustomerLiveUpdateAudit {
@@ -399,6 +565,14 @@ fn split_sql_statements(sql: &str) -> Vec<&str> {
 
 fn collapse_sql_whitespace(sql: &str) -> String {
     sql.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(|value| value.unwrap_or_default())
 }
 
 fn unescape_logged_argument(argument: &str) -> String {

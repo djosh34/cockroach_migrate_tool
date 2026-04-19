@@ -81,6 +81,71 @@ fn e2e_suite_routes_post_setup_source_commands_through_a_typed_integrity_boundar
 }
 
 #[test]
+fn e2e_suite_routes_default_correctness_through_the_verify_image_boundary() {
+    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
+    let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
+    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
+    let integrity = read_runner_test_file("tests/support/e2e_integrity.rs");
+
+    assert!(
+        integrity.contains("pub struct VerifyCorrectnessAudit"),
+        "E2E integrity support should define a typed verify correctness audit",
+    );
+    assert!(
+        integrity.contains("pub fn selected_tables_match(&self) -> bool"),
+        "typed verify correctness audit should expose a reusable success predicate for harness polling",
+    );
+    assert!(
+        default_harness.contains("pub fn wait_for_selected_tables_to_match_via_verify_image"),
+        "default bootstrap harness should expose a named verify-image-backed correctness wait helper",
+    );
+    assert!(
+        e2e_harness.contains("pub fn wait_for_selected_tables_to_match_via_image"),
+        "shared E2E harness should own the verify-image correctness polling boundary",
+    );
+    assert!(
+        long_lane.contains("wait_for_selected_tables_to_match_via_verify_image"),
+        "default long-lane correctness should flow through the verify-image-backed helper instead of direct destination snapshots",
+    );
+}
+
+#[test]
+fn e2e_suite_routes_composite_and_multi_mapping_correctness_through_the_verify_image_boundary() {
+    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
+    let composite_harness =
+        read_runner_test_file("tests/support/composite_pk_exclusion_harness.rs");
+    let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
+
+    assert!(
+        composite_harness
+            .contains("wait_for_initial_scan(&self, verify_image: &VerifyImageHarness)"),
+        "composite-key harness should require the verify image for included-table initial correctness checks",
+    );
+    assert!(
+        composite_harness.contains("assert_selected_tables_match_via_image_stable"),
+        "composite-key harness should prove included-table stability through the shared verify-image boundary",
+    );
+    assert!(
+        multi_mapping_harness.contains("wait_for_selected_tables_to_match_via_image"),
+        "multi-mapping harness should own per-mapping correctness waits through the verify image",
+    );
+    assert!(
+        multi_mapping_harness.contains("source_bootstrap_cockroach_url"),
+        "multi-mapping harness should bootstrap against the same secure Cockroach fixture used by verify-image-backed checks",
+    );
+    assert!(
+        long_lane.contains("harness.wait_for_initial_scan(&verify_image);"),
+        "long-lane scenarios should pass the verify image into composite or multi-mapping correctness checks",
+    );
+    assert!(
+        long_lane.contains(
+            "harness.assert_mapping_state_stable(&verify_image, Duration::from_secs(3));"
+        ),
+        "multi-mapping long-lane stability should be asserted through the verify-image-backed helper",
+    );
+}
+
+#[test]
 fn e2e_support_applies_source_bootstrap_through_sql_not_shell_scripts() {
     let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
     let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
@@ -111,6 +176,11 @@ fn e2e_support_applies_source_bootstrap_through_sql_not_shell_scripts() {
 #[test]
 fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
     E2eIntegrityContractAudit::load().assert_no_shortcut_toggles();
+}
+
+#[test]
+fn e2e_integrity_scopes_do_not_expose_selected_table_correctness_shortcuts() {
+    E2eIntegrityContractAudit::load().assert_no_selected_table_correctness_shortcuts();
 }
 
 #[test]

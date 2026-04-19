@@ -32,7 +32,9 @@ use runner_process::RunnerProcess;
 use crate::e2e_integrity::{
     CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
     PostSetupSourceAudit, RuntimeShapeAudit, SourceBootstrapAudit, SourceCommandAudit,
+    VerifyCorrectnessAudit,
 };
+use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
@@ -674,6 +676,73 @@ impl CdcE2eHarness {
         self.helper_table_name(mapped_table)
     }
 
+    pub fn verify_selected_tables_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> VerifyCorrectnessAudit {
+        let (include_schema_pattern, include_table_pattern) =
+            verify_filter_patterns(&self.config.selected_tables);
+        verify_image.run_correctness_audit(&VerifyImageRun {
+            network_name: self.docker.network_name.clone(),
+            source_url: self.docker.verify_source_url(&self.config.source_database),
+            source_ca_cert_path: self.docker.cockroach_ca_cert_path(),
+            source_client_cert_path: self.docker.cockroach_client_cert_path(),
+            source_client_key_path: self.docker.cockroach_client_key_path(),
+            destination_url: self.docker.verify_destination_url(
+                &self.config.destination_database,
+                &self.config.destination_user,
+                &self.config.destination_password,
+            ),
+            destination_ca_cert_path: self.docker.postgres_ca_cert_path(),
+            include_schema_pattern,
+            include_table_pattern,
+            expected_tables: self.config.selected_tables.clone(),
+        })
+    }
+
+    pub fn wait_for_selected_tables_to_match_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+        description: &str,
+    ) -> VerifyCorrectnessAudit {
+        for _ in 0..60 {
+            self.assert_runner_process_alive();
+            let audit = self.verify_selected_tables_via_image(verify_image);
+            if audit.selected_tables_match() {
+                return audit;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let audit = self.verify_selected_tables_via_image(verify_image);
+        panic!(
+            "{description} did not converge through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            self.runner_diagnostics(),
+        );
+    }
+
+    pub fn assert_selected_tables_match_via_image_stable(
+        &self,
+        verify_image: &VerifyImageHarness,
+        description: &str,
+        duration: Duration,
+    ) {
+        let deadline = Instant::now() + duration;
+        loop {
+            self.assert_runner_process_alive();
+            let audit = self.verify_selected_tables_via_image(verify_image);
+            assert!(
+                audit.selected_tables_match(),
+                "{description} stopped matching through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+                self.runner_diagnostics(),
+            );
+            if Instant::now() >= deadline {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+
     pub fn wait_for_runner_failed_exit(&self) -> String {
         let mut runner_process = self.runner_process.borrow_mut();
         let process = runner_process
@@ -889,7 +958,7 @@ mappings:
             &self.source_bootstrap_config_path,
             format!(
                 r#"cockroach:
-  url: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
+  url: {cockroach_url}
 webhook:
   base_url: {webhook_sink_base_url}
   ca_cert_path: {ca_cert_path}
@@ -901,6 +970,9 @@ mappings:
       tables:
 {selected_tables}
 "#,
+                cockroach_url = self
+                    .docker
+                    .source_bootstrap_cockroach_url(&self.config.source_database),
                 webhook_sink_base_url = self.webhook_sink_base_url,
                 ca_cert_path = investigation_ca_cert_path().display(),
                 mapping_id = self.config.mapping_id,
@@ -984,20 +1056,35 @@ mappings:
 }
 
 pub(crate) struct DockerEnvironment {
+    _tls_material_dir: TempDir,
     network_name: String,
     pub(crate) cockroach_container: String,
     postgres_container: String,
+    cockroach_host_port: u16,
     pub(crate) postgres_host_port: u16,
+    cockroach_certs_dir: PathBuf,
+    postgres_tls_dir: PathBuf,
 }
 
 impl DockerEnvironment {
     pub(crate) fn new() -> Self {
         let suffix = unique_suffix();
+        let tls_material_dir = tempfile::tempdir().expect("tls material dir should be created");
+        let cockroach_certs_dir = tls_material_dir.path().join("cockroach-certs");
+        let postgres_tls_dir = tls_material_dir.path().join("postgres-tls");
+        fs::create_dir_all(&cockroach_certs_dir).expect("cockroach cert dir should be created");
+        fs::create_dir_all(&postgres_tls_dir).expect("postgres tls dir should be created");
+        generate_cockroach_certs(&cockroach_certs_dir);
+        generate_postgres_tls_material(&postgres_tls_dir);
         Self {
+            _tls_material_dir: tls_material_dir,
             network_name: "cockroach-migrate-runner-e2e-shared".to_owned(),
             cockroach_container: format!("cockroach-migrate-cockroach-{suffix}"),
             postgres_container: format!("cockroach-migrate-postgres-{suffix}"),
+            cockroach_host_port: pick_unused_port(),
             postgres_host_port: pick_unused_port(),
+            cockroach_certs_dir,
+            postgres_tls_dir,
         }
     }
 
@@ -1018,6 +1105,7 @@ impl DockerEnvironment {
     }
 
     pub(crate) fn start_cockroach(&self) {
+        let cert_mount = format!("{}:/certs:ro", self.cockroach_certs_dir.display());
         run_command_capture(
             Command::new("docker").args([
                 "run",
@@ -1030,10 +1118,17 @@ impl DockerEnvironment {
                 "cockroach",
                 "--add-host",
                 "host.docker.internal:host-gateway",
+                "-p",
+                &format!("127.0.0.1:{}:26258", self.cockroach_host_port),
+                "-v",
+                &cert_mount,
                 COCKROACH_IMAGE,
                 "start-single-node",
-                "--insecure",
+                "--certs-dir=/certs",
                 "--listen-addr=localhost:26257",
+                "--advertise-addr=cockroach:26257",
+                "--sql-addr=0.0.0.0:26258",
+                "--advertise-sql-addr=cockroach:26258",
                 "--http-addr=0.0.0.0:8080",
             ]),
             "docker run cockroach",
@@ -1074,8 +1169,8 @@ impl DockerEnvironment {
                     &self.cockroach_container,
                     "cockroach",
                     "sql",
-                    "--insecure",
-                    "--host=localhost:26257",
+                    "--certs-dir=/certs",
+                    "--host=localhost:26258",
                     "-e",
                     "select 1",
                 ])
@@ -1118,6 +1213,7 @@ impl DockerEnvironment {
                 .status()
                 .expect("docker exec pg_isready should start");
             if status.success() {
+                self.enable_postgres_ssl();
                 return;
             }
             thread::sleep(Duration::from_secs(1));
@@ -1164,8 +1260,8 @@ impl DockerEnvironment {
                 &self.cockroach_container,
                 "cockroach",
                 "sql",
-                "--insecure",
-                "--host=localhost:26257",
+                "--certs-dir=/certs",
+                "--host=localhost:26258",
                 "--format=csv",
                 "-e",
                 sql,
@@ -1201,6 +1297,116 @@ impl DockerEnvironment {
 
     pub(crate) fn cockroach_image(&self) -> String {
         docker_inspect_format(&self.cockroach_container, "{{.Config.Image}}")
+    }
+
+    fn enable_postgres_ssl(&self) {
+        copy_file_into_container(
+            self.postgres_tls_dir.join("server.crt").as_path(),
+            &self.postgres_container,
+            "/var/lib/postgresql/data/server.crt",
+            "docker cp postgres server cert",
+        );
+        copy_file_into_container(
+            self.postgres_tls_dir.join("server.key").as_path(),
+            &self.postgres_container,
+            "/var/lib/postgresql/data/server.key",
+            "docker cp postgres server key",
+        );
+        run_command_capture(
+            Command::new("docker").args([
+                "exec",
+                "-u",
+                "0",
+                &self.postgres_container,
+                "bash",
+                "-lc",
+                "set -euo pipefail\n\
+                 chown postgres:postgres /var/lib/postgresql/data/server.crt /var/lib/postgresql/data/server.key\n\
+                 chmod 600 /var/lib/postgresql/data/server.key\n\
+                 printf '\\nssl=on\\nssl_cert_file='\"'\"'/var/lib/postgresql/data/server.crt'\"'\"'\\nssl_key_file='\"'\"'/var/lib/postgresql/data/server.key'\"'\"'\\n' >> /var/lib/postgresql/data/postgresql.conf",
+            ]),
+            "docker exec postgres enable ssl",
+        );
+        run_command_capture(
+            Command::new("docker").args(["restart", &self.postgres_container]),
+            "docker restart postgres after ssl enable",
+        );
+        for _ in 0..60 {
+            let status = Command::new("docker")
+                .args([
+                    "exec",
+                    "-e",
+                    "PGPASSWORD=postgres",
+                    &self.postgres_container,
+                    "pg_isready",
+                    "-h",
+                    "127.0.0.1",
+                    "-U",
+                    "postgres",
+                    "-d",
+                    "postgres",
+                ])
+                .status()
+                .expect("docker exec pg_isready should start");
+            if status.success() {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        panic!(
+            "postgres container did not become ready after enabling ssl\n{}",
+            docker_logs(&self.postgres_container)
+        );
+    }
+
+    pub(crate) fn source_bootstrap_cockroach_url(&self, database: &str) -> String {
+        format!(
+            "postgresql://root@127.0.0.1:{port}/{database}?sslmode=verify-full&sslrootcert={ca}&sslcert={client_cert}&sslkey={client_key}",
+            port = self.cockroach_host_port,
+            database = database,
+            ca = self.cockroach_ca_cert_path().display(),
+            client_cert = self.cockroach_client_cert_path().display(),
+            client_key = self.cockroach_client_key_path().display(),
+        )
+    }
+
+    pub(crate) fn verify_source_url(&self, database: &str) -> String {
+        format!("postgresql://root@cockroach:26258/{database}")
+    }
+
+    pub(crate) fn network_name(&self) -> &str {
+        &self.network_name
+    }
+
+    pub(crate) fn verify_destination_url(
+        &self,
+        database: &str,
+        user: &str,
+        password: &str,
+    ) -> String {
+        format!(
+            "postgresql://{user}:{password}@postgres:5432/{database}",
+            user = user,
+            password = password,
+            database = database,
+        )
+    }
+
+    pub(crate) fn cockroach_ca_cert_path(&self) -> PathBuf {
+        self.cockroach_certs_dir.join("ca.crt")
+    }
+
+    pub(crate) fn cockroach_client_cert_path(&self) -> PathBuf {
+        self.cockroach_certs_dir.join("client.root.crt")
+    }
+
+    pub(crate) fn cockroach_client_key_path(&self) -> PathBuf {
+        self.cockroach_certs_dir.join("client.root.key")
+    }
+
+    pub(crate) fn postgres_ca_cert_path(&self) -> PathBuf {
+        self.postgres_tls_dir.join("ca.crt")
     }
 }
 
@@ -1244,6 +1450,190 @@ pub(crate) fn investigation_server_key_path() -> PathBuf {
         .join("cockroach-webhook-cdc")
         .join("certs")
         .join("server.key")
+}
+
+fn generate_cockroach_certs(certs_dir: &Path) {
+    let mount = format!("{}:/certs", certs_dir.display());
+    let user = current_user_spec();
+    run_command_capture(
+        Command::new("docker").args([
+            "run",
+            "--rm",
+            "--user",
+            &user,
+            "-v",
+            &mount,
+            COCKROACH_IMAGE,
+            "cert",
+            "create-ca",
+            "--certs-dir=/certs",
+            "--ca-key=/certs/ca.key",
+        ]),
+        "docker run cockroach cert create-ca",
+    );
+    run_command_capture(
+        Command::new("docker").args([
+            "run",
+            "--rm",
+            "--user",
+            &user,
+            "-v",
+            &mount,
+            COCKROACH_IMAGE,
+            "cert",
+            "create-node",
+            "localhost",
+            "127.0.0.1",
+            "cockroach",
+            "--certs-dir=/certs",
+            "--ca-key=/certs/ca.key",
+        ]),
+        "docker run cockroach cert create-node",
+    );
+    run_command_capture(
+        Command::new("docker").args([
+            "run",
+            "--rm",
+            "--user",
+            &user,
+            "-v",
+            &mount,
+            COCKROACH_IMAGE,
+            "cert",
+            "create-client",
+            "root",
+            "--certs-dir=/certs",
+            "--ca-key=/certs/ca.key",
+        ]),
+        "docker run cockroach cert create-client",
+    );
+}
+
+fn generate_postgres_tls_material(tls_dir: &Path) {
+    let server_config_path = tls_dir.join("server.cnf");
+    fs::write(
+        &server_config_path,
+        "[req]\n\
+         distinguished_name = dn\n\
+         prompt = no\n\
+         req_extensions = req_ext\n\
+         \n\
+         [dn]\n\
+         CN = postgres\n\
+         \n\
+         [req_ext]\n\
+         subjectAltName = @alt_names\n\
+         \n\
+         [alt_names]\n\
+         DNS.1 = postgres\n\
+         DNS.2 = localhost\n\
+         IP.1 = 127.0.0.1\n",
+    )
+    .expect("postgres tls config should be written");
+    run_command_capture(
+        Command::new("openssl").args([
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-days",
+            "365",
+            "-nodes",
+            "-keyout",
+            tls_dir
+                .join("ca.key")
+                .to_str()
+                .expect("postgres ca key path should be utf-8"),
+            "-out",
+            tls_dir
+                .join("ca.crt")
+                .to_str()
+                .expect("postgres ca cert path should be utf-8"),
+            "-subj",
+            "/CN=runner-postgres-ca",
+        ]),
+        "openssl req postgres ca",
+    );
+    run_command_capture(
+        Command::new("openssl").args([
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            tls_dir
+                .join("server.key")
+                .to_str()
+                .expect("postgres server key path should be utf-8"),
+            "-out",
+            tls_dir
+                .join("server.csr")
+                .to_str()
+                .expect("postgres server csr path should be utf-8"),
+            "-config",
+            server_config_path
+                .to_str()
+                .expect("postgres server config path should be utf-8"),
+        ]),
+        "openssl req postgres server cert request",
+    );
+    run_command_capture(
+        Command::new("openssl").args([
+            "x509",
+            "-req",
+            "-days",
+            "365",
+            "-in",
+            tls_dir
+                .join("server.csr")
+                .to_str()
+                .expect("postgres server csr path should be utf-8"),
+            "-CA",
+            tls_dir
+                .join("ca.crt")
+                .to_str()
+                .expect("postgres ca cert path should be utf-8"),
+            "-CAkey",
+            tls_dir
+                .join("ca.key")
+                .to_str()
+                .expect("postgres ca key path should be utf-8"),
+            "-CAcreateserial",
+            "-out",
+            tls_dir
+                .join("server.crt")
+                .to_str()
+                .expect("postgres server cert path should be utf-8"),
+            "-extensions",
+            "req_ext",
+            "-extfile",
+            server_config_path
+                .to_str()
+                .expect("postgres server config path should be utf-8"),
+        ]),
+        "openssl x509 postgres server cert",
+    );
+}
+
+fn copy_file_into_container(source: &Path, container: &str, destination: &str, context: &str) {
+    run_command_capture(
+        Command::new("docker").args([
+            "cp",
+            source.to_str().expect("copy source path should be utf-8"),
+            &format!("{container}:{destination}"),
+        ]),
+        context,
+    );
+}
+
+fn current_user_spec() -> String {
+    let uid = run_command_capture(Command::new("id").arg("-u"), "id -u")
+        .trim()
+        .to_owned();
+    let gid = run_command_capture(Command::new("id").arg("-g"), "id -g")
+        .trim()
+        .to_owned();
+    format!("{uid}:{gid}")
 }
 
 fn unique_suffix() -> String {
@@ -1340,8 +1730,8 @@ pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> St
     run_command_capture(
         Command::new(wrapper_bin_dir.join("cockroach")).args([
             "sql",
-            "--insecure",
-            "--host=localhost:26257",
+            "--certs-dir=/certs",
+            "--host=localhost:26258",
             "--format=csv",
             "-e",
             sql,
@@ -1431,6 +1821,31 @@ fn split_table_reference(table: &str) -> (&str, &str) {
     table
         .split_once('.')
         .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
+}
+
+fn verify_filter_patterns(selected_tables: &[String]) -> (String, String) {
+    let mut schemas = selected_tables
+        .iter()
+        .map(|table| split_table_reference(table).0.to_owned())
+        .collect::<Vec<_>>();
+    schemas.sort();
+    schemas.dedup();
+
+    let mut tables = selected_tables
+        .iter()
+        .map(|table| split_table_reference(table).1.to_owned())
+        .collect::<Vec<_>>();
+    tables.sort();
+    tables.dedup();
+
+    (
+        anchored_posix_union(&schemas),
+        anchored_posix_union(&tables),
+    )
+}
+
+fn anchored_posix_union(values: &[String]) -> String {
+    format!("^({})$", values.join("|"))
 }
 
 fn parse_json_snapshot<T>(raw: &str, description: &str) -> T

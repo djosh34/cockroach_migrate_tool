@@ -17,7 +17,8 @@ use crate::e2e_harness::{
     run_audited_cockroach_sql, source_bootstrap_sql_statements, wait_for_runner_health,
     write_cockroach_wrapper_script,
 };
-use crate::e2e_integrity::SourceCommandAudit;
+use crate::e2e_integrity::{SourceCommandAudit, VerifyCorrectnessAudit};
+use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
 
 const APP_A_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -94,16 +95,6 @@ CREATE TABLE public.invoice_lines (
 );
 "#;
 
-const APP_A_REAL_SNAPSHOT_SQL: &str = r#"
-SELECT string_agg(entry, ',' ORDER BY entry)
-FROM (
-    SELECT 'c:' || id::text || ':' || email AS entry FROM public.customers
-    UNION ALL
-    SELECT 'o:' || order_id::text || '|' || line_id::text || '|' || sku || '|' || quantity::text
-    FROM public.order_items
-) snapshot;
-"#;
-
 const APP_A_HELPER_SNAPSHOT_SQL: &str = r#"
 SELECT string_agg(entry, ',' ORDER BY entry)
 FROM (
@@ -112,17 +103,6 @@ FROM (
     UNION ALL
     SELECT 'o:' || order_id::text || '|' || line_id::text || '|' || sku || '|' || quantity::text
     FROM _cockroach_migration_tool."app-a__public__order_items"
-) snapshot;
-"#;
-
-const APP_B_REAL_SNAPSHOT_SQL: &str = r#"
-SELECT string_agg(entry, ',' ORDER BY entry)
-FROM (
-    SELECT 'i:' || id::text || ':' || status || ':' || amount_cents::text AS entry
-    FROM public.invoices
-    UNION ALL
-    SELECT 'l:' || invoice_id::text || '|' || line_id::text || '|' || sku || '|' || quantity::text
-    FROM public.invoice_lines
 ) snapshot;
 "#;
 
@@ -273,25 +253,25 @@ impl MultiMappingHarness {
         self.apply_source_bootstrap_sql(&source_bootstrap_sql);
     }
 
-    pub fn wait_for_initial_scan(&self) {
-        self.wait_for_destination_query(
-            APP_A.destination_database,
-            APP_A_REAL_SNAPSHOT_SQL,
-            APP_A_INITIAL_SNAPSHOT,
-            "app-a initial real snapshot",
-        );
+    pub fn wait_for_initial_scan(&self, verify_image: &VerifyImageHarness) {
+        self.wait_for_selected_tables_to_match_via_image(
+            verify_image,
+            APP_A,
+            "app-a initial selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
         self.wait_for_destination_query(
             APP_A.destination_database,
             APP_A_HELPER_SNAPSHOT_SQL,
             APP_A_INITIAL_SNAPSHOT,
             "app-a initial helper snapshot",
         );
-        self.wait_for_destination_query(
-            APP_B.destination_database,
-            APP_B_REAL_SNAPSHOT_SQL,
-            APP_B_INITIAL_SNAPSHOT,
-            "app-b initial real snapshot",
-        );
+        self.wait_for_selected_tables_to_match_via_image(
+            verify_image,
+            APP_B,
+            "app-b initial selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
         self.wait_for_destination_query(
             APP_B.destination_database,
             APP_B_HELPER_SNAPSHOT_SQL,
@@ -416,25 +396,25 @@ VALUES (5003, 1, 'expansion-pack', 2);
         );
     }
 
-    pub fn wait_for_live_catchup(&self) {
-        self.wait_for_destination_query(
-            APP_A.destination_database,
-            APP_A_REAL_SNAPSHOT_SQL,
-            APP_A_LIVE_SNAPSHOT,
-            "app-a live real snapshot",
-        );
+    pub fn wait_for_live_catchup(&self, verify_image: &VerifyImageHarness) {
+        self.wait_for_selected_tables_to_match_via_image(
+            verify_image,
+            APP_A,
+            "app-a live selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
         self.wait_for_destination_query(
             APP_A.destination_database,
             APP_A_HELPER_SNAPSHOT_SQL,
             APP_A_LIVE_SNAPSHOT,
             "app-a live helper snapshot",
         );
-        self.wait_for_destination_query(
-            APP_B.destination_database,
-            APP_B_REAL_SNAPSHOT_SQL,
-            APP_B_LIVE_SNAPSHOT,
-            "app-b live real snapshot",
-        );
+        self.wait_for_selected_tables_to_match_via_image(
+            verify_image,
+            APP_B,
+            "app-b live selected tables should match through the verify image",
+        )
+        .assert_selected_tables_match();
         self.wait_for_destination_query(
             APP_B.destination_database,
             APP_B_HELPER_SNAPSHOT_SQL,
@@ -443,12 +423,15 @@ VALUES (5003, 1, 'expansion-pack', 2);
         );
     }
 
-    pub fn assert_mapping_state_stable(&self, duration: Duration) {
-        self.assert_destination_query_stable(
-            APP_A.destination_database,
-            APP_A_REAL_SNAPSHOT_SQL,
-            APP_A_LIVE_SNAPSHOT,
-            "app-a destination snapshot after repeated reconcile",
+    pub fn assert_mapping_state_stable(
+        &self,
+        verify_image: &VerifyImageHarness,
+        duration: Duration,
+    ) {
+        self.assert_selected_tables_match_via_image_stable(
+            verify_image,
+            APP_A,
+            "app-a selected tables should stay matched through the verify image",
             duration,
         );
         self.assert_destination_query_stable(
@@ -465,11 +448,10 @@ VALUES (5003, 1, 'expansion-pack', 2);
             "app-a helper inventory after repeated reconcile",
             duration,
         );
-        self.assert_destination_query_stable(
-            APP_B.destination_database,
-            APP_B_REAL_SNAPSHOT_SQL,
-            APP_B_LIVE_SNAPSHOT,
-            "app-b destination snapshot after repeated reconcile",
+        self.assert_selected_tables_match_via_image_stable(
+            verify_image,
+            APP_B,
+            "app-b selected tables should stay matched through the verify image",
             duration,
         );
         self.assert_destination_query_stable(
@@ -486,6 +468,82 @@ VALUES (5003, 1, 'expansion-pack', 2);
             "app-b helper inventory after repeated reconcile",
             duration,
         );
+    }
+
+    fn verify_selected_tables_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+        mapping: MappingSpec,
+    ) -> VerifyCorrectnessAudit {
+        let (include_schema_pattern, include_table_pattern) =
+            verify_filter_patterns(mapping.selected_tables);
+        verify_image.run_correctness_audit(&VerifyImageRun {
+            network_name: self.docker.network_name().to_owned(),
+            source_url: self.docker.verify_source_url(mapping.source_database),
+            source_ca_cert_path: self.docker.cockroach_ca_cert_path(),
+            source_client_cert_path: self.docker.cockroach_client_cert_path(),
+            source_client_key_path: self.docker.cockroach_client_key_path(),
+            destination_url: self.docker.verify_destination_url(
+                mapping.destination_database,
+                mapping.destination_user,
+                mapping.destination_password,
+            ),
+            destination_ca_cert_path: self.docker.postgres_ca_cert_path(),
+            include_schema_pattern,
+            include_table_pattern,
+            expected_tables: mapping
+                .selected_tables
+                .iter()
+                .map(|table| (*table).to_owned())
+                .collect(),
+        })
+    }
+
+    fn wait_for_selected_tables_to_match_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+        mapping: MappingSpec,
+        description: &str,
+    ) -> VerifyCorrectnessAudit {
+        for _ in 0..60 {
+            self.assert_runner_alive();
+            let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+            if audit.selected_tables_match() {
+                return audit;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+        panic!(
+            "{description} did not converge through the verify image correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            mapping.id,
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
+    fn assert_selected_tables_match_via_image_stable(
+        &self,
+        verify_image: &VerifyImageHarness,
+        mapping: MappingSpec,
+        description: &str,
+        duration: Duration,
+    ) {
+        let deadline = Instant::now() + duration;
+        loop {
+            self.assert_runner_alive();
+            let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+            assert!(
+                audit.selected_tables_match(),
+                "{description} stopped matching through the verify image correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
+                mapping.id,
+                read_file(&self.runner_stderr_path),
+            );
+            if Instant::now() >= deadline {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     fn materialize(&mut self) {
@@ -625,13 +683,14 @@ mappings:
             &self.source_bootstrap_config_path,
             format!(
                 r#"cockroach:
-  url: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
+  url: {cockroach_url}
 webhook:
   base_url: https://host.docker.internal:{runner_port}
   ca_cert_path: {ca_cert_path}
   resolved: 1s
 mappings:
 {mappings_yaml}"#,
+                cockroach_url = self.docker.source_bootstrap_cockroach_url("defaultdb"),
                 runner_port = self.runner_port,
                 ca_cert_path = investigation_ca_cert_path().display(),
                 mappings_yaml = mappings_yaml,
@@ -726,4 +785,35 @@ impl Drop for MultiMappingHarness {
             let _ = child.wait();
         }
     }
+}
+
+fn verify_filter_patterns(selected_tables: &[&str]) -> (String, String) {
+    let mut schemas = selected_tables
+        .iter()
+        .map(|table| split_table_reference(table).0.to_owned())
+        .collect::<Vec<_>>();
+    schemas.sort();
+    schemas.dedup();
+
+    let mut tables = selected_tables
+        .iter()
+        .map(|table| split_table_reference(table).1.to_owned())
+        .collect::<Vec<_>>();
+    tables.sort();
+    tables.dedup();
+
+    (
+        anchored_posix_union(&schemas),
+        anchored_posix_union(&tables),
+    )
+}
+
+fn split_table_reference(table: &str) -> (&str, &str) {
+    table
+        .split_once('.')
+        .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
+}
+
+fn anchored_posix_union(values: &[String]) -> String {
+    format!("^({})$", values.join("|"))
 }
