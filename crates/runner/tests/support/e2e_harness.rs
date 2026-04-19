@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use reqwest::{Certificate, blocking::Client};
@@ -24,6 +24,7 @@ pub struct CdcE2eHarnessConfig<'a> {
     pub destination_database: &'a str,
     pub destination_user: &'a str,
     pub destination_password: &'a str,
+    pub reconcile_interval_secs: u64,
     pub selected_tables: &'a [&'a str],
     pub source_setup_sql: &'a str,
     pub destination_setup_sql: &'a str,
@@ -35,6 +36,7 @@ struct OwnedHarnessConfig {
     destination_database: String,
     destination_user: String,
     destination_password: String,
+    reconcile_interval_secs: u64,
     selected_tables: Vec<String>,
     source_setup_sql: String,
     destination_setup_sql: String,
@@ -48,6 +50,7 @@ impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
             destination_database: config.destination_database.to_owned(),
             destination_user: config.destination_user.to_owned(),
             destination_password: config.destination_password.to_owned(),
+            reconcile_interval_secs: config.reconcile_interval_secs,
             selected_tables: config
                 .selected_tables
                 .iter()
@@ -143,6 +146,30 @@ impl CdcE2eHarness {
             self.query_destination(sql).trim(),
             read_file(&self.runner_stderr_path),
         );
+    }
+
+    pub fn assert_destination_query_stable(
+        &self,
+        sql: &str,
+        expected: &str,
+        description: &str,
+        duration: Duration,
+    ) {
+        let deadline = Instant::now() + duration;
+        loop {
+            self.assert_runner_alive();
+            let actual = self.query_destination(sql);
+            assert_eq!(
+                actual.trim(),
+                expected,
+                "{description} changed unexpectedly while it should remain stable\nrunner stderr:\n{}",
+                read_file(&self.runner_stderr_path),
+            );
+            if Instant::now() >= deadline {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
     }
 
     pub fn wait_for_helper_table_row_counts(&self, expectations: &[(&str, usize)]) {
@@ -374,7 +401,7 @@ impl CdcE2eHarness {
     cert_path: {cert_path}
     key_path: {key_path}
 reconcile:
-  interval_secs: 1
+  interval_secs: {reconcile_interval_secs}
 verify:
   molt:
     command: {molt_command}
@@ -405,6 +432,7 @@ mappings:
                 destination_database = self.config.destination_database,
                 destination_user = self.config.destination_user,
                 destination_password = self.config.destination_password,
+                reconcile_interval_secs = self.config.reconcile_interval_secs,
             ),
         )
         .expect("runner config should be written");

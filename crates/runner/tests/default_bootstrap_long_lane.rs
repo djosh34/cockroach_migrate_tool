@@ -87,6 +87,7 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         destination_database: "app_a",
         destination_user: "migration_user_a",
         destination_password: "runner-secret-a",
+        reconcile_interval_secs: 1,
         selected_tables: &["public.parents", "public.children", "public.grandchildren"],
         source_setup_sql: FK_HEAVY_SOURCE_SETUP_SQL,
         destination_setup_sql: FK_HEAVY_DESTINATION_SETUP_SQL,
@@ -140,4 +141,24 @@ DELETE FROM public.parents WHERE id = 2;
     );
 
     harness.verify_migration();
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_postgres_tables() {
+    let harness = DefaultBootstrapHarness::start_with_reconcile_interval(5);
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness.delete_source_customer(1);
+    harness.wait_for_helper_shadow_customers("2:bob@example.com");
+    harness.assert_destination_customer_count(1, 1);
+    harness.wait_for_destination_customers("2:bob@example.com");
+    harness.assert_helper_shadow_customers_stable("2:bob@example.com", Duration::from_secs(11));
+    harness.assert_destination_customers_stable("2:bob@example.com", Duration::from_secs(11));
+    let verify_output = harness.verify_default_migration_output();
+    assert!(
+        !verify_output.contains("_cockroach_migration_tool"),
+        "verify output should mention only the real migrated table: {verify_output}"
+    );
 }

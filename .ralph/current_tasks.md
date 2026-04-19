@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 02:06:33 AM CEST 2026
+Generated: Sun Apr 19 02:23:31 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/03-task-document-api-write-freeze-cutover-runbook.md`
 
 ```
 ## Task: Document the API write-freeze cutover runbook <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-10-e2e-baseline/03-task-e2e-delete-propagation-through-shadow-and-real-tables.md`
-
-```
-## Task: End-to-end test delete propagation through helper shadow and real tables <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
