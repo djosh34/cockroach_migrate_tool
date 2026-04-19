@@ -59,7 +59,6 @@ impl RunnerConfig {
     pub(crate) fn mappings(&self) -> &[MappingConfig] {
         &self.mappings
     }
-
 }
 
 #[derive(Clone, Debug)]

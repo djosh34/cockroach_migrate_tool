@@ -85,3 +85,4 @@
 .ralph/tasks/story-14-reports/02-task-report-code-complexity-and-kiss-assessment.md
 .ralph/tasks/story-16-runtime-split-removals/01-task-remove-runner-source-cockroach-access-and-config.md
 .ralph/tasks/story-16-runtime-split-removals/03-task-remove-bash-bootstrap-flows-and-script-based-source-setup.md
+.ralph/tasks/story-16-runtime-split-removals/02-task-remove-runner-side-verify-capability-and-code-paths.md

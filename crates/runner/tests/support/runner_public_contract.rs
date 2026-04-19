@@ -1,0 +1,24 @@
+pub struct RunnerPublicContract;
+
+impl RunnerPublicContract {
+    fn forbidden_removed_surface_markers() -> &'static [&'static str] {
+        &[
+            "compare-schema",
+            "render-helper-plan",
+            "verify",
+            "cutover-readiness",
+            "--source-url",
+            "--cockroach-schema",
+            "--allow-tls-mode-disable",
+        ]
+    }
+
+    pub fn assert_text_excludes_removed_surface(text: &str, context: &str) {
+        for marker in Self::forbidden_removed_surface_markers() {
+            assert!(
+                !text.contains(marker),
+                "{context}: found removed runner surface marker `{marker}`",
+            );
+        }
+    }
+}

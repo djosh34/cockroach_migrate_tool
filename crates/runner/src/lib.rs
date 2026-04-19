@@ -126,10 +126,7 @@ impl std::fmt::Display for ValidatedConfig {
         write!(
             f,
             "config valid: config={} mappings={} webhook={} tls={}",
-            self.config_path,
-            self.mappings,
-            self.webhook_bind_addr,
-            self.webhook_tls_files
+            self.config_path, self.mappings, self.webhook_bind_addr, self.webhook_tls_files
         )
     }
 }

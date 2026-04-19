@@ -7,8 +7,8 @@ use serde::Deserialize;
 
 use crate::{
     config::{
-        DestinationConfig, MappingConfig, PostgresConnectionConfig, ReconcileConfig,
-        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig,
+        DestinationConfig, MappingConfig, PostgresConnectionConfig, ReconcileConfig, RunnerConfig,
+        SourceConfig, TlsConfig, WebhookConfig,
     },
     error::RunnerConfigError,
 };

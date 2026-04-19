@@ -1,4 +1,4 @@
-## Task: Remove verify behavior from the runner and delete every in-runner verification path <status>not_started</status> <passes>false</passes>
+## Task: Remove verify behavior from the runner and delete every in-runner verification path <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -23,11 +23,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers removal of all runner-side verification behavior
-- [ ] The runner image exposes no verify command, no verify config, and no verify code path
-- [ ] Tests fail if correctness verification is attempted anywhere except the dedicated verify image contract
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers removal of all runner-side verification behavior
+- [x] The runner image exposes no verify command, no verify config, and no verify code path
+- [x] Tests fail if correctness verification is attempted anywhere except the dedicated verify image contract
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-16-runtime-split-removals/02-task-remove-runner-side-verify-capability-and-code-paths_plans/2026-04-19-runner-verify-removal-plan.md</plan>

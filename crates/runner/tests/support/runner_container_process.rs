@@ -33,7 +33,7 @@ impl RunnerContainerProcess {
                     mounts: &[&config_mount, &cert_mount],
                     extra_docker_args: &["--add-host", "host.docker.internal:host-gateway"],
                     config_path: "/work/runner.yml",
-                })
+                }),
             ),
             "docker run runner container",
         );
@@ -104,8 +104,11 @@ impl RunnerContainerProcess {
 impl Drop for RunnerContainerProcess {
     fn drop(&mut self) {
         cleanup_if_present(
-            std::process::Command::new("docker")
-                .args(["container", "inspect", &self.container_name]),
+            std::process::Command::new("docker").args([
+                "container",
+                "inspect",
+                &self.container_name,
+            ]),
             std::process::Command::new("docker").args(["rm", "-f", &self.container_name]),
             "docker rm runner container",
         );

@@ -19,7 +19,10 @@ impl GithubWorkflowContract {
             )
         });
         let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
-            panic!("README `{}` should be readable: {error}", readme_path.display())
+            panic!(
+                "README `{}` should be readable: {error}",
+                readme_path.display()
+            )
         });
         let document = serde_yaml::from_str(&workflow_text).unwrap_or_else(|error| {
             panic!(
@@ -42,7 +45,9 @@ impl GithubWorkflowContract {
             "workflow must trigger only on pushes to `master`",
         );
         assert!(
-            !self.workflow_on().contains_key(Value::String("pull_request".to_owned())),
+            !self
+                .workflow_on()
+                .contains_key(Value::String("pull_request".to_owned())),
             "workflow must not define a pull_request trigger",
         );
     }
@@ -67,7 +72,8 @@ impl GithubWorkflowContract {
             "schedule",
         ] {
             assert!(
-                !self.workflow_on()
+                !self
+                    .workflow_on()
                     .contains_key(Value::String(forbidden_trigger.to_owned())),
                 "workflow must not define a `{forbidden_trigger}` trigger",
             );
@@ -80,9 +86,7 @@ impl GithubWorkflowContract {
         for expected_command in expected_commands {
             assert!(
                 run_commands.iter().any(|command| {
-                    command
-                        .lines()
-                        .any(|line| line.trim() == *expected_command)
+                    command.lines().any(|line| line.trim() == *expected_command)
                 }),
                 "workflow must run `{expected_command}` as part of repository validation",
             );
@@ -164,8 +168,10 @@ impl GithubWorkflowContract {
             "publish job must not delegate publishing through a reusable workflow",
         );
 
-        let checkout_inputs =
-            self.step_inputs(self.step_using_prefix(publish_job, "actions/checkout"), "checkout");
+        let checkout_inputs = self.step_inputs(
+            self.step_using_prefix(publish_job, "actions/checkout"),
+            "checkout",
+        );
         assert!(
             !checkout_inputs.contains_key(Value::String("ref".to_owned())),
             "publish checkout must not override the trusted pushed commit ref",
@@ -356,8 +362,8 @@ impl GithubWorkflowContract {
             );
         }
 
-        let print_index =
-            self.step_index_with_run_containing(publish_job, "cat \"${{ env.VULNERABILITY_REPORT }}\"");
+        let print_index = self
+            .step_index_with_run_containing(publish_job, "cat \"${{ env.VULNERABILITY_REPORT }}\"");
         let print_step = self
             .steps(publish_job)
             .get(print_index)
@@ -545,7 +551,9 @@ impl GithubWorkflowContract {
                     .and_then(Value::as_str)
                     .is_some_and(|run| run.contains(snippet))
             })
-            .unwrap_or_else(|| panic!("workflow job should define a run step containing `{snippet}`"))
+            .unwrap_or_else(|| {
+                panic!("workflow job should define a run step containing `{snippet}`")
+            })
     }
 
     fn run_script_containing<'a>(&self, job: &'a Mapping, snippet: &str) -> &'a str {
@@ -557,7 +565,9 @@ impl GithubWorkflowContract {
                     .and_then(Value::as_str)
                     .filter(|run| run.contains(snippet))
             })
-            .unwrap_or_else(|| panic!("workflow job should define a run step containing `{snippet}`"))
+            .unwrap_or_else(|| {
+                panic!("workflow job should define a run step containing `{snippet}`")
+            })
     }
 
     fn step_using_prefix<'a>(&self, job: &'a Mapping, uses_prefix: &str) -> &'a Mapping {
@@ -575,7 +585,9 @@ impl GithubWorkflowContract {
     fn step_inputs<'a>(&self, step: &'a Mapping, uses_prefix: &str) -> &'a Mapping {
         step.get(Value::String("with".to_owned()))
             .and_then(Value::as_mapping)
-            .unwrap_or_else(|| panic!("workflow step `{uses_prefix}` should define explicit inputs"))
+            .unwrap_or_else(|| {
+                panic!("workflow step `{uses_prefix}` should define explicit inputs")
+            })
     }
 
     fn step_run_script<'a>(&self, step: &'a Mapping, step_name: &str) -> &'a str {

@@ -2,11 +2,14 @@
 mod readme_contract_support;
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
+#[path = "support/runner_public_contract.rs"]
+mod runner_public_contract_support;
 
 use assert_cmd::Command;
 use predicates::prelude::predicate;
 use readme_contract_support::RepositoryReadme;
 use runner_docker_contract_support::RunnerDockerContract;
+use runner_public_contract_support::RunnerPublicContract;
 use std::{fs, path::PathBuf};
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -135,17 +138,8 @@ fn docker_quick_start_keeps_runner_destination_only() {
         ],
         "README Docker quick start must present only the destination-side runner commands in operator order"
     );
-    for forbidden_marker in [
-        "compare-schema",
-        "render-helper-plan",
-        "verify",
-        "cutover-readiness",
-        "--source-url",
-        "--cockroach-schema",
-    ] {
-        assert!(
-            !docker_quick_start.contains(forbidden_marker),
-            "README Docker quick start must not expose removed runner surface `{forbidden_marker}`",
-        );
-    }
+    RunnerPublicContract::assert_text_excludes_removed_surface(
+        docker_quick_start.text(),
+        "README Docker quick start must not expose removed runner surface",
+    );
 }

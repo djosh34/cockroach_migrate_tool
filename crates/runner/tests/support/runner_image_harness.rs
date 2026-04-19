@@ -39,10 +39,9 @@ impl RunnerImageHarness {
 
     pub fn image_entrypoint_json(&self) -> String {
         run_command_capture(
-            Command::new("docker")
-                .args(RunnerDockerContract::docker_inspect_image_entrypoint_args(
-                    &self.image_tag,
-                )),
+            Command::new("docker").args(
+                RunnerDockerContract::docker_inspect_image_entrypoint_args(&self.image_tag),
+            ),
             "docker image inspect",
         )
     }
@@ -113,7 +112,9 @@ impl RunnerImageHarness {
     fn build_runner_image(&self) {
         run_command_capture(
             Command::new("docker")
-                .args(RunnerDockerContract::docker_build_image_args(&self.image_tag))
+                .args(RunnerDockerContract::docker_build_image_args(
+                    &self.image_tag,
+                ))
                 .arg(repo_root()),
             "docker build",
         );
@@ -235,14 +236,12 @@ impl RunnerImageHarness {
 impl Drop for RunnerImageHarness {
     fn drop(&mut self) {
         cleanup_if_present(
-            Command::new("docker")
-                .args(["container", "inspect", &self.runner_container]),
+            Command::new("docker").args(["container", "inspect", &self.runner_container]),
             Command::new("docker").args(["rm", "-f", &self.runner_container]),
             "docker rm runner container",
         );
         cleanup_if_present(
-            Command::new("docker")
-                .args(["container", "inspect", &self.postgres_container]),
+            Command::new("docker").args(["container", "inspect", &self.postgres_container]),
             Command::new("docker").args(["rm", "-f", &self.postgres_container]),
             "docker rm postgres container",
         );

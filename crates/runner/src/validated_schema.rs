@@ -127,7 +127,6 @@ impl ForeignKeyShape {
     pub(crate) fn referenced_table(&self) -> &QualifiedTableName {
         &self.referenced_table
     }
-
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]

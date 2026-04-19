@@ -3,6 +3,11 @@ use std::{fs, path::PathBuf};
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
 
+#[path = "support/runner_public_contract.rs"]
+mod runner_public_contract_support;
+
+use runner_public_contract_support::RunnerPublicContract;
+
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
@@ -13,16 +18,25 @@ fn fixture_path(name: &str) -> PathBuf {
 #[test]
 fn validate_config_accepts_a_minimal_valid_yaml_file() {
     let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
-
-    command
+    let assert = command
         .args(["validate-config", "--config"])
         .arg(fixture_path("valid-runner-config.yml"))
         .assert()
         .success()
         .stdout(predicate::str::contains("config valid"))
         .stdout(predicate::str::contains("mappings=2"))
-        .stdout(predicate::str::contains("webhook=127.0.0.1:8443"))
-        .stdout(predicate::str::contains("verify=").not());
+        .stdout(predicate::str::contains("webhook=127.0.0.1:8443"));
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("validate-config stdout should be utf-8");
+
+    RunnerPublicContract::assert_text_excludes_removed_surface(
+        &stdout,
+        "validate-config stdout must not expose removed verify surface",
+    );
+    assert!(
+        !stdout.contains("verify="),
+        "validate-config stdout must not print a removed verify summary",
+    );
 }
 
 #[test]

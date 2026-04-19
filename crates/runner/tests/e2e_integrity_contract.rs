@@ -1,5 +1,10 @@
 use std::{fs, path::PathBuf};
 
+#[path = "support/e2e_integrity_contract_support.rs"]
+mod e2e_integrity_contract_support;
+
+use e2e_integrity_contract_support::E2eIntegrityContractAudit;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
@@ -12,101 +17,9 @@ fn read_runner_test_file(path: &str) -> String {
         .unwrap_or_else(|error| panic!("runner test file `{path}` should be readable: {error}"))
 }
 
-fn collect_test_files(dir: &std::path::Path, files: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).unwrap_or_else(|error| {
-        panic!(
-            "runner tests dir `{}` should be readable: {error}",
-            dir.display()
-        )
-    }) {
-        let entry = entry.expect("runner tests dir entry should load");
-        let path = entry.path();
-        if entry
-            .file_type()
-            .expect("runner tests dir entry type should load")
-            .is_dir()
-        {
-            collect_test_files(&path, files);
-        } else {
-            files.push(path);
-        }
-    }
-}
-
-fn scoped_integrity_files() -> [(&'static str, String); 9] {
-    [
-        (
-            "tests/default_bootstrap_long_lane.rs",
-            read_runner_test_file("tests/default_bootstrap_long_lane.rs"),
-        ),
-        (
-            "tests/support/default_bootstrap_harness.rs",
-            read_runner_test_file("tests/support/default_bootstrap_harness.rs"),
-        ),
-        (
-            "tests/support/e2e_harness.rs",
-            read_runner_test_file("tests/support/e2e_harness.rs"),
-        ),
-        (
-            "tests/support/composite_pk_exclusion_harness.rs",
-            read_runner_test_file("tests/support/composite_pk_exclusion_harness.rs"),
-        ),
-        (
-            "tests/support/multi_mapping_harness.rs",
-            read_runner_test_file("tests/support/multi_mapping_harness.rs"),
-        ),
-        (
-            "src/webhook_runtime/mod.rs",
-            read_runner_test_file("src/webhook_runtime/mod.rs"),
-        ),
-        (
-            "src/webhook_runtime/persistence.rs",
-            read_runner_test_file("src/webhook_runtime/persistence.rs"),
-        ),
-        (
-            "src/reconcile_runtime/mod.rs",
-            read_runner_test_file("src/reconcile_runtime/mod.rs"),
-        ),
-        (
-            "src/reconcile_runtime/upsert.rs",
-            read_runner_test_file("src/reconcile_runtime/upsert.rs"),
-        ),
-    ]
-}
-
 #[test]
 fn e2e_suite_no_longer_routes_integrity_through_runner_verify() {
-    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
-    let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
-    let composite_harness =
-        read_runner_test_file("tests/support/composite_pk_exclusion_harness.rs");
-    let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
-    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
-
-    assert!(
-        !default_harness.contains("verify_default_migration"),
-        "default bootstrap harness should not expose removed runner verify helpers",
-    );
-    assert!(
-        !long_lane.contains("verify_migration"),
-        "long-lane scenarios should not call removed runner verify helpers",
-    );
-    assert!(
-        !composite_harness.contains("verify_migration"),
-        "composite-key harness should not expose removed runner verify helpers",
-    );
-    assert!(
-        !multi_mapping_harness.contains("verify_migration"),
-        "multi-mapping harness should not expose removed runner verify helpers",
-    );
-    assert!(
-        !e2e_harness.contains("runner verify"),
-        "shared E2E harness should not shell out to the removed runner verify command",
-    );
-    assert!(
-        !e2e_harness.contains("--source-url"),
-        "shared E2E harness should not depend on removed source-url flags",
-    );
+    E2eIntegrityContractAudit::load().assert_no_runner_verify_surface();
 }
 
 #[test]
@@ -197,60 +110,10 @@ fn e2e_support_applies_source_bootstrap_through_sql_not_shell_scripts() {
 
 #[test]
 fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
-    let banned_markers = [
-        "--fake",
-        "--skip-webhook",
-        "--skip-reconcile",
-        "--skip-verify",
-        "--bypass",
-        "FAKE_MIGRATION",
-        "SKIP_WEBHOOK",
-        "SKIP_RECONCILE",
-        "BYPASS_VERIFY",
-        "cheat",
-    ];
-
-    for (path, contents) in scoped_integrity_files() {
-        for marker in banned_markers {
-            assert!(
-                !contents.contains(marker),
-                "integrity-scoped file `{path}` should not contain shortcut marker `{marker}`",
-            );
-        }
-    }
+    E2eIntegrityContractAudit::load().assert_no_shortcut_toggles();
 }
 
 #[test]
 fn only_approved_support_files_issue_raw_docker_commands_for_e2e_orchestration() {
-    let approved = [
-        "tests/support/e2e_harness.rs",
-        "tests/support/runner_container_process.rs",
-        "tests/support/runner_image_harness.rs",
-    ];
-    let tests_dir = repo_root().join("crates/runner/tests");
-    let runner_root = repo_root().join("crates/runner");
-    let mut docker_call_sites = Vec::new();
-    let mut test_files = Vec::new();
-
-    collect_test_files(&tests_dir, &mut test_files);
-
-    for path in test_files {
-        let path = path
-            .strip_prefix(&runner_root)
-            .expect("runner-relative test path should strip")
-            .to_string_lossy()
-            .replace('\\', "/");
-        let contents = fs::read_to_string(runner_root.join(&path)).unwrap_or_else(|error| {
-            panic!("runner test file `{path}` should be readable: {error}")
-        });
-        if contents.contains("Command::new(\"docker\")") {
-            docker_call_sites.push(path);
-        }
-    }
-
-    docker_call_sites.sort();
-    assert_eq!(
-        docker_call_sites, approved,
-        "raw Docker orchestration should stay isolated to the approved E2E support files",
-    );
+    E2eIntegrityContractAudit::load().assert_only_approved_raw_docker_call_sites();
 }
