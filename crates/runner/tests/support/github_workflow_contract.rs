@@ -126,12 +126,21 @@ impl GithubWorkflowContract {
         );
 
         let manifest_permissions = self.job_permissions("publish-manifest");
-        assert!(
-            manifest_permissions.is_none()
-                || !manifest_permissions
-                    .expect("publish-manifest permissions should parse")
-                    .contains_key(Value::String("packages".to_owned())),
-            "publish-manifest job must not gain package publish permissions",
+        let manifest_permissions =
+            manifest_permissions.expect("publish-manifest job should define explicit permissions");
+        assert_eq!(
+            manifest_permissions
+                .get(Value::String("contents".to_owned()))
+                .map(value_as_str),
+            Some("read"),
+            "publish-manifest job should retain read access for artifact and manifest handling",
+        );
+        assert_eq!(
+            manifest_permissions
+                .get(Value::String("packages".to_owned()))
+                .map(value_as_str),
+            Some("write"),
+            "publish-manifest job should have package publish permission to push the canonical multi-arch manifest",
         );
 
         for job_name in ["validate", "publish-image"] {
@@ -215,8 +224,8 @@ impl GithubWorkflowContract {
         for required_line in [
             "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.",
             "The `publish-image` and `publish-manifest` jobs still carry an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.",
-            "Only the `publish-image` job gets `packages: write`, checkout disables credential persistence, derived registry credentials are masked before any diagnostic output, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.",
-            "Validation restores and saves Cargo registry and target caches before publish, each image is pushed for both `linux/amd64` and `linux/arm64`, and the workflow emits a published-image manifest that downstream registry-only checks can consume directly.",
+            "Only the `publish-image` and `publish-manifest` jobs get `packages: write`, checkout disables credential persistence where source is fetched, derived registry credentials are masked before any diagnostic output, and the canonical published images are tagged only with `${{ github.sha }}` from the validated commit.",
+            "Validation restores and saves Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.",
         ] {
             assert!(
                 self.readme_text.contains(required_line),
@@ -464,8 +473,12 @@ impl GithubWorkflowContract {
             "publish-image job must use `docker buildx build`",
         );
         assert!(
-            publish_script.contains("--platform linux/amd64,linux/arm64"),
-            "publish-image job must publish both amd64 and arm64 images",
+            publish_script.contains("--platform \"${{ matrix.platform.platform }}\""),
+            "publish-image job must publish one native platform per lane",
+        );
+        assert!(
+            !publish_script.contains("--platform linux/amd64,linux/arm64"),
+            "publish-image job must stop using the old combined multi-arch build invocation",
         );
         assert!(
             publish_script.contains("${{ env.REGISTRY }}/"),
@@ -476,14 +489,35 @@ impl GithubWorkflowContract {
             "publish-image job must tag only the pushed commit SHA",
         );
         assert!(
+            publish_script.contains("--tag \"${platform_image_ref}\""),
+            "publish-image job must push a platform-specific ref for manifest fan-in",
+        );
+        assert!(
             publish_script.contains("--push"),
             "publish-image job must push after a successful build",
         );
 
+        let manifest_script = self.step_run_script(
+            self.step_named(self.job("publish-manifest"), "Publish manifest"),
+            "Publish manifest",
+        );
+        for required_marker in [
+            "docker buildx imagetools create",
+            "--tag \"${final_image_ref}\"",
+            "${amd64_ref}",
+            "${arm64_ref}",
+            "docker buildx imagetools inspect",
+        ] {
+            assert!(
+                manifest_script.contains(required_marker),
+                "publish-manifest job must rebuild the final multi-arch tag through `{required_marker}`",
+            );
+        }
+
         for forbidden_marker in ["latest", "refs/tags/", "github.ref_name", "type=semver"] {
             assert!(
-                !publish_script.contains(forbidden_marker),
-                "publish-image job must not introduce `{forbidden_marker}` tags",
+                !publish_script.contains(forbidden_marker) && !manifest_script.contains(forbidden_marker),
+                "publish workflow must not introduce `{forbidden_marker}` tags",
             );
         }
     }
@@ -520,16 +554,39 @@ impl GithubWorkflowContract {
         );
         for required_marker in [
             "sudo apt-get update",
-            "sudo apt-get install --yes binfmt-support qemu-user-static",
-            "sudo update-binfmts --enable qemu-aarch64",
+            "case \"${{ runner.arch }}\" in",
+            "buildx_arch=amd64",
+            "buildx_arch=arm64",
             "curl -fsSL",
             "docker buildx version",
-            "docker buildx create --name publish-builder --driver docker-container --use",
+            "docker buildx create",
             "docker buildx inspect --bootstrap",
         ] {
             assert!(
                 publish_install.contains(required_marker),
                 "publish dependency installation must include `{required_marker}`",
+            );
+        }
+        for forbidden_marker in ["qemu-user-static", "update-binfmts", "binfmt-support"] {
+            assert!(
+                !publish_install.contains(forbidden_marker),
+                "publish dependency installation must not keep the old emulated arm64 dependency `{forbidden_marker}`",
+            );
+        }
+
+        let manifest_install = self.step_run_script(
+            self.step_named(self.job("publish-manifest"), "Install publish dependencies"),
+            "Install publish dependencies",
+        );
+        for required_marker in [
+            "BUILDX_VERSION=v0.30.1",
+            "case \"${{ runner.arch }}\" in",
+            "curl -fsSL",
+            "docker buildx version",
+        ] {
+            assert!(
+                manifest_install.contains(required_marker),
+                "publish-manifest dependency installation must include `{required_marker}`",
             );
         }
 
@@ -547,22 +604,23 @@ impl GithubWorkflowContract {
         }
     }
 
-    pub fn assert_proves_multi_arch_builder_support_before_publishing(&self) {
+    pub fn assert_proves_native_runner_matches_each_platform_lane_before_manifesting(&self) {
         let publish_job = self.job("publish-image");
         let probe_script = self.step_run_script(
-            self.step_named(publish_job, "Assert multi-arch builder support"),
-            "Assert multi-arch builder support",
+            self.step_named(publish_job, "Assert native platform runner"),
+            "Assert native platform runner",
         );
         for required_marker in [
-            "docker buildx inspect --bootstrap",
-            "buildx_platforms",
+            "runner.arch",
+            "publish platform",
+            "expected_platform",
             "linux/amd64",
             "linux/arm64",
-            "grep -F",
+            "test \"${expected_platform}\" = \"${{ matrix.platform.platform }}\"",
         ] {
             assert!(
                 probe_script.contains(required_marker),
-                "multi-arch builder proof step must include `{required_marker}`",
+                "native publish-lane proof step must include `{required_marker}`",
             );
         }
 
@@ -571,6 +629,15 @@ impl GithubWorkflowContract {
         assert!(
             publish_script.contains("--progress plain"),
             "publish-image job must use plain buildx progress so hosted failures stay inspectable",
+        );
+
+        let manifest_script = self.step_run_script(
+            self.step_named(self.job("publish-manifest"), "Publish manifest"),
+            "Publish manifest",
+        );
+        assert!(
+            manifest_script.contains("docker buildx imagetools create"),
+            "publish-manifest job must assemble the final multi-arch tag from the native platform pushes",
         );
     }
 
@@ -655,8 +722,8 @@ impl GithubWorkflowContract {
             publish_upload_inputs
                 .get(Value::String("name".to_owned()))
                 .map(value_as_str),
-            Some("${{ matrix.artifact_name }}"),
-            "publish-image job should upload one artifact per target through the shared matrix metadata",
+            Some("${{ matrix.image.artifact_name }}-${{ matrix.platform.platform_tag_suffix }}"),
+            "publish-image job should upload one artifact per image/platform lane through the shared matrix metadata",
         );
         assert_eq!(
             publish_upload_inputs
@@ -677,10 +744,11 @@ impl GithubWorkflowContract {
                 "publish-manifest job should expose `{}` through the manifest step",
                 target.manifest_key(),
             );
+        }
+        for required_marker in ["manifest_keys", "output_lines", "publish_manifest<<EOF"] {
             assert!(
-                manifest_script.contains(target.manifest_key()),
-                "manifest step should persist `{}` for downstream consumers",
-                target.manifest_key(),
+                manifest_script.contains(required_marker),
+                "manifest step should keep `{required_marker}` within the shared manifest/output boundary",
             );
         }
     }
@@ -739,8 +807,8 @@ impl GithubWorkflowContract {
             publish_job
                 .get(Value::String("runs-on".to_owned()))
                 .map(value_as_str),
-            Some("ubuntu-latest"),
-            "publish-image job should run on the explicit hosted runner boundary until a trusted native arm64 runner exists",
+            Some("${{ matrix.platform.runner }}"),
+            "publish-image job should route each platform lane through shared matrix runner metadata",
         );
         let strategy = publish_job
             .get(Value::String("strategy".to_owned()))
@@ -756,7 +824,12 @@ impl GithubWorkflowContract {
         assert_eq!(
             self.publish_matrix_entries().len(),
             ImageBuildTargetContract::all().len(),
-            "publish-image matrix should cover the canonical image target set exactly once",
+            "publish-image image axis should cover the canonical image target set exactly once",
+        );
+        assert_eq!(
+            self.publish_platform_matrix_entries().len(),
+            2,
+            "publish-image platform axis should keep amd64 and arm64 publication independent",
         );
         assert_eq!(
             self.job_needs_names("publish-manifest"),
@@ -771,14 +844,16 @@ impl GithubWorkflowContract {
             "Publish image",
         );
         assert!(
-            publish_script.contains("--cache-from \"type=gha,scope=${{ matrix.cache_scope }}\""),
-            "publish-image job must restore BuildKit cache state from the matrix-defined cache scope",
+            publish_script.contains(
+                "--cache-from \"type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }}\""
+            ),
+            "publish-image job must restore BuildKit cache state from the image/platform cache scope",
         );
         assert!(
             publish_script.contains(
-                "--cache-to \"type=gha,scope=${{ matrix.cache_scope }},mode=max\""
+                "--cache-to \"type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }},mode=max\""
             ),
-            "publish-image job must save BuildKit cache state back to the matrix-defined cache scope",
+            "publish-image job must save BuildKit cache state back to the image/platform cache scope",
         );
 
         for target in ImageBuildTargetContract::all() {
@@ -790,29 +865,37 @@ impl GithubWorkflowContract {
         }
     }
 
-    pub fn assert_arm64_strategy_is_explicit(&self) {
-        let publish_env = self
-            .job_env("publish-image")
-            .expect("publish-image job should define an env mapping");
+    pub fn assert_uses_native_arm64_publish_lanes(&self) {
+        let publish_job = self.job("publish-image");
         assert_eq!(
-            publish_env
-                .get(Value::String("ARM64_BUILD_STRATEGY".to_owned()))
+            publish_job
+                .get(Value::String("runs-on".to_owned()))
                 .map(value_as_str),
-            Some("emulated-buildx-qemu"),
-            "publish-image job must record the current arm64 strategy explicitly",
+            Some("${{ matrix.platform.runner }}"),
+            "publish-image job should route each platform lane onto its own runner boundary",
         );
 
-        let strategy_step = self.step_run_script(
-            self.step_named(self.job("publish-image"), "Record arm64 strategy decision"),
-            "Record arm64 strategy decision",
-        );
+        let publish_script =
+            self.step_run_script(self.step_named(publish_job, "Publish image"), "Publish image");
         assert!(
-            strategy_step.contains("No trusted native arm64 runner label is configured in-repo"),
-            "workflow should explicitly record why the native arm64 path is currently rejected",
+            !publish_script.contains("--platform linux/amd64,linux/arm64"),
+            "publish-image job must stop publishing both architectures from one combined build invocation",
         );
-        assert!(
-            strategy_step.contains("emulated buildx path explicit"),
-            "workflow should document that the current arm64 path remains the explicit emulated buildx strategy",
+
+        let platform_matrix = self.publish_platform_matrix_entries();
+        assert_eq!(
+            platform_matrix.len(),
+            2,
+            "publish-image job should define exactly two platform lanes",
+        );
+
+        let arm64_lane = self.publish_platform_matrix_entry("linux/arm64");
+        assert_eq!(
+            arm64_lane
+                .get(Value::String("runner".to_owned()))
+                .map(value_as_str),
+            Some("ubuntu-24.04-arm"),
+            "linux/arm64 publication should run on the native hosted arm64 runner",
         );
     }
 
@@ -924,10 +1007,35 @@ impl GithubWorkflowContract {
             .and_then(Value::as_mapping)
             .and_then(|strategy| strategy.get(Value::String("matrix".to_owned())))
             .and_then(Value::as_mapping)
-            .and_then(|matrix| matrix.get(Value::String("include".to_owned())))
+            .and_then(|matrix| matrix.get(Value::String("image".to_owned())))
             .and_then(Value::as_sequence)
             .map(Vec::as_slice)
-            .expect("publish-image job should define a matrix.include sequence")
+            .expect("publish-image job should define a matrix.image sequence")
+    }
+
+    fn publish_platform_matrix_entries(&self) -> &[Value] {
+        self.job("publish-image")
+            .get(Value::String("strategy".to_owned()))
+            .and_then(Value::as_mapping)
+            .and_then(|strategy| strategy.get(Value::String("matrix".to_owned())))
+            .and_then(Value::as_mapping)
+            .and_then(|matrix| matrix.get(Value::String("platform".to_owned())))
+            .and_then(Value::as_sequence)
+            .map(Vec::as_slice)
+            .expect("publish-image job should define a matrix.platform sequence")
+    }
+
+    fn publish_platform_matrix_entry(&self, platform: &str) -> &Mapping {
+        self.publish_platform_matrix_entries()
+            .iter()
+            .filter_map(Value::as_mapping)
+            .find(|entry| {
+                entry
+                    .get(Value::String("platform".to_owned()))
+                    .and_then(Value::as_str)
+                    .is_some_and(|candidate| candidate == platform)
+            })
+            .unwrap_or_else(|| panic!("publish-image matrix should define platform `{platform}`"))
     }
 
     fn publish_matrix_entry(&self, image_id: &str) -> &Mapping {

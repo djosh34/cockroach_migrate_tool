@@ -1,12 +1,12 @@
 ## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>not_started</status> <passes>false</passes>
 
-<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md</blocked_by>
+<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
 
 <description>
 Must use tdd skill to complete
 
 
-**Goal:** Create a dedicated workflow story that updates GitHub Actions for the new three-image architecture before novice-user verification depends on published artifacts, and keep iterating against real workflow failures until image builds actually work. This task is suspended until the image-build speed-up task in the same story passes, so workflow-fix work happens on top of the faster pipeline. The higher order goal is to ensure registry-published images are the real supported product path and that downstream verification uses exactly what CI publishes rather than wishful local assumptions.
+**Goal:** Create a dedicated workflow story that updates GitHub Actions for the new three-image architecture before novice-user verification depends on published artifacts, and keep iterating against real workflow failures until image builds actually work. This task is suspended until the under-fifteen-minute pipeline speed gate in the same story passes, so workflow-fix work happens on top of a workflow that is actually fast enough to be acceptable. The higher order goal is to ensure registry-published images are the real supported product path and that downstream verification uses exactly what CI publishes rather than wishful local assumptions.
 
 In scope:
 - workflows for building, testing, and publishing the verify image
@@ -35,7 +35,7 @@ Out of scope:
 
 Decisions already made:
 - this must be a story on its own
-- this task is suspended until `.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md` passes
+- this task is suspended until `.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md` passes
 - it must happen before the novice-user registry-only verification story
 - published images, not local builds, are the novice-user contract
 - image builds do not work yet and this story must reflect real CI/debugging work rather than paper design

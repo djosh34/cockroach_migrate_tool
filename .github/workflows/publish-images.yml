@@ -79,7 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        image:
           - image_id: runner
             repository_env: RUNNER_IMAGE_REPOSITORY
             dockerfile: ./Dockerfile
@@ -104,10 +104,16 @@ jobs:
             artifact_name: published-image-verify
             cache_scope: publish-image-verify
             build_kind: verify-go
-    runs-on: ubuntu-latest
+        platform:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            platform_tag_suffix: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            platform_tag_suffix: arm64
+    runs-on: ${{ matrix.platform.runner }}
     env:
-      ARM64_BUILD_STRATEGY: emulated-buildx-qemu
-      PUBLISHED_IMAGE_REF_FILE: ${{ runner.temp }}/${{ matrix.image_id }}-image-ref.env
+      PUBLISHED_IMAGE_REF_FILE: ${{ runner.temp }}/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env
     permissions:
       contents: read
       packages: write
@@ -119,32 +125,47 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes binfmt-support qemu-user-static
-          sudo update-binfmts --enable qemu-aarch64
           BUILDX_VERSION=v0.30.1
+          case "${{ runner.arch }}" in
+            X64)
+              buildx_arch=amd64
+              ;;
+            ARM64)
+              buildx_arch=arm64
+              ;;
+            *)
+              printf 'unsupported runner.arch for buildx install: %s\n' "${{ runner.arch }}" >&2
+              exit 1
+              ;;
+          esac
           mkdir -p "${HOME}/.docker/cli-plugins"
-          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" \
+          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${buildx_arch}" \
             -o "${HOME}/.docker/cli-plugins/docker-buildx"
           chmod +x "${HOME}/.docker/cli-plugins/docker-buildx"
           docker buildx version
-          docker buildx create --name publish-builder --driver docker-container --use
+          docker buildx create \
+            --name "publish-builder-${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}" \
+            --driver docker-container \
+            --use
           docker buildx inspect --bootstrap
-      - name: Assert multi-arch builder support
+      - name: Assert native platform runner
         run: |
           set -euo pipefail
-          buildx_platforms="$(docker buildx inspect --bootstrap | awk -F': ' '/Platforms/ { print $2 }')"
-          test -n "${buildx_platforms}"
-          printf 'buildx platforms: %s\n' "${buildx_platforms}"
-          printf '%s\n' "${buildx_platforms}" | grep -F "linux/amd64"
-          printf '%s\n' "${buildx_platforms}" | grep -F "linux/arm64"
-      - name: Record arm64 strategy decision
-        run: |
-          set -euo pipefail
-          printf 'arm64 build strategy: %s\n' "${ARM64_BUILD_STRATEGY}"
-          printf '%s\n' \
-            'No trusted native arm64 runner label is configured in-repo, so the workflow keeps the emulated buildx path explicit instead of pretending a native runner exists.'
-          printf '%s\n' \
-            'This keeps the emulated buildx path explicit while BuildKit cache reuse and parallel image publication reduce the wall-clock cost.'
+          printf 'runner.arch=%s\n' "${{ runner.arch }}"
+          printf 'publish platform=%s\n' "${{ matrix.platform.platform }}"
+          case "${{ runner.arch }}" in
+            X64)
+              expected_platform=linux/amd64
+              ;;
+            ARM64)
+              expected_platform=linux/arm64
+              ;;
+            *)
+              printf 'unsupported runner.arch for publish lane: %s\n' "${{ runner.arch }}" >&2
+              exit 1
+              ;;
+          esac
+          test "${expected_platform}" = "${{ matrix.platform.platform }}"
       - name: Mask derived publish credentials
         env:
           REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
@@ -162,40 +183,84 @@ jobs:
       - name: Publish image
         run: |
           set -euo pipefail
-          image_repository="$(printenv "${{ matrix.repository_env }}")"
+          image_repository="$(printenv "${{ matrix.image.repository_env }}")"
           test -n "${image_repository}"
-          image_ref="${{ env.REGISTRY }}/${image_repository}:${{ github.sha }}"
+          final_image_ref="${{ env.REGISTRY }}/${image_repository}:${{ github.sha }}"
+          platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
           docker buildx build \
             --progress plain \
-            --platform linux/amd64,linux/arm64 \
-            --file "${{ matrix.dockerfile }}" \
-            --cache-from "type=gha,scope=${{ matrix.cache_scope }}" \
-            --cache-to "type=gha,scope=${{ matrix.cache_scope }},mode=max" \
-            --tag "${image_ref}" \
+            --platform "${{ matrix.platform.platform }}" \
+            --file "${{ matrix.image.dockerfile }}" \
+            --cache-from "type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }}" \
+            --cache-to "type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }},mode=max" \
+            --tag "${platform_image_ref}" \
             --push \
-            "${{ matrix.context }}"
-          printf '%s=%s\n' "${{ matrix.manifest_key }}" "${image_ref}" > "${PUBLISHED_IMAGE_REF_FILE}"
+            "${{ matrix.image.context }}"
+          {
+            printf 'image_id=%s\n' "${{ matrix.image.image_id }}"
+            printf 'manifest_key=%s\n' "${{ matrix.image.manifest_key }}"
+            printf 'final_image_ref=%s\n' "${final_image_ref}"
+            printf 'platform_image_ref=%s\n' "${platform_image_ref}"
+            printf 'platform=%s\n' "${{ matrix.platform.platform }}"
+            printf 'platform_tag_suffix=%s\n' "${{ matrix.platform.platform_tag_suffix }}"
+          } > "${PUBLISHED_IMAGE_REF_FILE}"
       - name: Upload published image ref artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
+          name: ${{ matrix.image.artifact_name }}-${{ matrix.platform.platform_tag_suffix }}
           path: ${{ env.PUBLISHED_IMAGE_REF_FILE }}
           if-no-files-found: error
 
   publish-manifest:
     needs: publish-image
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       PUBLISHED_IMAGE_MANIFEST: ${{ github.workspace }}/published-images.json
     permissions:
       contents: read
+      packages: write
     outputs:
       publish_manifest: ${{ steps.publish-manifest.outputs.publish_manifest }}
       runner_image_ref: ${{ steps.publish-manifest.outputs.runner_image_ref }}
       setup_sql_image_ref: ${{ steps.publish-manifest.outputs.setup_sql_image_ref }}
       verify_image_ref: ${{ steps.publish-manifest.outputs.verify_image_ref }}
     steps:
+      - name: Install publish dependencies
+        run: |
+          set -euo pipefail
+          BUILDX_VERSION=v0.30.1
+          case "${{ runner.arch }}" in
+            X64)
+              buildx_arch=amd64
+              ;;
+            ARM64)
+              buildx_arch=arm64
+              ;;
+            *)
+              printf 'unsupported runner.arch for buildx install: %s\n' "${{ runner.arch }}" >&2
+              exit 1
+              ;;
+          esac
+          mkdir -p "${HOME}/.docker/cli-plugins"
+          curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${buildx_arch}" \
+            -o "${HOME}/.docker/cli-plugins/docker-buildx"
+          chmod +x "${HOME}/.docker/cli-plugins/docker-buildx"
+          docker buildx version
+      - name: Mask derived publish credentials
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${REGISTRY_PASSWORD}" | base64 -w0)"
+          echo "::add-mask::${derived_registry_auth}"
+          printf 'derived registry auth (masked): %s\n' "${derived_registry_auth}"
+      - name: Login to registry
+        env:
+          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${{ env.REGISTRY }}" --username "${{ github.actor }}" --password-stdin
       - name: Download published image refs
         uses: actions/download-artifact@v4
         with:
@@ -208,29 +273,71 @@ jobs:
           set -euo pipefail
           refs_dir="${{ runner.temp }}/published-image-refs"
           test -d "${refs_dir}"
-          find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort | while read -r env_file; do
+          declare -A manifest_keys=()
+          declare -A final_refs=()
+          declare -A amd64_refs=()
+          declare -A arm64_refs=()
+          image_ids=()
+          while IFS= read -r env_file; do
+            unset image_id manifest_key final_image_ref platform_image_ref platform platform_tag_suffix
             . "${env_file}"
+            : "${image_id:?missing image_id}"
+            : "${manifest_key:?missing manifest_key}"
+            : "${final_image_ref:?missing final_image_ref}"
+            : "${platform_image_ref:?missing platform_image_ref}"
+            : "${platform:?missing platform}"
+            safe_image_id="${image_id//-/_}"
+            if [[ -z "${manifest_keys[${safe_image_id}]+x}" ]]; then
+              image_ids+=("${safe_image_id}")
+            fi
+            manifest_keys["${safe_image_id}"]="${manifest_key}"
+            final_refs["${safe_image_id}"]="${final_image_ref}"
+            case "${platform}" in
+              linux/amd64)
+                amd64_refs["${safe_image_id}"]="${platform_image_ref}"
+                ;;
+              linux/arm64)
+                arm64_refs["${safe_image_id}"]="${platform_image_ref}"
+                ;;
+              *)
+                printf 'unexpected platform ref in artifact %s: %s\n' "${env_file}" "${platform}" >&2
+                exit 1
+                ;;
+            esac
+          done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)
+          test "${#image_ids[@]}" -gt 0
+          json_entries=()
+          output_lines=()
+          for safe_image_id in "${image_ids[@]}"; do
+            manifest_key="${manifest_keys[${safe_image_id}]:?missing manifest key}"
+            final_image_ref="${final_refs[${safe_image_id}]:?missing final image ref}"
+            amd64_ref="${amd64_refs[${safe_image_id}]:?missing amd64 ref}"
+            arm64_ref="${arm64_refs[${safe_image_id}]:?missing arm64 ref}"
+            docker buildx imagetools create \
+              --tag "${final_image_ref}" \
+              "${amd64_ref}" \
+              "${arm64_ref}"
+            docker buildx imagetools inspect "${final_image_ref}"
+            json_entries+=("  \"${manifest_key}\": \"${final_image_ref}\"")
+            output_lines+=("${manifest_key}=${final_image_ref}")
           done
-          . "${refs_dir}/runner-image-ref.env"
-          . "${refs_dir}/setup-sql-image-ref.env"
-          . "${refs_dir}/verify-image-ref.env"
-          : "${runner_image_ref:?missing runner_image_ref}"
-          : "${setup_sql_image_ref:?missing setup_sql_image_ref}"
-          : "${verify_image_ref:?missing verify_image_ref}"
-          cat > "${{ env.PUBLISHED_IMAGE_MANIFEST }}" <<EOF
           {
-            "runner_image_ref": "${runner_image_ref}",
-            "setup_sql_image_ref": "${setup_sql_image_ref}",
-            "verify_image_ref": "${verify_image_ref}"
-          }
-          EOF
+            printf '{\n'
+            for index in "${!json_entries[@]}"; do
+              if [[ "${index}" -gt 0 ]]; then
+                printf ',\n'
+              fi
+              printf '%s' "${json_entries[${index}]}"
+            done
+            printf '\n}\n'
+          } > "${{ env.PUBLISHED_IMAGE_MANIFEST }}"
           {
             echo "publish_manifest<<EOF"
             cat "${{ env.PUBLISHED_IMAGE_MANIFEST }}"
             echo "EOF"
-            echo "runner_image_ref=${runner_image_ref}"
-            echo "setup_sql_image_ref=${setup_sql_image_ref}"
-            echo "verify_image_ref=${verify_image_ref}"
+            for output_line in "${output_lines[@]}"; do
+              echo "${output_line}"
+            done
           } >> "${GITHUB_OUTPUT}"
       - name: Upload published image manifest
         uses: actions/upload-artifact@v4

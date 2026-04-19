@@ -97,10 +97,10 @@ fn publish_images_workflow_installs_publish_dependencies_via_direct_shell_steps(
 }
 
 #[test]
-fn publish_images_workflow_proves_multi_arch_builder_support_before_publishing() {
+fn publish_images_workflow_proves_each_native_runner_matches_its_platform_lane_before_manifesting() {
     let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_proves_multi_arch_builder_support_before_publishing();
+    workflow.assert_proves_native_runner_matches_each_platform_lane_before_manifesting();
 }
 
 #[test]
@@ -132,10 +132,10 @@ fn publish_images_workflow_reuses_remote_buildkit_caches_for_every_image_target(
 }
 
 #[test]
-fn publish_images_workflow_records_its_arm64_strategy_decision_explicitly() {
+fn publish_images_workflow_uses_native_arm64_publish_lanes_instead_of_combined_multi_arch_builds() {
     let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_arm64_strategy_is_explicit();
+    workflow.assert_uses_native_arm64_publish_lanes();
 }
 
 #[test]

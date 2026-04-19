@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 01:33:08 AM CEST 2026
+Generated: Mon Apr 20 01:52:46 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/04-task-return-structured-verify-results-via-http-json.md`
 
@@ -29,7 +29,19 @@ Must use tdd skill to complete
 ```
 ## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>not_started</status> <passes>false</passes>
 
-<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md</blocked_by>
+<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
+
+<description>
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md`
+
+```
+## Task: Drive the full three-image GitHub pipeline under fifteen minutes with native `arm64` execution and aggressive workflow restructuring <status>not_started</status> <passes>false</passes>
+
+<priority>ultra_high</priority>
 
 <description>
 ```
@@ -87,6 +99,18 @@ Must use tdd skill to complete
 
 <description>
 Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/08-task-make-the-default-branch-push-publish-workflow-succeed-from-a-plain-git-push.md`
+
+```
+## Task: Make the default-branch publish workflow succeed from a plain `git push` <status>not_started</status> <passes>false</passes>
+
+<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
+
+<description>
 ```
 
 ==============
