@@ -41,7 +41,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
-      PUBLISHED_IMAGE_MANIFEST: ${{ runner.temp }}/published-images.json
+      PUBLISHED_IMAGE_MANIFEST: ${{ github.workspace }}/published-images.json
     permissions:
       contents: read
       packages: write

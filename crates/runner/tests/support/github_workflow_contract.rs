@@ -419,8 +419,8 @@ impl GithubWorkflowContract {
             publish_env
                 .get(Value::String("PUBLISHED_IMAGE_MANIFEST".to_owned()))
                 .map(value_as_str),
-            Some("${{ runner.temp }}/published-images.json"),
-            "publish job should scope the manifest path to the selected runner",
+            Some("${{ github.workspace }}/published-images.json"),
+            "publish job should scope the manifest path to the checked-out workspace",
         );
         assert!(
             manifest_script.contains("${{ env.PUBLISHED_IMAGE_MANIFEST }}"),
