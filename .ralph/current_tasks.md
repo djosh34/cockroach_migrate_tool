@@ -1,11 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 11:23:26 PM CEST 2026
+Generated: Mon Apr 20 01:33:08 AM CEST 2026
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/01-task-fix-github-workflows-to-build-test-and-publish-the-three-image-split.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/04-task-return-structured-verify-results-via-http-json.md`
 
 ```
-## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>not_started</status> <passes>false</passes>
+## Task: Return structured verify matches and mismatches via HTTP JSON <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -13,7 +13,41 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-publish-separate-docker-compose-artifacts-for-runner-verify-and-sql-images.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/11-task-add-config-gated-raw-source-and-destination-table-json-output-to-verify-http.md`
+
+```
+## Task: Add config-gated raw source and destination table JSON output to verify HTTP <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/01-task-fix-github-workflows-to-build-test-and-publish-the-three-image-split.md`
+
+```
+## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>not_started</status> <passes>false</passes>
+
+<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md</blocked_by>
+
+<description>
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/03-task-require-make-test-long-to-pass-before-any-image-publish.md`
+
+```
+## Task: Require `make test-long` to pass before any image publish or release path can proceed <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/04-task-publish-separate-docker-compose-artifacts-for-runner-verify-and-sql-images.md`
 
 ```
 ## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>not_started</status> <passes>false</passes>
@@ -24,7 +58,7 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/03-task-debug-real-github-image-build-failures-using-authenticated-workflow-api-log-access.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/05-task-debug-real-github-image-build-failures-using-authenticated-workflow-api-log-access.md`
 
 ```
 ## Task: Debug real GitHub image-build failures using authenticated workflow API log access until the published runs succeed <status>not_started</status> <passes>false</passes>
@@ -35,10 +69,21 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/04-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
 
 ```
 ## Task: Publish the three-image split to Quay with strict secret redaction and `main`-only secret access <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md`
+
+```
+## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

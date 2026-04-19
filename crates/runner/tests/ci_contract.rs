@@ -1,5 +1,7 @@
 #[path = "support/github_workflow_contract.rs"]
 mod github_workflow_contract_support;
+#[path = "support/image_build_target_contract.rs"]
+mod image_build_target_contract_support;
 #[path = "support/published_image_contract.rs"]
 mod published_image_contract_support;
 #[path = "support/repo_license_contract.rs"]
@@ -60,6 +62,13 @@ fn publish_images_workflow_runs_required_repository_validation_before_publishing
 }
 
 #[test]
+fn publish_images_workflow_reuses_host_rust_caches_during_validation() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_validation_reuses_host_rust_caches();
+}
+
+#[test]
 fn publish_images_workflow_cancels_older_main_runs_when_new_pushes_arrive() {
     let workflow = GithubWorkflowContract::load_publish_images();
 
@@ -106,6 +115,27 @@ fn publish_images_workflow_masks_derived_sensitive_values_and_never_logs_raw_cre
     let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_masks_derived_sensitive_values_and_never_logs_raw_credentials();
+}
+
+#[test]
+fn publish_images_workflow_parallelizes_the_three_image_targets_through_shared_build_metadata() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_parallel_publish_topology_uses_shared_build_targets();
+}
+
+#[test]
+fn publish_images_workflow_reuses_remote_buildkit_caches_for_every_image_target() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_publish_jobs_use_remote_buildkit_caches();
+}
+
+#[test]
+fn publish_images_workflow_records_its_arm64_strategy_decision_explicitly() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_arm64_strategy_is_explicit();
 }
 
 #[test]

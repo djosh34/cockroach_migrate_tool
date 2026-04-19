@@ -21,6 +21,13 @@ fn setup_sql_image_dockerfile_lives_in_the_setup_slice() {
 }
 
 #[test]
+fn setup_sql_image_dockerfile_uses_dependency_first_rust_cache_layers() {
+    let contract = SourceBootstrapImageContract::load();
+
+    contract.assert_dockerfile_uses_dependency_first_rust_cache_layers();
+}
+
+#[test]
 fn setup_sql_image_runs_emit_cockroach_sql_from_a_mounted_config() {
     let harness = SourceBootstrapImageHarness::start();
     let contract = SourceBootstrapImageContract::load();

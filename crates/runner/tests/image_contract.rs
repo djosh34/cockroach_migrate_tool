@@ -26,6 +26,11 @@ fn runner_image_exposes_a_direct_runtime_only_entrypoint() {
 }
 
 #[test]
+fn runner_image_dockerfile_uses_dependency_first_rust_cache_layers() {
+    RunnerDockerContract::assert_dockerfile_uses_dependency_first_rust_cache_layers();
+}
+
+#[test]
 fn runner_image_help_surface_stays_runtime_only() {
     let harness = RunnerImageArtifactHarness::start();
     let help_output = harness.help_output();

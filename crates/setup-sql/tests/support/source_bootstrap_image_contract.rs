@@ -1,5 +1,12 @@
 use std::{ffi::OsString, fs, path::PathBuf};
 
+#[path = "../../../runner/tests/support/rust_workspace_image_cache_contract.rs"]
+mod rust_workspace_image_cache_contract_support;
+
+use rust_workspace_image_cache_contract_support::{
+    RustWorkspaceImageCacheContract, RustWorkspaceImageCacheExpectation,
+};
+
 pub struct SourceBootstrapImageContract {
     dockerfile_path: PathBuf,
     dockerfile_text: String,
@@ -99,6 +106,17 @@ impl SourceBootstrapImageContract {
             image_entrypoint_json.trim(),
             "[\"/usr/local/bin/setup-sql\"]",
             "setup-sql image must invoke the binary directly instead of using a shell wrapper",
+        );
+    }
+
+    pub fn assert_dockerfile_uses_dependency_first_rust_cache_layers(&self) {
+        RustWorkspaceImageCacheContract::assert_dependency_first_layers(
+            &self.dockerfile_text,
+            RustWorkspaceImageCacheExpectation {
+                dockerfile_label: "setup-sql image Dockerfile",
+                build_command:
+                    "cargo build --locked --release --target \"${RUST_TARGET}\" -p setup-sql --bin setup-sql",
+            },
         );
     }
 

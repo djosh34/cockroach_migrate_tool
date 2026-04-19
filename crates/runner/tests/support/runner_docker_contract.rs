@@ -1,5 +1,12 @@
 use std::{collections::BTreeSet, ffi::OsString, fs, path::PathBuf};
 
+#[path = "rust_workspace_image_cache_contract.rs"]
+mod rust_workspace_image_cache_contract_support;
+
+use rust_workspace_image_cache_contract_support::{
+    RustWorkspaceImageCacheContract, RustWorkspaceImageCacheExpectation,
+};
+
 pub struct RunnerDockerContract;
 
 pub struct RunnerRuntimeLaunch<'a> {
@@ -193,6 +200,24 @@ impl RunnerDockerContract {
         assert!(
             runtime_commands.contains(&"ENTRYPOINT [\"/usr/local/bin/runner\"]"),
             "Dockerfile scratch runtime stage must start the runner binary directly",
+        );
+    }
+
+    pub fn assert_dockerfile_uses_dependency_first_rust_cache_layers() {
+        let dockerfile = fs::read_to_string(dockerfile_path()).unwrap_or_else(|error| {
+            panic!(
+                "Dockerfile `{}` should be readable: {error}",
+                dockerfile_path().display()
+            )
+        });
+
+        RustWorkspaceImageCacheContract::assert_dependency_first_layers(
+            &dockerfile,
+            RustWorkspaceImageCacheExpectation {
+                dockerfile_label: "runner image Dockerfile",
+                build_command:
+                    "cargo build --locked --release --target \"${RUST_TARGET}\" -p runner --bin runner",
+            },
         );
     }
 }

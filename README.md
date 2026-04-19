@@ -186,8 +186,8 @@ The mounted `/config` directory is the only Docker-specific convention. The same
 
 Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.
 
-The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.
+The `publish-image` and `publish-manifest` jobs still carry an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.
 
-Only the `publish` job gets `packages: write`, checkout disables credential persistence, derived registry credentials are masked before any diagnostic output, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.
+Only the `publish-image` job gets `packages: write`, checkout disables credential persistence, derived registry credentials are masked before any diagnostic output, and the pushed images are tagged only with `${{ github.sha }}` from the validated commit.
 
-Validation runs the repository lint and default test gates before publish, each image is pushed for both `linux/amd64` and `linux/arm64`, and the workflow emits a published-image manifest that downstream registry-only checks can consume directly.
+Validation restores and saves Cargo registry and target caches before publish, each image is pushed for both `linux/amd64` and `linux/arm64`, and the workflow emits a published-image manifest that downstream registry-only checks can consume directly.

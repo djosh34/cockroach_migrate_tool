@@ -169,6 +169,34 @@ impl VerifyDockerContract {
         );
     }
 
+    pub fn assert_dockerfile_separates_go_module_and_source_cache_layers(&self) {
+        for required_marker in [
+            "# syntax=docker/dockerfile:1.7",
+            "COPY go.mod go.sum ./",
+            "go mod download",
+            "--mount=type=cache,target=/go/pkg/mod",
+            "--mount=type=cache,target=/root/.cache/go-build",
+            "COPY . .",
+            "CGO_ENABLED=0 GOOS=linux go build",
+        ] {
+            assert!(
+                self.dockerfile_text.contains(required_marker),
+                "verify image Dockerfile must contain `{required_marker}` to preserve Go dependency and build caches",
+            );
+        }
+
+        assert_strict_order(
+            &self.dockerfile_text,
+            &[
+                "COPY go.mod go.sum ./",
+                "go mod download",
+                "COPY . .",
+                "CGO_ENABLED=0 GOOS=linux go build",
+            ],
+            "verify image Dockerfile",
+        );
+    }
+
     pub fn docker_build_image_args(image_tag: &str) -> Vec<String> {
         vec![
             String::from("build"),
@@ -185,4 +213,20 @@ fn verify_slice_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join("cockroachdb_molt/molt")
+}
+
+fn assert_strict_order(text: &str, ordered_markers: &[&str], dockerfile_label: &str) {
+    let mut previous_position = None;
+    for marker in ordered_markers {
+        let position = text
+            .find(marker)
+            .unwrap_or_else(|| panic!("{dockerfile_label} must contain `{marker}`"));
+        if let Some(previous_position) = previous_position {
+            assert!(
+                previous_position < position,
+                "{dockerfile_label} must keep `{marker}` after the previous cache boundary marker",
+            );
+        }
+        previous_position = Some(position);
+    }
 }

@@ -44,3 +44,10 @@ fn verify_image_dockerfile_stays_scoped_to_the_verify_slice() {
 
     contract.assert_build_context_stays_within_the_verify_slice();
 }
+
+#[test]
+fn verify_image_dockerfile_separates_go_module_and_source_cache_layers() {
+    let contract = VerifyDockerContract::load();
+
+    contract.assert_dockerfile_separates_go_module_and_source_cache_layers();
+}
