@@ -84,13 +84,9 @@ impl RunnerContainerProcess {
 
     pub(crate) fn image_entrypoint_json(&self) -> String {
         run_command_capture(
-            std::process::Command::new("docker").args([
-                "image",
-                "inspect",
-                &self.image_tag,
-                "--format",
-                "{{json .Config.Entrypoint}}",
-            ]),
+            std::process::Command::new("docker").args(
+                RunnerDockerContract::docker_inspect_image_entrypoint_args(&self.image_tag),
+            ),
             "docker image inspect",
         )
         .trim()
@@ -107,9 +103,12 @@ impl RunnerContainerProcess {
 
 impl Drop for RunnerContainerProcess {
     fn drop(&mut self) {
-        let _ = std::process::Command::new("docker")
-            .args(["rm", "-f", &self.container_name])
-            .output();
+        cleanup_if_present(
+            std::process::Command::new("docker")
+                .args(["container", "inspect", &self.container_name]),
+            std::process::Command::new("docker").args(["rm", "-f", &self.container_name]),
+            "docker rm runner container",
+        );
     }
 }
 
@@ -134,4 +133,17 @@ fn shared_runner_image_tag() -> &'static str {
         }
         image_tag
     })
+}
+
+fn cleanup_if_present(
+    probe: &mut std::process::Command,
+    cleanup: &mut std::process::Command,
+    context: &str,
+) {
+    let output = probe
+        .output()
+        .unwrap_or_else(|error| panic!("{context} probe should start: {error}"));
+    if output.status.success() {
+        run_command_capture(cleanup, context);
+    }
 }

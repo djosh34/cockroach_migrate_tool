@@ -1,4 +1,4 @@
-## Task: Build a push-to-master-only pipeline that runs the full test suite and publishes a commit-tagged scratch image to GHCR <status>not_started</status> <passes>false</passes>
+## Task: Build a push-to-master-only pipeline that runs the full test suite and publishes a commit-tagged scratch image to GHCR <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -40,14 +40,16 @@ The implementation must make it hard to accidentally publish an untested or diff
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers workflow behavior, trigger scope, image-tagging rules, and scratch-image contract
-- [ ] The workflow triggers only on pushes to `master` and does not run on pull requests
-- [ ] The CI path runs the full validation suite required by the repository rather than a reduced subset
-- [ ] The publish step pushes a commit-tagged OCI image to GHCR and does not publish `latest` or version tags
-- [ ] The final runtime image is a scratch image whose runtime payload is only the application binary
-- [ ] The workflow structure leaves a clean extension point for adding Quay publishing later without mixing registry-specific logic through the whole file
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] `make test-long` — passes cleanly
+- [x] Red/green TDD covers workflow behavior, trigger scope, image-tagging rules, and scratch-image contract
+- [x] The workflow triggers only on pushes to `master` and does not run on pull requests
+- [x] The CI path runs the full validation suite required by the repository rather than a reduced subset
+- [x] The publish step pushes a commit-tagged OCI image to GHCR and does not publish `latest` or version tags
+- [x] The final runtime image is a scratch image whose runtime payload is only the application binary
+- [x] The workflow structure leaves a clean extension point for adding Quay publishing later without mixing registry-specific logic through the whole file
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] `make test-long` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-15-ci-build-test-image-pipeline/01-task-build-master-only-pipeline-for-full-tests-and-scratch-ghcr-image_plans/2026-04-19-master-only-ghcr-scratch-pipeline-plan.md</plan>

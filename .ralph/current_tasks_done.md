@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 08:56:31 AM CEST 2026
+Generated: Sun Apr 19 09:22:55 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -380,6 +380,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify the copyable config example and quick start are directly useful <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/01-task-build-master-only-pipeline-for-full-tests-and-scratch-ghcr-image.md`
+
+```
+## Task: Build a push-to-master-only pipeline that runs the full test suite and publishes a commit-tagged scratch image to GHCR <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
