@@ -1,0 +1,37 @@
+## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+
+
+**Goal:** Add a user-test task that verifies the command surface stays simple enough for a novice operator following the README. The higher order goal is to prevent the images from growing deep command trees and hard-to-discover flags that make the README path brittle and hard to follow.
+
+In scope:
+- describe and verify the complexity of the user-facing commands used in the README
+- prefer a command shape close to `cli-name [one action level] [--args]` wherever practical
+- reject unnecessary nested subcommand depth where a flatter command shape would work
+- verify `--help` works when appended to any supported command or subcommand the user may need
+- verify help output is sufficient for operator use and aligns with the README examples
+
+Out of scope:
+- enforcing a rigid one-size-fits-all CLI rule when a slightly deeper command shape is truly justified
+
+Decisions already made:
+- minimal subcommand complexity is a design goal
+- `cli-name [one action level] [--args]` is the target shape whenever practical
+- this is not an absolute rule, but the burden is on deeper command trees to justify themselves
+- `--help` must always work when appended to any command the user may invoke
+
+</description>
+
+
+<acceptance_criteria>
+- [ ] Red/green TDD covers command-shape simplicity and `--help` behavior across the supported user-facing commands
+- [ ] The task fails if the supported CLI surface grows unnecessary nested action levels for novice-user flows
+- [ ] The task proves `--help` works on every supported command or subcommand used by the README path
+- [ ] The task proves the help output is consistent with the README examples and sufficient for a novice operator
+- [ ] `make check` — passes cleanly
+- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [ ] `make lint` — passes cleanly
+- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+</acceptance_criteria>
