@@ -85,6 +85,9 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
     harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
     harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_shadow_customers(2);
+    harness
+        .runtime_shape_audit()
+        .assert_honest_default_runtime_shape();
     harness.verify_default_migration();
 }
 

@@ -11,20 +11,26 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use clap::Parser as _;
 use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
 
 mod destination_lock;
 mod destination_write_failure;
+mod runner_container_process;
 mod runner_process;
 
 pub(crate) use destination_lock::DestinationTableLock;
 pub(crate) use destination_write_failure::DestinationWriteFailure;
 use destination_write_failure::DestinationWriteFailureSpec;
+use runner_container_process::RunnerContainerProcess;
 use runner_process::RunnerProcess;
 
-use crate::e2e_integrity::VerifyAudit;
+use crate::e2e_integrity::{
+    CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
+    RuntimeShapeAudit, SourceBootstrapAudit, VerifyAudit,
+};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
@@ -139,11 +145,17 @@ impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
     }
 }
 
+enum RunnerRuntime {
+    Host(RunnerProcess),
+    Container(RunnerContainerProcess),
+}
+
 pub struct CdcE2eHarness {
     docker: DockerEnvironment,
     config: OwnedHarnessConfig,
     temp_dir: TempDir,
     runner_port: u16,
+    destination_runtime_mode: DestinationRuntimeMode,
     webhook_sink_base_url: String,
     webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
@@ -155,7 +167,7 @@ pub struct CdcE2eHarness {
     molt_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
-    runner_process: RefCell<Option<RunnerProcess>>,
+    runner_process: RefCell<Option<RunnerRuntime>>,
 }
 
 impl CdcE2eHarness {
@@ -166,6 +178,18 @@ impl CdcE2eHarness {
     pub fn start_with_webhook_sink(
         config: CdcE2eHarnessConfig<'_>,
         webhook_sink_mode: WebhookSinkMode,
+    ) -> Self {
+        Self::start_with_webhook_sink_and_runtime(
+            config,
+            webhook_sink_mode,
+            DestinationRuntimeMode::HostProcess,
+        )
+    }
+
+    pub fn start_with_webhook_sink_and_runtime(
+        config: CdcE2eHarnessConfig<'_>,
+        webhook_sink_mode: WebhookSinkMode,
+        destination_runtime_mode: DestinationRuntimeMode,
     ) -> Self {
         let config = OwnedHarnessConfig::from(config);
         let docker = DockerEnvironment::new();
@@ -194,6 +218,7 @@ impl CdcE2eHarness {
             config,
             temp_dir,
             runner_port,
+            destination_runtime_mode,
             webhook_sink_base_url: String::new(),
             webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
@@ -223,10 +248,13 @@ impl CdcE2eHarness {
 
     pub fn kill_runner(&self) {
         let mut runner_process = self.runner_process.borrow_mut();
-        let mut process = runner_process
+        let process = runner_process
             .take()
             .expect("runner process should exist before it can be killed");
-        process.kill();
+        match process {
+            RunnerRuntime::Host(mut process) => process.kill(),
+            RunnerRuntime::Container(process) => process.kill(),
+        }
     }
 
     pub fn restart_runner(&self) {
@@ -254,7 +282,7 @@ impl CdcE2eHarness {
         panic!(
             "{description} did not converge to `{expected}`\nactual={}\nrunner stderr:\n{}",
             self.query_destination(sql).trim(),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -273,7 +301,7 @@ impl CdcE2eHarness {
                 actual.trim(),
                 expected,
                 "{description} changed unexpectedly while it should remain stable\nrunner stderr:\n{}",
-                read_file(&self.runner_stderr_path),
+                self.runner_diagnostics(),
             );
             if Instant::now() >= deadline {
                 return;
@@ -307,7 +335,7 @@ impl CdcE2eHarness {
         panic!(
             "helper shadow tables did not converge to expected row counts: {actual}\nhelper tables={}\nrunner stderr:\n{}",
             self.helper_tables().trim(),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -324,7 +352,7 @@ impl CdcE2eHarness {
         panic!(
             "{description} did not converge to `{expected}`\nactual={}\nrunner stderr:\n{}",
             self.helper_tables().trim(),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -385,6 +413,45 @@ impl CdcE2eHarness {
         )
     }
 
+    pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
+        let apply_client_addr = self.destination_runtime_client_addr();
+        let destination_runtime = {
+            let runner_process = self.runner_process.borrow();
+            match runner_process.as_ref() {
+                Some(RunnerRuntime::Host(_)) => DestinationRuntimeAudit {
+                    mode: DestinationRuntimeMode::HostProcess,
+                    container_count: 0,
+                    runner_entrypoint_json: None,
+                    healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
+                    destination_connection_host: self.destination_runtime_postgres_host().to_owned(),
+                    destination_connection_port: self.destination_runtime_postgres_port(),
+                    runner_container_ip: None,
+                    postgres_apply_client_addr: apply_client_addr.clone(),
+                },
+                Some(RunnerRuntime::Container(process)) => DestinationRuntimeAudit {
+                    mode: DestinationRuntimeMode::SingleContainer,
+                    container_count: 1,
+                    runner_entrypoint_json: Some(process.image_entrypoint_json()),
+                    healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
+                    destination_connection_host: self.destination_runtime_postgres_host().to_owned(),
+                    destination_connection_port: self.destination_runtime_postgres_port(),
+                    runner_container_ip: Some(process.container_ip()),
+                    postgres_apply_client_addr: apply_client_addr.clone(),
+                },
+                None => panic!("runner must be started before collecting runtime-shape audit"),
+            }
+        };
+        RuntimeShapeAudit::new(
+            destination_runtime,
+            SourceBootstrapAudit::new(self.webhook_sink_base_url.clone()),
+            CockroachRuntimeAudit::new(self.docker.cockroach_image()),
+            DestinationRoleAudit::new(
+                self.config.destination_user.clone(),
+                self.destination_role_is_superuser(),
+            ),
+        )
+    }
+
     pub fn assert_runner_alive(&self) {
         self.assert_runner_process_alive();
     }
@@ -420,7 +487,7 @@ impl CdcE2eHarness {
         panic!(
             "gateway did not observe duplicate delivery for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
             gateway.attempt_summary_for_body_substring(body_substring),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -448,7 +515,7 @@ impl CdcE2eHarness {
         panic!(
             "gateway did not observe `{fault}` followed by a successful forward for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
             gateway.attempt_summary_for_body_substring(body_substring),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -484,7 +551,7 @@ impl CdcE2eHarness {
         panic!(
             "gateway did not observe forwarded downstream status sequence `{expected}` for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
             gateway.attempt_summary_for_body_substring(body_substring),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -618,7 +685,7 @@ impl CdcE2eHarness {
         let actual = self.tracking_progress(mapped_table);
         panic!(
             "{description} did not converge\nactual progress={actual:?}\nrunner stderr:\n{}",
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
     }
 
@@ -647,10 +714,13 @@ impl CdcE2eHarness {
 
     pub fn wait_for_runner_failed_exit(&self) -> String {
         let mut runner_process = self.runner_process.borrow_mut();
-        let mut process = runner_process
+        let process = runner_process
             .take()
             .expect("runner process should exist before waiting for a failed exit");
-        process.wait_for_failed_exit()
+        match process {
+            RunnerRuntime::Host(mut process) => process.wait_for_failed_exit(),
+            RunnerRuntime::Container(process) => process.wait_for_failed_exit(),
+        }
     }
 
     pub fn wait_for_reconcile_block_on_destination_table(&self, mapped_table: &str) {
@@ -691,8 +761,41 @@ impl CdcE2eHarness {
                  WHERE datname = current_database();"
             )
             .trim(),
-            read_file(&self.runner_stderr_path),
+            self.runner_diagnostics(),
         );
+    }
+
+    fn destination_runtime_client_addr(&self) -> Option<String> {
+        let destination_user = sql_string_literal(&self.config.destination_user);
+        let client_addr = self.query_destination(&format!(
+            "SELECT COALESCE(client_addr::text, '')
+             FROM pg_stat_activity
+             WHERE datname = current_database()
+               AND usename = '{destination_user}'
+               AND pid <> pg_backend_pid()
+             ORDER BY backend_start
+             LIMIT 1;"
+        ));
+        let client_addr = client_addr.trim();
+        if client_addr.is_empty() {
+            None
+        } else {
+            Some(client_addr.to_owned())
+        }
+    }
+
+    fn destination_role_is_superuser(&self) -> bool {
+        let destination_user = sql_string_literal(&self.config.destination_user);
+        let is_superuser = self.query_destination(&format!(
+            "SELECT rolsuper::text
+             FROM pg_roles
+             WHERE rolname = '{destination_user}';"
+        ));
+        match is_superuser.trim() {
+            "t" | "true" => true,
+            "f" | "false" => false,
+            other => panic!("rolsuper query should return `t` or `f`, got `{other}`"),
+        }
     }
 
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
@@ -735,23 +838,34 @@ impl CdcE2eHarness {
             return;
         }
 
-        let child = RunnerProcess::start(
-            &self.runner_config_path,
-            &self.runner_stdout_path,
-            &self.runner_stderr_path,
-        );
+        let child = match self.destination_runtime_mode {
+            DestinationRuntimeMode::HostProcess => RunnerRuntime::Host(RunnerProcess::start(
+                &self.runner_config_path,
+                &self.runner_stdout_path,
+                &self.runner_stderr_path,
+            )),
+            DestinationRuntimeMode::SingleContainer => {
+                RunnerRuntime::Container(RunnerContainerProcess::start(
+                    &self.docker.network_name,
+                    self.runner_port,
+                    &self.runner_config_path,
+                ))
+            }
+        };
         *self.runner_process.borrow_mut() = Some(child);
     }
 
     fn render_source_bootstrap_script(&self) {
-        ensure_source_bootstrap_binary();
-        let output = run_command_output(
-            Command::new(source_bootstrap_binary_path())
-                .args(["render-bootstrap-script", "--config"])
-                .arg(&self.source_bootstrap_config_path),
-            "source-bootstrap render-bootstrap-script",
-        );
-        fs::write(&self.source_bootstrap_script_path, &output.stdout)
+        let output = source_bootstrap::execute(source_bootstrap::Cli::parse_from([
+            "source-bootstrap",
+            "render-bootstrap-script",
+            "--config",
+            self.source_bootstrap_config_path
+                .to_str()
+                .expect("source-bootstrap config path should be utf-8"),
+        ]))
+        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-script failed: {error}"));
+        fs::write(&self.source_bootstrap_script_path, output)
             .expect("bootstrap script should be written");
         make_executable(&self.source_bootstrap_script_path);
     }
@@ -778,7 +892,7 @@ impl CdcE2eHarness {
             &self.runner_config_path,
             format!(
                 r#"webhook:
-  bind_addr: 0.0.0.0:{runner_port}
+  bind_addr: 0.0.0.0:{runner_bind_port}
   tls:
     cert_path: {cert_path}
     key_path: {key_path}
@@ -796,13 +910,13 @@ mappings:
 {selected_tables}
     destination:
       connection:
-        host: 127.0.0.1
+        host: {destination_host}
         port: {postgres_port}
         database: {destination_database}
         user: {destination_user}
         password: {destination_password}
 "#,
-                runner_port = self.runner_port,
+                runner_bind_port = self.destination_runtime_bind_port(),
                 cert_path = investigation_server_cert_path().display(),
                 key_path = investigation_server_key_path().display(),
                 molt_command = self.wrapper_bin_dir.join("molt").display(),
@@ -810,7 +924,8 @@ mappings:
                 mapping_id = self.config.mapping_id,
                 source_database = self.config.source_database,
                 selected_tables = selected_tables,
-                postgres_port = self.docker.postgres_host_port,
+                destination_host = self.destination_runtime_postgres_host(),
+                postgres_port = self.destination_runtime_postgres_port(),
                 destination_database = self.config.destination_database,
                 destination_user = self.config.destination_user,
                 destination_password = self.config.destination_password,
@@ -856,19 +971,51 @@ mappings:
 
     fn assert_runner_process_alive(&self) {
         let mut process = self.runner_process.borrow_mut();
-        let Some(runner_process) = process.as_mut() else {
-            return;
-        };
+        let runner_process = process
+            .as_mut()
+            .expect("runner runtime should exist before asserting liveness");
 
-        runner_process.assert_alive();
+        match runner_process {
+            RunnerRuntime::Host(process) => process.assert_alive(),
+            RunnerRuntime::Container(process) => process.assert_alive(),
+        }
     }
 
     fn runner_logs(&self) -> String {
-        format!(
-            "stdout:\n{}\n\nstderr:\n{}",
-            read_file(&self.runner_stdout_path),
-            read_file(&self.runner_stderr_path),
-        )
+        match self.runner_process.borrow().as_ref() {
+            Some(RunnerRuntime::Host(_)) => format!(
+                "stdout:\n{}\n\nstderr:\n{}",
+                read_file(&self.runner_stdout_path),
+                read_file(&self.runner_stderr_path),
+            ),
+            Some(RunnerRuntime::Container(process)) => process.logs(),
+            None => String::new(),
+        }
+    }
+
+    fn runner_diagnostics(&self) -> String {
+        self.runner_logs()
+    }
+
+    fn destination_runtime_postgres_host(&self) -> &'static str {
+        match self.destination_runtime_mode {
+            DestinationRuntimeMode::HostProcess => "127.0.0.1",
+            DestinationRuntimeMode::SingleContainer => "postgres",
+        }
+    }
+
+    fn destination_runtime_postgres_port(&self) -> u16 {
+        match self.destination_runtime_mode {
+            DestinationRuntimeMode::HostProcess => self.docker.postgres_host_port,
+            DestinationRuntimeMode::SingleContainer => 5432,
+        }
+    }
+
+    fn destination_runtime_bind_port(&self) -> u16 {
+        match self.destination_runtime_mode {
+            DestinationRuntimeMode::HostProcess => self.runner_port,
+            DestinationRuntimeMode::SingleContainer => 8443,
+        }
     }
 
     fn source_url(&self) -> String {
@@ -1090,6 +1237,10 @@ impl DockerEnvironment {
             "docker exec psql",
         )
     }
+
+    pub(crate) fn cockroach_image(&self) -> String {
+        docker_inspect_format(&self.cockroach_container, "{{.Config.Image}}")
+    }
 }
 
 impl Drop for DockerEnvironment {
@@ -1135,20 +1286,6 @@ pub(crate) fn investigation_server_key_path() -> PathBuf {
         .join("cockroach-webhook-cdc")
         .join("certs")
         .join("server.key")
-}
-
-pub(crate) fn source_bootstrap_binary_path() -> PathBuf {
-    repo_root()
-        .join("target")
-        .join("debug")
-        .join("source-bootstrap")
-}
-
-pub(crate) fn ensure_source_bootstrap_binary() {
-    run_command_capture(
-        Command::new("cargo").args(["build", "-p", "source-bootstrap"]),
-        "cargo build source-bootstrap",
-    );
 }
 
 fn unique_suffix() -> String {
@@ -1280,6 +1417,23 @@ fn docker_logs(container: &str) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     )
+}
+
+fn docker_inspect_format(container: &str, format: &str) -> String {
+    let output = Command::new("docker")
+        .args(["inspect", "-f", format, container])
+        .output()
+        .unwrap_or_else(|error| panic!("docker inspect should start: {error}"));
+    assert!(
+        output.status.success(),
+        "docker inspect failed for `{container}`:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    String::from_utf8(output.stdout)
+        .expect("docker inspect stdout should be utf-8")
+        .trim()
+        .to_owned()
 }
 
 fn container_running(container: &str) -> bool {

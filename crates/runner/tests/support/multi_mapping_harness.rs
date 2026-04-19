@@ -7,14 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use clap::Parser as _;
 use tempfile::TempDir;
 
 use crate::e2e_integrity::VerifyAudit;
 use crate::e2e_harness::{
-    DockerEnvironment, ensure_source_bootstrap_binary, https_client, investigation_ca_cert_path,
-    investigation_server_cert_path, investigation_server_key_path, pick_unused_port, prepend_path,
-    read_file, run_command_capture, source_bootstrap_binary_path, wait_for_runner_health,
-    write_cockroach_wrapper_script, write_molt_wrapper_script,
+    DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
+    investigation_server_key_path, pick_unused_port, prepend_path, read_file,
+    run_command_capture, wait_for_runner_health, write_cockroach_wrapper_script,
+    write_molt_wrapper_script,
 };
 
 const APP_A_SOURCE_SETUP_SQL: &str = r#"
@@ -542,13 +543,15 @@ VALUES (5003, 1, 'expansion-pack', 2);
     }
 
     fn render_source_bootstrap_script(&self) {
-        ensure_source_bootstrap_binary();
-        let output = run_command_capture(
-            Command::new(source_bootstrap_binary_path())
-                .args(["render-bootstrap-script", "--config"])
-                .arg(&self.source_bootstrap_config_path),
-            "source-bootstrap render-bootstrap-script",
-        );
+        let output = source_bootstrap::execute(source_bootstrap::Cli::parse_from([
+            "source-bootstrap",
+            "render-bootstrap-script",
+            "--config",
+            self.source_bootstrap_config_path
+                .to_str()
+                .expect("source-bootstrap config path should be utf-8"),
+        ]))
+        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-script failed: {error}"));
         fs::write(&self.source_bootstrap_script_path, &output)
             .expect("bootstrap script should be written");
         #[cfg(unix)]

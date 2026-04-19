@@ -112,6 +112,26 @@ fn e2e_suite_routes_verify_assertions_through_a_typed_integrity_boundary() {
 }
 
 #[test]
+fn e2e_suite_routes_runtime_shape_assertions_through_a_typed_integrity_boundary() {
+    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
+    let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
+    let integrity = read_runner_test_file("tests/support/e2e_integrity.rs");
+
+    assert!(
+        integrity.contains("pub struct RuntimeShapeAudit"),
+        "E2E integrity support should define a dedicated typed runtime-shape audit",
+    );
+    assert!(
+        default_harness.contains("pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit"),
+        "default bootstrap harness should expose runtime-shape assertions through a typed public API",
+    );
+    assert!(
+        long_lane.contains("assert_honest_default_runtime_shape"),
+        "the honest default long-lane scenario should assert runtime shape through the typed integrity boundary",
+    );
+}
+
+#[test]
 fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
     let banned_markers = [
         "--fake",
@@ -140,6 +160,7 @@ fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
 fn only_approved_support_files_issue_raw_docker_commands_for_e2e_orchestration() {
     let approved = [
         "tests/support/e2e_harness.rs",
+        "tests/support/runner_container_process.rs",
         "tests/support/runner_image_harness.rs",
     ];
     let tests_dir = repo_root().join("crates/runner/tests");

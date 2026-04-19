@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use crate::e2e_integrity::{CustomerLiveUpdateAudit, VerifyAudit};
+use crate::e2e_integrity::{
+    CustomerLiveUpdateAudit, DestinationRuntimeMode, RuntimeShapeAudit, VerifyAudit,
+};
 use crate::e2e_harness::{
     CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, DestinationWriteFailure,
     MappingTrackingProgress, WebhookSinkMode,
@@ -329,6 +331,10 @@ impl DefaultBootstrapHarness {
         self.inner.verify_migration()
     }
 
+    pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
+        self.inner.runtime_shape_audit()
+    }
+
     pub fn kill_runner(&self) {
         self.inner.kill_runner();
     }
@@ -403,7 +409,7 @@ impl DefaultBootstrapHarness {
         reconcile_interval_secs: u64,
         webhook_sink_mode: WebhookSinkMode,
     ) -> CdcE2eHarness {
-        CdcE2eHarness::start_with_webhook_sink(
+        CdcE2eHarness::start_with_webhook_sink_and_runtime(
             CdcE2eHarnessConfig {
                 mapping_id: "app-a",
                 source_database: "demo_a",
@@ -416,6 +422,7 @@ impl DefaultBootstrapHarness {
                 destination_setup_sql: DEFAULT_DESTINATION_SETUP_SQL,
             },
             webhook_sink_mode,
+            DestinationRuntimeMode::SingleContainer,
         )
     }
 }
