@@ -427,17 +427,23 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
+        "CREATE ROLE app_owner_a LOGIN PASSWORD 'owner-secret-a';",
+    );
+    postgres.exec(
+        "postgres",
         "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
-    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER app_owner_a;");
     postgres.exec(
         "app_a",
-        "GRANT ALL PRIVILEGES ON DATABASE app_a TO migration_user_a;",
+        "GRANT CONNECT, CREATE ON DATABASE app_a TO migration_user_a;",
     );
     postgres.exec_as(
-        "migration_user_a",
+        "app_owner_a",
         "app_a",
-        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         GRANT USAGE ON SCHEMA public TO migration_user_a;
+         GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;",
     );
 
     let bind_port = pick_unused_port();

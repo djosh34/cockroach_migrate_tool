@@ -5,5 +5,5 @@ mod postgres_grants_parser;
 mod table_name;
 
 pub(crate) use cockroach::{BootstrapConfig, SourceMapping, WebhookConfig};
-pub(crate) use postgres_grants::{PostgresGrantMapping, PostgresGrantsConfig};
+pub(crate) use postgres_grants::PostgresGrantsConfig;
 pub(crate) use table_name::TableName;

@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 10:31:30 PM CEST 2026
+Generated: Sun Apr 19 10:45:03 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -677,6 +677,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Emit the required Cockroach changefeed SQL from the one-time setup image <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-19-source-sql-emitter-image/03-task-emit-the-absolute-minimum-postgresql-role-grants-needed-by-the-runner.md`
+
+```
+## Task: Emit the absolute minimum PostgreSQL role grants needed by the runner from the one-time setup image <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

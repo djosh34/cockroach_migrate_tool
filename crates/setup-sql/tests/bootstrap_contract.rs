@@ -149,15 +149,21 @@ fn emit_postgres_grants_outputs_sql_only_text_and_json_from_minimal_destination_
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "GRANT CONNECT, TEMPORARY, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";",
+            "GRANT CONNECT, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";",
         ))
         .stdout(predicate::str::contains(
             "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE \"public\".\"customers\" TO \"migration_user_a\";",
         ))
+        .stdout(predicate::str::contains(
+            "GRANT CONNECT, CREATE ON DATABASE \"app_b\" TO \"migration_user_b\";",
+        ))
         .stdout(predicate::str::contains("README.md").not())
         .stdout(predicate::str::contains("grants.sql").not())
         .stdout(predicate::str::contains("CREATE ROLE").not())
-        .stdout(predicate::str::contains("SUPERUSER").not());
+        .stdout(predicate::str::contains("SUPERUSER").not())
+        .stdout(predicate::str::contains("TEMPORARY").not())
+        .stdout(predicate::str::contains("ALL PRIVILEGES").not())
+        .stdout(predicate::str::contains("ALL TABLES IN SCHEMA").not());
 
     let mut json_command = Command::cargo_bin("setup-sql").expect("setup-sql binary should exist");
     let json_assert = json_command
@@ -185,9 +191,21 @@ fn emit_postgres_grants_outputs_sql_only_text_and_json_from_minimal_destination_
         .expect("app_a sql should be a string");
     assert!(
         app_a_sql.contains(
-            "GRANT CONNECT, TEMPORARY, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";"
+            "GRANT CONNECT, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";"
         ),
         "app_a json payload should contain the explicit database grant SQL",
+    );
+    assert!(
+        !app_a_sql.contains("TEMPORARY"),
+        "app_a json payload must not include temporary-table privileges",
+    );
+    assert!(
+        !app_a_sql.contains("ALL PRIVILEGES"),
+        "app_a json payload must not broaden the contract with blanket database grants",
+    );
+    assert!(
+        !app_a_sql.contains("ALL TABLES IN SCHEMA"),
+        "app_a json payload must not emit schema-wide blanket table grants",
     );
 }
 

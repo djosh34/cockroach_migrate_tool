@@ -499,13 +499,21 @@ fn run_continuously_reconciles_helper_upserts_into_real_tables() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
+        "CREATE ROLE app_owner_a LOGIN PASSWORD 'owner-secret-a';",
+    );
+    postgres.exec(
+        "postgres",
         "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
-    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER app_owner_a;");
     postgres.exec(
         "app_a",
-        "SET ROLE migration_user_a;
-         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+        "SET ROLE app_owner_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         RESET ROLE;
+         GRANT CONNECT, CREATE ON DATABASE app_a TO migration_user_a;
+         GRANT USAGE ON SCHEMA public TO migration_user_a;
+         GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;",
     );
 
     let bind_port = pick_unused_port();

@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 10:31:30 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-19-source-sql-emitter-image/03-task-emit-the-absolute-minimum-postgresql-role-grants-needed-by-the-runner.md`
-
-```
-## Task: Emit the absolute minimum PostgreSQL role grants needed by the runner from the one-time setup image <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sun Apr 19 10:45:03 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-20-runner-scratch-image/01-task-build-the-runner-as-a-scratch-image-with-one-binary-that-applies-webhook-requests-to-postgresql.md`
 

@@ -1,4 +1,4 @@
-## Task: Emit the absolute minimum PostgreSQL role grants needed by the runner from the one-time setup image <status>not_started</status> <passes>false</passes>
+## Task: Emit the absolute minimum PostgreSQL role grants needed by the runner from the one-time setup image <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -35,12 +35,14 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers generation and least-privilege validation of the runner grant SQL
-- [ ] The emitted SQL reflects only the minimum PostgreSQL privileges required by the runner, this mode does not require CockroachDB config, and the operator can configure the role name
-- [ ] The PostgreSQL grant command supports both simple JSON and plain-text SQL output, with simple JSON using one SQL string per destination database and allowing multiple databases in one response
-- [ ] The output does not assume superuser runtime behavior or broaden the runner's permission scope
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers generation and least-privilege validation of the runner grant SQL
+- [x] The emitted SQL reflects only the minimum PostgreSQL privileges required by the runner, this mode does not require CockroachDB config, and the operator can configure the role name
+- [x] The PostgreSQL grant command supports both simple JSON and plain-text SQL output, with simple JSON using one SQL string per destination database and allowing multiple databases in one response
+- [x] The output does not assume superuser runtime behavior or broaden the runner's permission scope
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-19-source-sql-emitter-image/03-task-emit-the-absolute-minimum-postgresql-role-grants-needed-by-the-runner_plans/2026-04-19-postgres-minimum-grants-plan.md</plan>

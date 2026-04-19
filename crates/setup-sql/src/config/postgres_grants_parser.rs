@@ -7,7 +7,8 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    PostgresGrantMapping, PostgresGrantsConfig,
+    PostgresGrantsConfig,
+    postgres_grants::PostgresGrantMapping,
     postgres_grants::PostgresGrantDestination,
     table_name::{TableName, parse_schema_qualified_table_name, validate_text},
 };
@@ -47,9 +48,9 @@ fn validate(raw: RawPostgresGrantsConfig) -> Result<PostgresGrantsConfig, Bootst
                     message: "must be unique",
                 });
             }
+            drop(id);
 
             Ok(PostgresGrantMapping {
-                id,
                 destination: validate_destination(raw_mapping.destination)?,
             })
         })

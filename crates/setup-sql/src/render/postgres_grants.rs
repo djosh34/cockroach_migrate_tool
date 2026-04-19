@@ -1,34 +1,57 @@
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::{self, Display, Formatter},
+};
 
 use crate::{
     OutputFormat,
-    config::{PostgresGrantMapping, PostgresGrantsConfig},
+    config::PostgresGrantsConfig,
     sql_name::{QualifiedTableName, SqlIdentifier},
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
 pub(crate) struct RenderedPostgresGrants {
-    databases: Vec<RenderedDatabaseSql>,
+    databases: Vec<DatabaseGrantPlan>,
 }
 
 impl RenderedPostgresGrants {
     pub(crate) fn from_config(config: &PostgresGrantsConfig) -> Self {
-        let mut mappings_by_database: BTreeMap<String, Vec<&PostgresGrantMapping>> = BTreeMap::new();
+        let mut statements_by_database: BTreeMap<String, BTreeSet<PostgresGrantStatement>> =
+            BTreeMap::new();
 
         for mapping in config.mappings() {
-            mappings_by_database
-                .entry(mapping.destination().database().to_owned())
-                .or_default()
-                .push(mapping);
+            let database = mapping.destination().database().to_owned();
+            let runtime_role = SqlIdentifier::new(mapping.destination().runtime_role());
+            let destination_database = SqlIdentifier::new(mapping.destination().database());
+            let statements = statements_by_database.entry(database).or_default();
+
+            statements.insert(PostgresGrantStatement::DatabaseConnectCreate {
+                database: destination_database,
+                role: runtime_role.clone(),
+            });
+            statements.insert(PostgresGrantStatement::SchemaUsage {
+                schema: SqlIdentifier::new("public"),
+                role: runtime_role.clone(),
+            });
+
+            for table in mapping.destination().tables() {
+                statements.insert(PostgresGrantStatement::TableMutation {
+                    role: runtime_role.clone(),
+                    table: QualifiedTableName::new(
+                        SqlIdentifier::new(table.schema()),
+                        SqlIdentifier::new(table.name()),
+                    ),
+                });
+            }
         }
 
         Self {
-            databases: mappings_by_database
+            databases: statements_by_database
                 .into_iter()
-                .map(|(database, mappings)| RenderedDatabaseSql {
-                    sql: render_database_sql(&database, &mappings),
+                .map(|(database, statements)| DatabaseGrantPlan {
                     database,
+                    statements: statements.into_iter().collect(),
                 })
                 .collect(),
         }
@@ -39,14 +62,14 @@ impl RenderedPostgresGrants {
             OutputFormat::Text => self
                 .databases
                 .iter()
-                .map(|database| database.sql.as_str())
+                .map(DatabaseGrantPlan::render_text)
                 .collect::<Vec<_>>()
                 .join("\n\n"),
             OutputFormat::Json => serde_json::to_string_pretty(
                 &self
                     .databases
                     .iter()
-                    .map(|database| (database.database.clone(), database.sql.clone()))
+                    .map(|database| (database.database.clone(), database.render_sql()))
                     .collect::<BTreeMap<_, _>>(),
             )
             .expect("rendered postgres grants JSON should serialize"),
@@ -54,43 +77,61 @@ impl RenderedPostgresGrants {
     }
 }
 
-struct RenderedDatabaseSql {
+struct DatabaseGrantPlan {
     database: String,
-    sql: String,
+    statements: Vec<PostgresGrantStatement>,
 }
 
-fn render_database_sql(database: &str, mappings: &[&PostgresGrantMapping]) -> String {
-    let mut lines = vec![
-        "-- PostgreSQL grants SQL".to_owned(),
-        format!("-- Destination database: {database}"),
-        format!("-- Helper schema: {HELPER_SCHEMA}"),
-    ];
-
-    for mapping in mappings {
-        let runtime_role = SqlIdentifier::new(mapping.destination().runtime_role());
-        let destination_database = SqlIdentifier::new(mapping.destination().database());
-        lines.push(String::new());
-        lines.push(format!("-- Mapping: {}", mapping.id()));
-        lines.push(format!("-- Runtime role: {}", mapping.destination().runtime_role()));
-        lines.push(format!(
-            "GRANT CONNECT, TEMPORARY, CREATE ON DATABASE {} TO {};",
-            destination_database, runtime_role
-        ));
-        lines.push(format!(
-            "GRANT USAGE ON SCHEMA public TO {};",
-            runtime_role
-        ));
-        for table in mapping.destination().tables() {
-            let table = QualifiedTableName::new(
-                SqlIdentifier::new(table.schema()),
-                SqlIdentifier::new(table.name()),
-            );
-            lines.push(format!(
-                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {} TO {};",
-                table, runtime_role
-            ));
-        }
+impl DatabaseGrantPlan {
+    fn render_text(&self) -> String {
+        let mut lines = vec![
+            "-- PostgreSQL grants SQL".to_owned(),
+            format!("-- Destination database: {}", self.database),
+            format!("-- Helper schema: {HELPER_SCHEMA}"),
+            String::new(),
+        ];
+        lines.extend(self.statements.iter().map(ToString::to_string));
+        lines.join("\n")
     }
 
-    lines.join("\n")
+    fn render_sql(&self) -> String {
+        self.statements
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum PostgresGrantStatement {
+    DatabaseConnectCreate {
+        database: SqlIdentifier,
+        role: SqlIdentifier,
+    },
+    SchemaUsage {
+        schema: SqlIdentifier,
+        role: SqlIdentifier,
+    },
+    TableMutation {
+        role: SqlIdentifier,
+        table: QualifiedTableName,
+    },
+}
+
+impl Display for PostgresGrantStatement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DatabaseConnectCreate { database, role } => {
+                write!(f, "GRANT CONNECT, CREATE ON DATABASE {database} TO {role};")
+            }
+            Self::SchemaUsage { schema, role } => {
+                write!(f, "GRANT USAGE ON SCHEMA {schema} TO {role};")
+            }
+            Self::TableMutation { role, table } => write!(
+                f,
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {table} TO {role};"
+            ),
+        }
+    }
 }

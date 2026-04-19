@@ -19,15 +19,10 @@ impl PostgresGrantsConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct PostgresGrantMapping {
-    pub(super) id: String,
     pub(super) destination: PostgresGrantDestination,
 }
 
 impl PostgresGrantMapping {
-    pub(crate) fn id(&self) -> &str {
-        &self.id
-    }
-
     pub(crate) fn destination(&self) -> &PostgresGrantDestination {
         &self.destination
     }
