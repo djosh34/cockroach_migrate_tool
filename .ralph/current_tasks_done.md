@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 14:49:28 CEST 2026
+Generated: Sun Apr 19 15:17:20 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -446,6 +446,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove all runner access to the source CockroachDB and delete the related config surface <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/03-task-remove-bash-bootstrap-flows-and-script-based-source-setup.md`
+
+```
+## Task: Remove bash-based bootstrap flows and replace the old script contract with generated SQL output only <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

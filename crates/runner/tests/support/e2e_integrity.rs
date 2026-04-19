@@ -71,7 +71,11 @@ impl SourceCommandAudit {
         );
     }
 
-    pub fn assert_explicit_bootstrap_commands(&self, expected_tables: &[&str]) {
+    pub fn assert_explicit_bootstrap_commands(
+        &self,
+        source_database: &str,
+        expected_tables: &[&str],
+    ) {
         self.assert_bootstrap_command_count(3);
         self.assert_bootstrap_contains(
             "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
@@ -81,8 +85,14 @@ impl SourceCommandAudit {
             "SELECT cluster_logical_timestamp();",
             "bootstrap should capture the start cursor explicitly",
         );
-        let expected_changefeed_fragment =
-            format!("CREATE CHANGEFEED FOR TABLE {}", expected_tables.join(", "));
+        let expected_changefeed_fragment = format!(
+            "CREATE CHANGEFEED FOR TABLE {}",
+            expected_tables
+                .iter()
+                .map(|table| format!("{source_database}.{table}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
         self.assert_bootstrap_contains(
             &expected_changefeed_fragment,
             "bootstrap should create the expected changefeed explicitly",
@@ -375,9 +385,7 @@ fn optional_flag_value(args: &[String], flag: &str) -> Option<String> {
     let position = args.iter().position(|arg| arg == flag)?;
     Some(
         args.get(position + 1)
-            .unwrap_or_else(|| {
-                panic!("command should include a value after `{flag}`: {args:?}")
-            })
+            .unwrap_or_else(|| panic!("command should include a value after `{flag}`: {args:?}"))
             .clone(),
     )
 }

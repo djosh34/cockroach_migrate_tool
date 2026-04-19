@@ -17,13 +17,21 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 #[test]
-fn source_bootstrap_quick_start_shows_how_to_run_the_rendered_script() {
+fn source_bootstrap_quick_start_shows_the_sql_only_contract() {
     let readme = RepositoryReadme::load();
     let source_bootstrap_quick_start = readme.source_bootstrap_quick_start();
 
     source_bootstrap_quick_start.assert_contains(
-        "bash cockroach-bootstrap.sh",
-        "README source bootstrap quick start must show the explicit command that runs the rendered bootstrap script"
+        "render-bootstrap-sql",
+        "README source bootstrap quick start must show the SQL-only source setup command",
+    );
+    source_bootstrap_quick_start.assert_contains(
+        "cockroach-bootstrap.sql",
+        "README source bootstrap quick start must render a SQL artifact instead of a shell script",
+    );
+    assert!(
+        !source_bootstrap_quick_start.contains("bash cockroach-bootstrap.sh"),
+        "README source bootstrap quick start must not tell operators to execute a rendered shell script"
     );
 }
 
@@ -78,8 +86,7 @@ fn docker_quick_start_runner_config_is_copyable_and_starts_with_one_mapping() {
         fixture_text.trim_end(),
         "README runner YAML should match its canonical fixture"
     );
-    fs::write(&config_path, fixture_text)
-        .expect("README runner config should be writable");
+    fs::write(&config_path, fixture_text).expect("README runner config should be writable");
 
     let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
 
@@ -103,7 +110,7 @@ fn docker_quick_start_explicitly_creates_tls_material_before_validate_config() {
     );
     docker_quick_start.assert_contains(
         "openssl req",
-        "README Docker quick start must include a copyable TLS-material generation command"
+        "README Docker quick start must include a copyable TLS-material generation command",
     );
     docker_quick_start.assert_in_order(
         &[

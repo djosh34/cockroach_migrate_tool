@@ -13,8 +13,8 @@ use tempfile::TempDir;
 
 use crate::e2e_harness::{
     DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
-    investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, prepend_path,
-    read_file, run_audited_cockroach_sql, run_command_capture, wait_for_runner_health,
+    investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, read_file,
+    run_audited_cockroach_sql, source_bootstrap_sql_statements, wait_for_runner_health,
     write_cockroach_wrapper_script,
 };
 use crate::e2e_integrity::SourceCommandAudit;
@@ -214,7 +214,6 @@ pub struct MultiMappingHarness {
     runner_port: u16,
     runner_config_path: PathBuf,
     source_bootstrap_config_path: PathBuf,
-    source_bootstrap_script_path: PathBuf,
     wrapper_bin_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
@@ -253,7 +252,6 @@ impl MultiMappingHarness {
             runner_port,
             runner_config_path: PathBuf::new(),
             source_bootstrap_config_path: PathBuf::new(),
-            source_bootstrap_script_path: PathBuf::new(),
             wrapper_bin_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
@@ -271,8 +269,8 @@ impl MultiMappingHarness {
             self.runner_port,
             || self.runner_logs(),
         );
-        self.render_source_bootstrap_script();
-        self.execute_bootstrap_script();
+        let source_bootstrap_sql = self.render_source_bootstrap_sql();
+        self.apply_source_bootstrap_sql(&source_bootstrap_sql);
     }
 
     pub fn wait_for_initial_scan(&self) {
@@ -314,11 +312,11 @@ impl MultiMappingHarness {
             "bootstrap should capture the start cursor explicitly",
         );
         audit.assert_bootstrap_contains(
-            "CREATE CHANGEFEED FOR TABLE public.customers, public.order_items",
+            "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.order_items",
             "bootstrap should create the app-a changefeed explicitly",
         );
         audit.assert_bootstrap_contains(
-            "CREATE CHANGEFEED FOR TABLE public.invoices, public.invoice_lines",
+            "CREATE CHANGEFEED FOR TABLE demo_b.public.invoices, demo_b.public.invoice_lines",
             "bootstrap should create the app-b changefeed explicitly",
         );
     }
@@ -493,7 +491,6 @@ VALUES (5003, 1, 'expansion-pack', 2);
     fn materialize(&mut self) {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
-        self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
@@ -524,38 +521,22 @@ VALUES (5003, 1, 'expansion-pack', 2);
         *self.runner_process.borrow_mut() = Some(child);
     }
 
-    fn render_source_bootstrap_script(&self) {
-        let output = source_bootstrap::execute(source_bootstrap::Cli::parse_from([
+    fn render_source_bootstrap_sql(&self) -> String {
+        source_bootstrap::execute(source_bootstrap::Cli::parse_from([
             "source-bootstrap",
-            "render-bootstrap-script",
+            "render-bootstrap-sql",
             "--config",
             self.source_bootstrap_config_path
                 .to_str()
                 .expect("source-bootstrap config path should be utf-8"),
         ]))
-        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-script failed: {error}"));
-        fs::write(&self.source_bootstrap_script_path, &output)
-            .expect("bootstrap script should be written");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            let mut permissions = fs::metadata(&self.source_bootstrap_script_path)
-                .expect("bootstrap script metadata should exist")
-                .permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&self.source_bootstrap_script_path, permissions)
-                .expect("bootstrap script should be executable");
-        }
+        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-sql failed: {error}"))
     }
 
-    fn execute_bootstrap_script(&self) {
-        run_command_capture(
-            Command::new("bash")
-                .arg(&self.source_bootstrap_script_path)
-                .env("PATH", prepend_path(&self.wrapper_bin_dir)),
-            "bootstrap shell script",
-        );
+    fn apply_source_bootstrap_sql(&self, sql: &str) {
+        for statement in source_bootstrap_sql_statements(sql) {
+            run_audited_cockroach_sql(&self.wrapper_bin_dir, &statement);
+        }
     }
 
     fn write_runner_config(&self) {
@@ -736,7 +717,6 @@ mappings:
             read_file(&self.runner_stderr_path),
         )
     }
-
 }
 
 impl Drop for MultiMappingHarness {

@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 14:49:28 CEST 2026
+Generated: Sun Apr 19 15:17:20 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/02-task-remove-runner-side-verify-capability-and-code-paths.md`
 
 ```
 ## Task: Remove verify behavior from the runner and delete every in-runner verification path <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/03-task-remove-bash-bootstrap-flows-and-script-based-source-setup.md`
-
-```
-## Task: Remove bash-based bootstrap flows and replace the old script contract with generated SQL output only <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -248,6 +237,28 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify a novice user can complete the supported flow from published images alone with zero repo access <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md`
+
+```
+## Task: Expose low-cardinality runner activity, timing, and failure metrics at `/metrics` <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/02-task-add-cached-shadow-vs-real-row-count-and-current-reconcile-state-metrics.md`
+
+```
+## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

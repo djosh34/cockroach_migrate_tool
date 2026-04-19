@@ -5,12 +5,12 @@ This repository contains the first Rust workspace for the CockroachDB-to-Postgre
 ## Workspace Layout
 
 - `crates/runner`: destination-side runtime for validated config loading, PostgreSQL access wiring, webhook runtime wiring, and reconcile runtime wiring.
-- `crates/source-bootstrap`: source-side CLI for rendering the CockroachDB bootstrap script from typed YAML config.
+- `crates/source-bootstrap`: source-side CLI for rendering CockroachDB bootstrap SQL from typed YAML config.
 - `Dockerfile`: single-binary destination image for the `runner` runtime.
 
 ## Source Bootstrap Quick Start
 
-The source-side bootstrap stays explicit. Render the CockroachDB setup script, review it, then execute it yourself; the tool does not hide source-side commands behind the CLI.
+The source-side bootstrap stays explicit. Render the CockroachDB setup SQL, review it, then apply it yourself with a Cockroach SQL client; the tool does not hide source-side commands behind the CLI.
 
 Example source bootstrap config:
 
@@ -36,27 +36,29 @@ mappings:
         - public.invoices
 ```
 
-Render the runnable bootstrap script:
+Render the bootstrap SQL:
 
 ```bash
 cargo run -p source-bootstrap -- \
-  render-bootstrap-script \
-  --config config/source-bootstrap.yml > cockroach-bootstrap.sh
+  render-bootstrap-sql \
+  --config config/source-bootstrap.yml > cockroach-bootstrap.sql
 ```
 
-Run the rendered script yourself after review:
+Apply the rendered SQL yourself after review:
 
 ```bash
-bash cockroach-bootstrap.sh
+cockroach sql \
+  --url 'postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require' \
+  --file cockroach-bootstrap.sql
 ```
 
-The rendered script:
+The rendered SQL:
 
 - enables `kv.rangefeed.enabled`
-- captures `cluster_logical_timestamp()`
+- records `cluster_logical_timestamp()` as an explicit source-side statement
 - creates one webhook changefeed per configured source database
 - renders each mapping to its own HTTPS ingest path at `/ingest/<mapping_id>`
-- prints mapping id, source database, selected tables, starting cursor, and job id after each changefeed is created
+- keeps the operator-facing artifact to SQL statements plus SQL comments only
 
 ## Docker Quick Start
 

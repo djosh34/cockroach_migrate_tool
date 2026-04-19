@@ -1,8 +1,8 @@
 use assert_cmd::Command;
-use predicates::prelude::predicate;
+use predicates::prelude::{PredicateBooleanExt, predicate};
 
 #[test]
-fn source_bootstrap_help_lists_render_bootstrap_script() {
+fn source_bootstrap_help_lists_render_bootstrap_sql_only() {
     let mut command =
         Command::cargo_bin("source-bootstrap").expect("source-bootstrap binary should exist");
 
@@ -10,5 +10,6 @@ fn source_bootstrap_help_lists_render_bootstrap_script() {
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("render-bootstrap-script"));
+        .stdout(predicate::str::contains("render-bootstrap-sql"))
+        .stdout(predicate::str::contains("render-bootstrap-script").not());
 }

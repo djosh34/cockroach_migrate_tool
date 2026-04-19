@@ -168,6 +168,34 @@ fn e2e_suite_routes_post_setup_source_commands_through_a_typed_integrity_boundar
 }
 
 #[test]
+fn e2e_support_applies_source_bootstrap_through_sql_not_shell_scripts() {
+    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
+    let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
+
+    for (path, contents) in [
+        ("tests/support/e2e_harness.rs", e2e_harness),
+        (
+            "tests/support/multi_mapping_harness.rs",
+            multi_mapping_harness,
+        ),
+    ] {
+        for forbidden_marker in [
+            "source_bootstrap_script_path",
+            "render_source_bootstrap_script",
+            "execute_bootstrap_script",
+            "render-bootstrap-script",
+            "bootstrap shell script",
+            "Command::new(\"bash\")",
+        ] {
+            assert!(
+                !contents.contains(forbidden_marker),
+                "{path} should not retain source bootstrap shell-script surface `{forbidden_marker}`",
+            );
+        }
+    }
+}
+
+#[test]
 fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
     let banned_markers = [
         "--fake",

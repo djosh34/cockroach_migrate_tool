@@ -99,7 +99,7 @@ impl TableName {
         format!("{}.{}", self.schema, self.name)
     }
 
-    pub(crate) fn sql_reference(&self) -> String {
-        self.display_name()
+    pub(crate) fn sql_reference_in_database(&self, database: &str) -> String {
+        format!("{database}.{}", self.display_name())
     }
 }

@@ -1,7 +1,5 @@
 use std::{
     cell::RefCell,
-    env,
-    ffi::OsString,
     fs::{self},
     io,
     path::{Path, PathBuf},
@@ -21,8 +19,8 @@ use tempfile::TempDir;
 
 mod destination_lock;
 mod destination_write_failure;
-mod runner_docker_contract;
 mod runner_container_process;
+mod runner_docker_contract;
 mod runner_process;
 
 pub(crate) use destination_lock::DestinationTableLock;
@@ -162,7 +160,6 @@ pub struct CdcE2eHarness {
     webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
     source_bootstrap_config_path: PathBuf,
-    source_bootstrap_script_path: PathBuf,
     wrapper_bin_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
@@ -224,7 +221,6 @@ impl CdcE2eHarness {
             webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
             source_bootstrap_config_path: PathBuf::new(),
-            source_bootstrap_script_path: PathBuf::new(),
             wrapper_bin_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
@@ -242,8 +238,8 @@ impl CdcE2eHarness {
             self.runner_port,
             || self.runner_logs(),
         );
-        self.render_source_bootstrap_script();
-        self.execute_bootstrap_script();
+        let source_bootstrap_sql = self.render_source_bootstrap_sql();
+        self.apply_source_bootstrap_sql(&source_bootstrap_sql);
         let bootstrap_command_count = self.read_source_command_count();
         *self.bootstrap_source_command_count.borrow_mut() = Some(bootstrap_command_count);
     }
@@ -366,7 +362,7 @@ impl CdcE2eHarness {
             .map(String::as_str)
             .collect::<Vec<_>>();
         self.source_command_audit()
-            .assert_explicit_bootstrap_commands(&expected_tables);
+            .assert_explicit_bootstrap_commands(&self.config.source_database, &expected_tables);
     }
 
     pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
@@ -767,7 +763,6 @@ impl CdcE2eHarness {
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
-        self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
@@ -815,29 +810,22 @@ impl CdcE2eHarness {
         *self.runner_process.borrow_mut() = Some(child);
     }
 
-    fn render_source_bootstrap_script(&self) {
-        let output = source_bootstrap::execute(source_bootstrap::Cli::parse_from([
+    fn render_source_bootstrap_sql(&self) -> String {
+        source_bootstrap::execute(source_bootstrap::Cli::parse_from([
             "source-bootstrap",
-            "render-bootstrap-script",
+            "render-bootstrap-sql",
             "--config",
             self.source_bootstrap_config_path
                 .to_str()
                 .expect("source-bootstrap config path should be utf-8"),
         ]))
-        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-script failed: {error}"));
-        fs::write(&self.source_bootstrap_script_path, output)
-            .expect("bootstrap script should be written");
-        make_executable(&self.source_bootstrap_script_path);
+        .unwrap_or_else(|error| panic!("source-bootstrap render-bootstrap-sql failed: {error}"))
     }
 
-    fn execute_bootstrap_script(&self) {
-        let path = prepend_path(&self.wrapper_bin_dir);
-        run_command_capture(
-            Command::new("bash")
-                .arg(&self.source_bootstrap_script_path)
-                .env("PATH", path),
-            "bootstrap shell script",
-        );
+    fn apply_source_bootstrap_sql(&self, sql: &str) {
+        for statement in source_bootstrap_sql_statements(sql) {
+            run_audited_cockroach_sql(&self.wrapper_bin_dir, &statement);
+        }
     }
 
     fn write_runner_config(&self) {
@@ -1348,14 +1336,6 @@ where
     );
 }
 
-pub(crate) fn prepend_path(bin_dir: &Path) -> OsString {
-    let mut path = OsString::new();
-    path.push(bin_dir.as_os_str());
-    path.push(":");
-    path.push(env::var_os("PATH").unwrap_or_default());
-    path
-}
-
 pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> String {
     run_command_capture(
         Command::new(wrapper_bin_dir.join("cockroach")).args([
@@ -1368,6 +1348,14 @@ pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> St
         ]),
         "audited cockroach sql",
     )
+}
+
+pub(crate) fn source_bootstrap_sql_statements(sql: &str) -> Vec<String> {
+    sql.split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .map(|statement| format!("{statement};"))
+        .collect()
 }
 
 pub(crate) fn run_command_capture(command: &mut Command, context: &str) -> String {

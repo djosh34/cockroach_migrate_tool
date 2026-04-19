@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 use config::BootstrapConfig;
 pub use error::BootstrapError;
-use render::RenderedScript;
+use render::RenderedBootstrap;
 
 #[derive(Debug, Parser)]
 #[command(name = "source-bootstrap", about = "CockroachDB source bootstrap CLI")]
@@ -19,7 +19,7 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    RenderBootstrapScript {
+    RenderBootstrapSql {
         #[arg(long)]
         config: PathBuf,
     },
@@ -27,9 +27,9 @@ enum Command {
 
 pub fn execute(cli: Cli) -> Result<CommandOutput, BootstrapError> {
     match cli.command {
-        Command::RenderBootstrapScript { config } => {
+        Command::RenderBootstrapSql { config } => {
             let config = BootstrapConfig::load(&config)?;
-            Ok(RenderedScript::from_config(&config).to_string())
+            Ok(RenderedBootstrap::from_config(&config).to_string())
         }
     }
 }
