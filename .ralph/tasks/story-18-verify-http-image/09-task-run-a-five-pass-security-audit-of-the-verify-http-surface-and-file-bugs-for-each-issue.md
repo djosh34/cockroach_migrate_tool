@@ -1,4 +1,4 @@
-## Task: Run a five-pass security audit of the verify HTTP surface and file bugs for every issue found <status>not_started</status> <passes>false</passes>
+## Task: Run a five-pass security audit of the verify HTTP surface and file bugs for every issue found <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -24,11 +24,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers security-sensitive input handling and explicit non-shell invocation guarantees where practical
-- [ ] Five distinct audit passes are recorded with concrete findings or explicit no-finding conclusions
-- [ ] Every discovered security issue results in a separate bug task created via `add-bug`
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers security-sensitive input handling and explicit non-shell invocation guarantees where practical
+- [x] Five distinct audit passes are recorded with concrete findings or explicit no-finding conclusions
+- [x] Every discovered security issue results in a separate bug task created via `add-bug`
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/09-task-run-a-five-pass-security-audit-of-the-verify-http-surface-and-file-bugs-for-each-issue_plans/2026-04-19-verify-http-five-pass-security-audit-plan.md</plan>

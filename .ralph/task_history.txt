@@ -96,3 +96,4 @@
 .ralph/tasks/story-18-verify-http-image/07-task-route-all-correctness-tests-through-the-verify-http-image-only.md
 .ralph/tasks/story-16-runtime-split-removals/05-task-remove-contributor-rules-from-readme-and-keep-them-in-contributors-docs.md
 .ralph/tasks/story-18-verify-http-image/08-task-expose-verify-job-progress-and-result-metrics.md
+.ralph/tasks/story-18-verify-http-image/09-task-run-a-five-pass-security-audit-of-the-verify-http-surface-and-file-bugs-for-each-issue.md

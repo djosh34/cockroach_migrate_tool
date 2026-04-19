@@ -1,14 +1,58 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 07:57:34 PM CEST 2026
+Generated: Sun Apr 19 08:13:09 PM CEST 2026
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/09-task-run-a-five-pass-security-audit-of-the-verify-http-surface-and-file-bugs-for-each-issue.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
 ```
-## Task: Run a five-pass security audit of the verify HTTP surface and file bugs for every issue found <status>not_started</status> <passes>false</passes>
+## Bug: Verify HTTP allows warning-only insecure listener modes <status>not_started</status> <passes>false</passes> <priority>ultra high</priority>
 
 <description>
-Must use tdd skill to complete
+The verify HTTP audit found that the listener accepts insecure remote-service modes such as plain HTTP and no client authentication. The CLI only prints `warning: no extra built-in protection is being provided by the verify service` and still treats those configurations as valid.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-exposes-job-results-and-metrics-without-auth.md`
+
+```
+## Bug: Verify HTTP exposes job results and metrics without auth <status>not_started</status> <passes>false</passes> <priority>ultra high</priority>
+
+<description>
+The verify HTTP audit found that `GET /jobs/{job_id}` and `GET /metrics` expose operational details to any caller on the listener. The current behavior includes job IDs, timestamps, failure reasons, mismatch details, source and destination database names, schema names, table names, and mismatch counts, with no authentication or authorization layer in the service itself.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-https-runtime-does-not-load-server-certificate.md`
+
+```
+## Bug: Verify HTTP HTTPS runtime does not load the configured server certificate <status>not_started</status> <passes>false</passes> <priority>high</priority>
+
+<description>
+The verify HTTP audit found that the HTTPS runtime path builds `server.TLSConfig` without loading `listener.tls.cert_path` and `listener.tls.key_path` into `TLSConfig.Certificates`. `Run(...)` then calls `ListenAndServeTLS("", "")`, which per the standard-library contract requires the certificate to already be present in `TLSConfig` when empty filenames are used.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-request-body-size-is-unbounded.md`
+
+```
+## Bug: Verify HTTP request body size is unbounded <status>not_started</status> <passes>false</passes> <priority>high</priority>
+
+<description>
+The verify HTTP audit found that `POST /jobs` and `POST /stop` decode directly from the full request body without a size cap. The new strict decoder rejects unknown fields and trailing documents, but it still allows arbitrarily large request bodies to be read into memory before validation completes.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-retains-completed-jobs-and-metrics-forever.md`
+
+```
+## Bug: Verify HTTP retains completed jobs and metrics forever <status>not_started</status> <passes>false</passes> <priority>high</priority>
+
+<description>
+The verify HTTP audit found that completed jobs are never pruned from `Service.jobs`. Each finished job keeps its full in-memory progress snapshot, including status messages, summary events, mismatch records, and error strings. `/metrics` then iterates every remembered job on every scrape.
 ```
 
 ==============

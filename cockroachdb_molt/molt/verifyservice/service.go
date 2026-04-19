@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -138,7 +139,7 @@ func (s *Service) Close() {
 
 func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 	var jobRequest JobRequest
-	if err := json.NewDecoder(r.Body).Decode(&jobRequest); err != nil {
+	if err := decodeJSONBody(r, &jobRequest); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -241,7 +242,7 @@ func (s *Service) handlePostStop(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		JobID string `json:"job_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := decodeJSONBody(r, &request); err != nil {
 		writeJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -358,6 +359,18 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	}{
 		Error: message,
 	})
+}
+
+func decodeJSONBody(r *http.Request, destination any) error {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return errors.New("request body must contain exactly one JSON object")
+	}
+	return nil
 }
 
 type jobReporter struct {
