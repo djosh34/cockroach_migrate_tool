@@ -1,4 +1,4 @@
-## Task: Assert there are no post-setup source commands in end-to-end tests <status>not_started</status> <passes>false</passes>
+## Task: Assert there are no post-setup source commands in end-to-end tests <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -18,11 +18,12 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers detection of forbidden post-setup source-side commands in E2E tests
-- [ ] The E2E suite fails if it relies on extra source-side intervention after CDC setup
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers detection of forbidden post-setup source-side commands in E2E tests
+- [x] The E2E suite fails if it relies on extra source-side intervention after CDC setup
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-12-verify-e2e-integrity/03-task-assert-no-post-setup-source-commands-in-e2e_plans/2026-04-19-no-post-setup-source-commands-plan.md</plan>

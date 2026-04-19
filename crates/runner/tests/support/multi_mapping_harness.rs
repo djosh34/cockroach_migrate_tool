@@ -3,6 +3,7 @@ use std::{
     fs::{self, File},
     path::PathBuf,
     process::{Child, Command, Stdio},
+    sync::MutexGuard,
     thread,
     time::{Duration, Instant},
 };
@@ -10,13 +11,13 @@ use std::{
 use clap::Parser as _;
 use tempfile::TempDir;
 
-use crate::e2e_integrity::VerifyAudit;
 use crate::e2e_harness::{
     DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
-    investigation_server_key_path, pick_unused_port, prepend_path, read_file,
-    run_command_capture, wait_for_runner_health, write_cockroach_wrapper_script,
-    write_molt_wrapper_script,
+    investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, prepend_path,
+    read_file, run_audited_cockroach_sql, run_command_capture, wait_for_runner_health,
+    write_cockroach_wrapper_script, write_molt_wrapper_script,
 };
+use crate::e2e_integrity::{SourceCommandAudit, VerifyAudit};
 
 const APP_A_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -207,6 +208,7 @@ const APP_B: MappingSpec = MappingSpec {
 const MAPPINGS: [MappingSpec; 2] = [APP_A, APP_B];
 
 pub struct MultiMappingHarness {
+    _docker_test_guard: MutexGuard<'static, ()>,
     docker: DockerEnvironment,
     temp_dir: TempDir,
     runner_port: u16,
@@ -224,6 +226,7 @@ pub struct MultiMappingHarness {
 
 impl MultiMappingHarness {
     pub fn start() -> Self {
+        let docker_test_guard = lock_e2e_docker_resources();
         let docker = DockerEnvironment::new();
         docker.create_network();
         docker.start_cockroach();
@@ -248,6 +251,7 @@ impl MultiMappingHarness {
         fs::create_dir_all(&report_dir).expect("report dir should be created");
 
         let mut harness = Self {
+            _docker_test_guard: docker_test_guard,
             docker,
             temp_dir,
             runner_port,
@@ -305,38 +309,28 @@ impl MultiMappingHarness {
     }
 
     pub fn assert_explicit_source_bootstrap_commands(&self) {
-        let log = read_file(&self.cockroach_wrapper_log_path);
-        let commands: Vec<_> = log.lines().collect();
-        assert_eq!(
-            commands.len(),
-            4,
-            "bootstrap should issue one rangefeed enable, one start cursor, and one changefeed per mapping: {log}"
+        let audit = self.source_command_audit();
+        audit.assert_bootstrap_command_count(4);
+        audit.assert_bootstrap_contains(
+            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
+            "bootstrap should issue one rangefeed enable, one start cursor, and one changefeed per mapping",
         );
-        assert!(
-            commands
-                .iter()
-                .any(|command| command.contains("SET CLUSTER SETTING kv.rangefeed.enabled = true;")),
-            "bootstrap should enable rangefeeds explicitly: {log}"
+        audit.assert_bootstrap_contains(
+            "SELECT cluster_logical_timestamp();",
+            "bootstrap should capture the start cursor explicitly",
         );
-        assert!(
-            commands
-                .iter()
-                .any(|command| command.contains("SELECT cluster_logical_timestamp();")),
-            "bootstrap should capture the start cursor explicitly: {log}"
+        audit.assert_bootstrap_contains(
+            "CREATE CHANGEFEED FOR TABLE public.customers, public.order_items",
+            "bootstrap should create the app-a changefeed explicitly",
         );
-        assert!(
-            commands.iter().any(|command| {
-                command.contains("CREATE CHANGEFEED FOR TABLE public.customers, public.order_items")
-            }),
-            "bootstrap should create the app-a changefeed explicitly: {log}"
+        audit.assert_bootstrap_contains(
+            "CREATE CHANGEFEED FOR TABLE public.invoices, public.invoice_lines",
+            "bootstrap should create the app-b changefeed explicitly",
         );
-        assert!(
-            commands.iter().any(|command| {
-                command
-                    .contains("CREATE CHANGEFEED FOR TABLE public.invoices, public.invoice_lines")
-            }),
-            "bootstrap should create the app-b changefeed explicitly: {log}"
-        );
+    }
+
+    fn source_command_audit(&self) -> SourceCommandAudit {
+        SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 4)
     }
 
     pub fn assert_helper_state_is_mapping_scoped(&self) {
@@ -379,9 +373,12 @@ impl MultiMappingHarness {
     }
 
     pub fn apply_live_source_changes(&self) {
-        self.execute_source_sql(
-            APP_A.source_database,
-            r#"
+        run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            &format!(
+                "USE {};\n{}",
+                APP_A.source_database,
+                r#"
 UPDATE public.customers
 SET email = 'alice+vip@example.com'
 WHERE id = 1;
@@ -398,10 +395,14 @@ WHERE order_id = 100 AND line_id = 2;
 INSERT INTO public.order_items (order_id, line_id, sku, quantity)
 VALUES (101, 1, 'replacement-kit', 3);
 "#,
+            ),
         );
-        self.execute_source_sql(
-            APP_B.source_database,
-            r#"
+        run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            &format!(
+                "USE {};\n{}",
+                APP_B.source_database,
+                r#"
 UPDATE public.invoices
 SET status = 'sent', amount_cents = 12500
 WHERE id = 5001;
@@ -419,6 +420,7 @@ WHERE invoice_id = 5001 AND line_id = 1;
 INSERT INTO public.invoice_lines (invoice_id, line_id, sku, quantity)
 VALUES (5003, 1, 'expansion-pack', 2);
 "#,
+            ),
         );
     }
 
@@ -748,11 +750,6 @@ mappings:
             }
             thread::sleep(Duration::from_secs(1));
         }
-    }
-
-    fn execute_source_sql(&self, database: &str, sql: &str) {
-        self.docker
-            .exec_cockroach_sql(&format!("USE {database};\n{sql}"));
     }
 
     fn query_destination(&self, database: &str, sql: &str) -> String {

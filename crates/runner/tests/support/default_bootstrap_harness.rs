@@ -1,11 +1,12 @@
 use std::time::Duration;
 
-use crate::e2e_integrity::{
-    CustomerLiveUpdateAudit, DestinationRuntimeMode, RuntimeShapeAudit, VerifyAudit,
-};
 use crate::e2e_harness::{
     CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, DestinationWriteFailure,
     MappingTrackingProgress, WebhookSinkMode,
+};
+use crate::e2e_integrity::{
+    CustomerLiveUpdateAudit, DestinationRuntimeMode, PostSetupSourceAudit, RuntimeShapeAudit,
+    VerifyAudit,
 };
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
@@ -164,7 +165,7 @@ impl DefaultBootstrapHarness {
 
     pub fn run_high_source_customer_write_churn_workload(&self) -> CustomerWriteChurnExpectation {
         self.inner
-            .execute_source_sql(HIGH_SOURCE_CUSTOMER_WRITE_CHURN_SQL);
+            .apply_source_workload_batch(HIGH_SOURCE_CUSTOMER_WRITE_CHURN_SQL);
         CustomerWriteChurnExpectation {
             final_customers_snapshot:
                 "1:alice+final@example.com,2:bob+final@example.com,3:carol+reborn@example.com,4:dora+steady@example.com,5:erin+restored@example.com"
@@ -219,7 +220,7 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn delete_source_customer(&self, customer_id: i64) {
-        self.inner.execute_source_sql(&format!(
+        self.inner.apply_source_workload_batch(&format!(
             "DELETE FROM public.customers WHERE id = {customer_id};"
         ));
     }
@@ -241,7 +242,7 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn update_source_customer_email(&self, customer_id: i64, email: &str) {
-        self.inner.execute_source_sql(&format!(
+        self.inner.apply_source_workload_batch(&format!(
             "UPDATE public.customers
              SET email = '{email}'
              WHERE id = {customer_id};",
@@ -274,7 +275,9 @@ impl DefaultBootstrapHarness {
         let progress = self.wait_for_customer_tracking_progress(
             "customer update should be durably received before reconcile catches up",
             |progress| {
-                progress.stream.received_has_advanced_since(&baseline.stream)
+                progress
+                    .stream
+                    .received_has_advanced_since(&baseline.stream)
                     && progress.stream.latest_reconciled_resolved_watermark
                         == baseline.stream.latest_reconciled_resolved_watermark
                     && progress.table.last_successful_sync_watermark
@@ -333,6 +336,10 @@ impl DefaultBootstrapHarness {
 
     pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
         self.inner.runtime_shape_audit()
+    }
+
+    pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
+        self.inner.post_setup_source_audit()
     }
 
     pub fn kill_runner(&self) {

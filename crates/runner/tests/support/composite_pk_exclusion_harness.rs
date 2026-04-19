@@ -150,7 +150,7 @@ impl CompositePkExclusionHarness {
     }
 
     pub fn apply_live_source_changes(&self) {
-        self.inner.execute_source_sql(
+        self.inner.apply_source_workload_batch(
             r#"
 UPDATE public.customers
 SET email = 'alice+vip@example.com'

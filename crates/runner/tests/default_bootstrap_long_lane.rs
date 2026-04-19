@@ -2,10 +2,10 @@
 mod composite_pk_exclusion_harness;
 #[path = "support/default_bootstrap_harness.rs"]
 mod default_bootstrap_harness;
-#[path = "support/e2e_integrity.rs"]
-mod e2e_integrity;
 #[path = "support/e2e_harness.rs"]
 mod e2e_harness;
+#[path = "support/e2e_integrity.rs"]
+mod e2e_integrity;
 #[path = "support/multi_mapping_harness.rs"]
 mod multi_mapping_harness;
 #[path = "support/webhook_chaos_gateway.rs"]
@@ -76,6 +76,20 @@ FROM (
 
 const FK_HEAVY_CONSTRAINTS: &str = "children:children_parent_id_fkey:FOREIGN KEY,children:children_pkey:PRIMARY KEY,grandchildren:grandchildren_child_id_fkey:FOREIGN KEY,grandchildren:grandchildren_pkey:PRIMARY KEY,parents:parents_pkey:PRIMARY KEY";
 
+fn apply_fk_heavy_live_source_changes(harness: &CdcE2eHarness) {
+    harness.apply_source_workload_batch(
+        r#"
+INSERT INTO public.parents (id, name) VALUES (3, 'gamma parent');
+INSERT INTO public.children (id, parent_id, name) VALUES (30, 3, 'gamma child');
+INSERT INTO public.grandchildren (id, child_id, name) VALUES (300, 30, 'gamma grandchild');
+UPDATE public.parents SET name = 'alpha parent updated' WHERE id = 1;
+DELETE FROM public.grandchildren WHERE id = 200;
+DELETE FROM public.children WHERE id = 20;
+DELETE FROM public.parents WHERE id = 2;
+"#,
+    );
+}
+
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_tables() {
@@ -112,6 +126,9 @@ fn ignored_long_lane_proves_customer_live_update_flows_through_webhook_then_help
         &live_update,
         "1:alice+live-path@example.com,2:bob@example.com",
     );
+    harness
+        .post_setup_source_audit()
+        .assert_honest_workload_only(1);
     harness.verify_default_migration_audit();
 }
 
@@ -424,17 +441,7 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         "destination real tables should retain PK/FK constraints during initial scan",
     );
     harness.assert_explicit_source_bootstrap_commands();
-    harness.execute_source_sql(
-        r#"
-INSERT INTO public.parents (id, name) VALUES (3, 'gamma parent');
-INSERT INTO public.children (id, parent_id, name) VALUES (30, 3, 'gamma child');
-INSERT INTO public.grandchildren (id, child_id, name) VALUES (300, 30, 'gamma grandchild');
-UPDATE public.parents SET name = 'alpha parent updated' WHERE id = 1;
-DELETE FROM public.grandchildren WHERE id = 200;
-DELETE FROM public.children WHERE id = 20;
-DELETE FROM public.parents WHERE id = 2;
-"#,
-    );
+    apply_fk_heavy_live_source_changes(&harness);
     harness.wait_for_destination_query(
         FK_HEAVY_SNAPSHOT_SQL,
         "c:10:1:alpha child,c:30:3:gamma child,g:100:10:alpha grandchild,g:300:30:gamma grandchild,p:1:alpha parent updated,p:3:gamma parent",
@@ -488,7 +495,11 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
     harness.wait_for_destination_customers(expectation.final_customers_snapshot());
     let received = harness.wait_for_customer_tracking_progress(
         "customer tracking should record source churn beyond the bootstrap watermark",
-        |progress| progress.stream.received_has_advanced_since(&baseline.stream),
+        |progress| {
+            progress
+                .stream
+                .received_has_advanced_since(&baseline.stream)
+        },
     );
     let received_watermark = received
         .stream

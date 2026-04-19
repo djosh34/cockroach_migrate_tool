@@ -6,7 +6,10 @@ use std::{
     io,
     path::{Path, PathBuf},
     process::Command,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Mutex, MutexGuard, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -29,7 +32,7 @@ use runner_process::RunnerProcess;
 
 use crate::e2e_integrity::{
     CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
-    RuntimeShapeAudit, SourceBootstrapAudit, VerifyAudit,
+    PostSetupSourceAudit, RuntimeShapeAudit, SourceBootstrapAudit, SourceCommandAudit, VerifyAudit,
 };
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
@@ -151,6 +154,7 @@ enum RunnerRuntime {
 }
 
 pub struct CdcE2eHarness {
+    _docker_test_guard: MutexGuard<'static, ()>,
     docker: DockerEnvironment,
     config: OwnedHarnessConfig,
     temp_dir: TempDir,
@@ -167,6 +171,7 @@ pub struct CdcE2eHarness {
     molt_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
+    bootstrap_source_command_count: RefCell<Option<usize>>,
     runner_process: RefCell<Option<RunnerRuntime>>,
 }
 
@@ -192,6 +197,7 @@ impl CdcE2eHarness {
         destination_runtime_mode: DestinationRuntimeMode,
     ) -> Self {
         let config = OwnedHarnessConfig::from(config);
+        let docker_test_guard = lock_e2e_docker_resources();
         let docker = DockerEnvironment::new();
         docker.create_network();
         docker.start_cockroach();
@@ -214,6 +220,7 @@ impl CdcE2eHarness {
         fs::create_dir_all(&report_dir).expect("report dir should be created");
 
         let harness = Self {
+            _docker_test_guard: docker_test_guard,
             docker,
             config,
             temp_dir,
@@ -230,6 +237,7 @@ impl CdcE2eHarness {
             molt_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
+            bootstrap_source_command_count: RefCell::new(None),
             runner_process: RefCell::new(None),
         };
         harness.materialize(webhook_sink_mode)
@@ -244,6 +252,8 @@ impl CdcE2eHarness {
         );
         self.render_source_bootstrap_script();
         self.execute_bootstrap_script();
+        let bootstrap_command_count = self.read_source_command_count();
+        *self.bootstrap_source_command_count.borrow_mut() = Some(bootstrap_command_count);
     }
 
     pub fn kill_runner(&self) {
@@ -357,35 +367,14 @@ impl CdcE2eHarness {
     }
 
     pub fn assert_explicit_source_bootstrap_commands(&self) {
-        let log = read_file(&self.cockroach_wrapper_log_path);
-        let commands: Vec<_> = log.lines().collect();
-        assert_eq!(
-            commands.len(),
-            3,
-            "bootstrap should issue exactly three raw source commands: {log}"
-        );
-        assert!(
-            commands
-                .iter()
-                .any(|command| command.contains("SET CLUSTER SETTING kv.rangefeed.enabled = true;")),
-            "bootstrap should enable rangefeeds explicitly: {log}"
-        );
-        assert!(
-            commands
-                .iter()
-                .any(|command| command.contains("SELECT cluster_logical_timestamp();")),
-            "bootstrap should capture the start cursor explicitly: {log}"
-        );
-        let expected_changefeed_fragment = format!(
-            "CREATE CHANGEFEED FOR TABLE {}",
-            self.config.selected_tables.join(", ")
-        );
-        assert!(
-            commands
-                .iter()
-                .any(|command| command.contains(&expected_changefeed_fragment)),
-            "bootstrap should create the expected changefeed explicitly: {log}"
-        );
+        let expected_tables = self
+            .config
+            .selected_tables
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        self.source_command_audit()
+            .assert_explicit_bootstrap_commands(&expected_tables);
     }
 
     pub fn verify_migration(&self) -> VerifyAudit {
@@ -423,7 +412,9 @@ impl CdcE2eHarness {
                     container_count: 0,
                     runner_entrypoint_json: None,
                     healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
-                    destination_connection_host: self.destination_runtime_postgres_host().to_owned(),
+                    destination_connection_host: self
+                        .destination_runtime_postgres_host()
+                        .to_owned(),
                     destination_connection_port: self.destination_runtime_postgres_port(),
                     runner_container_ip: None,
                     postgres_apply_client_addr: apply_client_addr.clone(),
@@ -433,7 +424,9 @@ impl CdcE2eHarness {
                     container_count: 1,
                     runner_entrypoint_json: Some(process.image_entrypoint_json()),
                     healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
-                    destination_connection_host: self.destination_runtime_postgres_host().to_owned(),
+                    destination_connection_host: self
+                        .destination_runtime_postgres_host()
+                        .to_owned(),
                     destination_connection_port: self.destination_runtime_postgres_port(),
                     runner_container_ip: Some(process.container_ip()),
                     postgres_apply_client_addr: apply_client_addr.clone(),
@@ -450,6 +443,10 @@ impl CdcE2eHarness {
                 self.destination_role_is_superuser(),
             ),
         )
+    }
+
+    pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
+        self.source_command_audit().post_setup()
     }
 
     pub fn assert_runner_alive(&self) {
@@ -555,9 +552,11 @@ impl CdcE2eHarness {
         );
     }
 
-    pub fn execute_source_sql(&self, sql: &str) {
-        self.docker
-            .exec_cockroach_sql(&format!("USE {};\n{sql}", self.config.source_database));
+    pub(crate) fn apply_source_workload_batch(&self, sql: &str) {
+        run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            &format!("USE {};\n{sql}", self.config.source_database),
+        );
     }
 
     pub fn query_destination(&self, sql: &str) -> String {
@@ -1029,6 +1028,23 @@ mappings:
         let (schema, table) = split_table_reference(mapped_table);
         format!("{}__{}__{}", self.config.mapping_id, schema, table)
     }
+
+    fn source_command_audit(&self) -> SourceCommandAudit {
+        let bootstrap_command_count = self
+            .bootstrap_source_command_count
+            .borrow()
+            .as_ref()
+            .copied()
+            .expect("bootstrap migration must finish before collecting source-command audit");
+        SourceCommandAudit::from_cockroach_log(
+            &self.cockroach_wrapper_log_path,
+            bootstrap_command_count,
+        )
+    }
+
+    fn read_source_command_count(&self) -> usize {
+        SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 0).command_count()
+    }
 }
 
 pub(crate) struct DockerEnvironment {
@@ -1042,7 +1058,7 @@ impl DockerEnvironment {
     pub(crate) fn new() -> Self {
         let suffix = unique_suffix();
         Self {
-            network_name: format!("cockroach-migrate-runner-net-{suffix}"),
+            network_name: "cockroach-migrate-runner-e2e-shared".to_owned(),
             cockroach_container: format!("cockroach-migrate-cockroach-{suffix}"),
             postgres_container: format!("cockroach-migrate-postgres-{suffix}"),
             postgres_host_port: pick_unused_port(),
@@ -1050,6 +1066,15 @@ impl DockerEnvironment {
     }
 
     pub(crate) fn create_network(&self) {
+        if Command::new("docker")
+            .args(["network", "inspect", &self.network_name])
+            .output()
+            .expect("docker network inspect should start")
+            .status
+            .success()
+        {
+            return;
+        }
         run_command_capture(
             Command::new("docker").args(["network", "create", &self.network_name]),
             "docker network create",
@@ -1251,9 +1276,6 @@ impl Drop for DockerEnvironment {
         let _ = Command::new("docker")
             .args(["rm", "-f", &self.cockroach_container])
             .output();
-        let _ = Command::new("docker")
-            .args(["network", "rm", &self.network_name])
-            .output();
     }
 }
 
@@ -1302,6 +1324,17 @@ fn unique_suffix() -> String {
     )
 }
 
+fn e2e_docker_resource_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+pub(crate) fn lock_e2e_docker_resources() -> MutexGuard<'static, ()> {
+    e2e_docker_resource_lock()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
 pub(crate) fn pick_unused_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0")
         .expect("ephemeral port should bind")
@@ -1314,7 +1347,7 @@ pub(crate) fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, conta
     fs::write(
         path,
         format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nprintf '%s\\n' \"$*\" >> {log_path}\nexec docker exec {container_name} cockroach \"$@\"\n",
+            "#!/usr/bin/env bash\nset -euo pipefail\nfor arg in \"$@\"; do\n  escaped_arg=${{arg//\\\\/\\\\\\\\}}\n  escaped_arg=${{escaped_arg//$'\\n'/\\\\n}}\n  escaped_arg=${{escaped_arg//$'\\t'/\\\\t}}\n  printf 'ARG_ESC\\t%s\\n' \"$escaped_arg\" >> {log_path}\ndone\nprintf 'END\\n' >> {log_path}\nexec docker exec {container_name} cockroach \"$@\"\n",
             log_path = shell_quote(log_path),
             container_name = shell_quote_text(container_name),
         ),
@@ -1387,6 +1420,20 @@ pub(crate) fn prepend_path(bin_dir: &Path) -> OsString {
     path.push(":");
     path.push(env::var_os("PATH").unwrap_or_default());
     path
+}
+
+pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> String {
+    run_command_capture(
+        Command::new(wrapper_bin_dir.join("cockroach")).args([
+            "sql",
+            "--insecure",
+            "--host=localhost:26257",
+            "--format=csv",
+            "-e",
+            sql,
+        ]),
+        "audited cockroach sql",
+    )
 }
 
 pub(crate) fn run_command_capture(command: &mut Command, context: &str) -> String {

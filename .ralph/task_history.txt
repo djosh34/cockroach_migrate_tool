@@ -74,3 +74,4 @@
 .ralph/tasks/story-11-e2e-chaos/05-task-e2e-source-high-write-churn-during-transfer.md
 .ralph/tasks/story-12-verify-e2e-integrity/01-task-assert-e2e-suite-has-no-cheating.md
 .ralph/tasks/story-12-verify-e2e-integrity/02-task-assert-single-container-tls-and-scoped-role-integrity.md
+.ralph/tasks/story-12-verify-e2e-integrity/03-task-assert-no-post-setup-source-commands-in-e2e.md

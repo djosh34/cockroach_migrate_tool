@@ -42,12 +42,18 @@ impl VerifyAudit {
             "verify command should filter the real mapped tables only",
         );
         assert!(
-            !self.command.schema_filter.contains("_cockroach_migration_tool"),
+            !self
+                .command
+                .schema_filter
+                .contains("_cockroach_migration_tool"),
             "verify command should never target helper schemas: {:?}",
             self.command,
         );
         assert!(
-            !self.command.table_filter.contains("_cockroach_migration_tool"),
+            !self
+                .command
+                .table_filter
+                .contains("_cockroach_migration_tool"),
             "verify command should never target helper tables: {:?}",
             self.command,
         );
@@ -66,7 +72,11 @@ impl VerifyAudit {
                 self.output,
             );
             assert!(
-                !self.command.table_filter.split('|').any(|entry| entry == table_name),
+                !self
+                    .command
+                    .table_filter
+                    .split('|')
+                    .any(|entry| entry == table_name),
                 "verify command should not target excluded table `{table}`: {:?}",
                 self.command,
             );
@@ -109,6 +119,171 @@ impl CustomerLiveUpdateAudit {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceCommandAudit {
+    commands: Vec<RecordedSourceCommand>,
+    bootstrap_command_count: usize,
+}
+
+impl SourceCommandAudit {
+    pub fn from_cockroach_log(log_path: &Path, bootstrap_command_count: usize) -> Self {
+        let commands = parse_logged_commands(log_path, "cockroach wrapper")
+            .into_iter()
+            .enumerate()
+            .map(|(index, args)| RecordedSourceCommand {
+                phase: if index < bootstrap_command_count {
+                    SourceCommandPhase::Bootstrap
+                } else {
+                    SourceCommandPhase::PostSetup
+                },
+                sql: cockroach_sql_argument(&args),
+            })
+            .collect::<Vec<_>>();
+
+        assert!(
+            commands.len() >= bootstrap_command_count,
+            "cockroach wrapper log should contain at least {bootstrap_command_count} audited source commands: {commands:?}",
+        );
+
+        Self {
+            commands,
+            bootstrap_command_count,
+        }
+    }
+
+    pub fn command_count(&self) -> usize {
+        self.commands.len()
+    }
+
+    pub fn assert_bootstrap_command_count(&self, expected: usize) {
+        assert_eq!(
+            self.bootstrap_commands().len(),
+            expected,
+            "unexpected audited bootstrap source command count: {:?}",
+            self.bootstrap_commands(),
+        );
+    }
+
+    pub fn assert_bootstrap_contains(&self, fragment: &str, description: &str) {
+        assert!(
+            self.bootstrap_commands()
+                .iter()
+                .any(|command| command.sql.contains(fragment)),
+            "{description}: {:?}",
+            self.bootstrap_commands(),
+        );
+    }
+
+    pub fn assert_explicit_bootstrap_commands(&self, expected_tables: &[&str]) {
+        self.assert_bootstrap_command_count(3);
+        self.assert_bootstrap_contains(
+            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
+            "bootstrap should enable rangefeeds explicitly",
+        );
+        self.assert_bootstrap_contains(
+            "SELECT cluster_logical_timestamp();",
+            "bootstrap should capture the start cursor explicitly",
+        );
+        let expected_changefeed_fragment =
+            format!("CREATE CHANGEFEED FOR TABLE {}", expected_tables.join(", "));
+        self.assert_bootstrap_contains(
+            &expected_changefeed_fragment,
+            "bootstrap should create the expected changefeed explicitly",
+        );
+    }
+
+    pub fn post_setup(&self) -> PostSetupSourceAudit {
+        let commands = self.commands[self.bootstrap_command_count..].to_vec();
+        PostSetupSourceAudit { commands }
+    }
+
+    fn bootstrap_commands(&self) -> &[RecordedSourceCommand] {
+        &self.commands[..self.bootstrap_command_count]
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PostSetupSourceAudit {
+    commands: Vec<RecordedSourceCommand>,
+}
+
+impl PostSetupSourceAudit {
+    pub fn assert_honest_workload_only(&self, expected_commands: usize) {
+        self.assert_command_count(expected_commands);
+        self.assert_only_workload_dml();
+    }
+
+    pub fn assert_command_count(&self, expected: usize) {
+        assert_eq!(
+            self.commands.len(),
+            expected,
+            "unexpected post-setup source command count: {:?}",
+            self.commands,
+        );
+    }
+
+    pub fn assert_only_workload_dml(&self) {
+        let forbidden_fragments = [
+            "SET CLUSTER SETTING",
+            "SELECT cluster_logical_timestamp()",
+            "CREATE CHANGEFEED",
+            "_cockroach_migration_tool",
+            "information_schema.",
+            "crdb_internal.",
+            "system.",
+        ];
+        let allowed_prefixes = ["INSERT ", "UPDATE ", "DELETE "];
+
+        for command in &self.commands {
+            assert_eq!(
+                command.phase,
+                SourceCommandPhase::PostSetup,
+                "post-setup audit should only contain post-setup commands: {:?}",
+                self.commands,
+            );
+            let statements = split_sql_statements(&command.sql);
+            assert!(
+                !statements.is_empty(),
+                "post-setup source command should contain at least one SQL statement: {:?}",
+                command,
+            );
+
+            for (index, statement) in statements.iter().enumerate() {
+                let normalized = collapse_sql_whitespace(statement).to_uppercase();
+                if index == 0 && normalized.starts_with("USE ") {
+                    continue;
+                }
+                assert!(
+                    allowed_prefixes
+                        .iter()
+                        .any(|prefix| normalized.starts_with(prefix)),
+                    "post-setup source commands must stay workload DML-only: {:?}",
+                    command,
+                );
+                for fragment in forbidden_fragments {
+                    assert!(
+                        !normalized.contains(fragment),
+                        "post-setup source command must not re-run bootstrap/admin/helper SQL `{fragment}`: {:?}",
+                        command,
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceCommandPhase {
+    Bootstrap,
+    PostSetup,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RecordedSourceCommand {
+    phase: SourceCommandPhase,
+    sql: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeShapeAudit {
     destination_runtime: DestinationRuntimeAudit,
     source_bootstrap: SourceBootstrapAudit,
@@ -138,8 +313,7 @@ impl RuntimeShapeAudit {
             "the honest default E2E path must run the destination runtime in one container",
         );
         assert_eq!(
-            self.destination_runtime.container_count,
-            1,
+            self.destination_runtime.container_count, 1,
             "the honest default E2E path must use exactly one destination runner container",
         );
         assert_eq!(
@@ -148,13 +322,11 @@ impl RuntimeShapeAudit {
             "the honest default E2E path must boot the production runner image entrypoint",
         );
         assert_eq!(
-            self.destination_runtime.destination_connection_host,
-            "postgres",
+            self.destination_runtime.destination_connection_host, "postgres",
             "the honest default E2E path must apply into PostgreSQL from inside the Docker network",
         );
         assert_eq!(
-            self.destination_runtime.destination_connection_port,
-            5432,
+            self.destination_runtime.destination_connection_port, 5432,
             "the honest default E2E path must apply into PostgreSQL on the container-network port",
         );
         assert!(
@@ -172,8 +344,7 @@ impl RuntimeShapeAudit {
             self.source_bootstrap,
         );
         assert_eq!(
-            self.cockroach.image,
-            EXPECTED_COCKROACH_IMAGE,
+            self.cockroach.image, EXPECTED_COCKROACH_IMAGE,
             "the honest default E2E path must use the real CockroachDB container image",
         );
         assert!(
@@ -181,8 +352,10 @@ impl RuntimeShapeAudit {
             "the destination runtime role must not be superuser: {:?}",
             self.destination_role,
         );
-        if let Some(postgres_apply_client_addr) =
-            self.destination_runtime.postgres_apply_client_addr.as_deref()
+        if let Some(postgres_apply_client_addr) = self
+            .destination_runtime
+            .postgres_apply_client_addr
+            .as_deref()
         {
             assert_eq!(
                 Some(postgres_apply_client_addr),
@@ -261,14 +434,9 @@ struct VerifyCommandAudit {
 
 impl VerifyCommandAudit {
     fn from_log(log_path: &Path) -> Self {
-        let log = fs::read_to_string(log_path).unwrap_or_else(|error| {
-            panic!(
-                "verify wrapper log `{}` should be readable: {error}",
-                log_path.display()
-            )
-        });
-        let command =
-            parse_last_logged_command(&log).expect("verify wrapper log should contain one command");
+        let command = parse_logged_commands(log_path, "verify wrapper")
+            .pop()
+            .expect("verify wrapper log should contain one command");
         Self::from_args(&command)
     }
 
@@ -295,7 +463,17 @@ impl VerifyCommandAudit {
     }
 }
 
-fn parse_last_logged_command(log: &str) -> Option<Vec<String>> {
+fn parse_logged_commands(log_path: &Path, description: &str) -> Vec<Vec<String>> {
+    let log = fs::read_to_string(log_path).unwrap_or_else(|error| {
+        panic!(
+            "{description} log `{}` should be readable: {error}",
+            log_path.display()
+        )
+    });
+    parse_logged_commands_from_text(&log, description)
+}
+
+fn parse_logged_commands_from_text(log: &str, description: &str) -> Vec<Vec<String>> {
     let mut commands = Vec::new();
     let mut current = Vec::new();
 
@@ -307,29 +485,82 @@ fn parse_last_logged_command(log: &str) -> Option<Vec<String>> {
             continue;
         }
 
-        let argument = line.strip_prefix("ARG\t").unwrap_or_else(|| {
-            panic!("verify wrapper log line should start with `ARG\\t`: {line}")
-        });
-        current.push(argument.to_owned());
+        if let Some(argument) = line.strip_prefix("ARG\t") {
+            current.push(argument.to_owned());
+            continue;
+        }
+        if let Some(argument) = line.strip_prefix("ARG_ESC\t") {
+            current.push(unescape_logged_argument(argument));
+            continue;
+        }
+        panic!("{description} log line should start with `ARG\\t` or `ARG_ESC\\t`: {line}");
     }
 
     if !current.is_empty() {
         commands.push(current);
     }
 
-    commands.pop()
+    commands
+}
+
+fn cockroach_sql_argument(args: &[String]) -> String {
+    assert!(
+        args.first().map(String::as_str) == Some("sql"),
+        "cockroach wrapper should be invoked with `sql`: {args:?}",
+    );
+    optional_flag_value(args, "-e")
+        .or_else(|| optional_flag_value(args, "--execute"))
+        .unwrap_or_else(|| panic!("cockroach wrapper should include `-e` or `--execute`: {args:?}"))
+}
+
+fn split_sql_statements(sql: &str) -> Vec<&str> {
+    sql.split(';')
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .collect()
+}
+
+fn collapse_sql_whitespace(sql: &str) -> String {
+    sql.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn unescape_logged_argument(argument: &str) -> String {
+    let mut unescaped = String::new();
+    let mut chars = argument.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            unescaped.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => unescaped.push('\n'),
+            Some('t') => unescaped.push('\t'),
+            Some('\\') => unescaped.push('\\'),
+            Some(other) => {
+                unescaped.push('\\');
+                unescaped.push(other);
+            }
+            None => unescaped.push('\\'),
+        }
+    }
+    unescaped
 }
 
 fn required_flag_value(args: &[String], flag: &str) -> String {
-    let position = args
-        .iter()
-        .position(|arg| arg == flag)
-        .unwrap_or_else(|| panic!("verify command should include `{flag}`: {args:?}"));
-    args.get(position + 1)
-        .unwrap_or_else(|| {
-            panic!("verify command should include a value after `{flag}`: {args:?}")
-        })
-        .clone()
+    optional_flag_value(args, flag).unwrap_or_else(|| {
+        panic!("verify command should include `{flag}`: {args:?}");
+    })
+}
+
+fn optional_flag_value(args: &[String], flag: &str) -> Option<String> {
+    let position = args.iter().position(|arg| arg == flag)?;
+    Some(
+        args.get(position + 1)
+            .unwrap_or_else(|| {
+                panic!("verify command should include a value after `{flag}`: {args:?}")
+            })
+            .clone(),
+    )
 }
 
 fn expected_schema_filter(expected_tables: &[&str]) -> String {
@@ -351,7 +582,7 @@ fn expected_table_filter(expected_tables: &[&str]) -> String {
 }
 
 fn split_table_reference(table: &str) -> (&str, &str) {
-    table.split_once('.').unwrap_or_else(|| {
-        panic!("mapped table should include a schema and table name: {table}")
-    })
+    table
+        .split_once('.')
+        .unwrap_or_else(|| panic!("mapped table should include a schema and table name: {table}"))
 }

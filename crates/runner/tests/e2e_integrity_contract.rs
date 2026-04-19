@@ -13,9 +13,12 @@ fn read_runner_test_file(path: &str) -> String {
 }
 
 fn collect_test_files(dir: &std::path::Path, files: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir)
-        .unwrap_or_else(|error| panic!("runner tests dir `{}` should be readable: {error}", dir.display()))
-    {
+    for entry in fs::read_dir(dir).unwrap_or_else(|error| {
+        panic!(
+            "runner tests dir `{}` should be readable: {error}",
+            dir.display()
+        )
+    }) {
         let entry = entry.expect("runner tests dir entry should load");
         let path = entry.path();
         if entry
@@ -132,6 +135,44 @@ fn e2e_suite_routes_runtime_shape_assertions_through_a_typed_integrity_boundary(
 }
 
 #[test]
+fn e2e_suite_routes_post_setup_source_commands_through_a_typed_integrity_boundary() {
+    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
+    let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
+    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
+    let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
+    let integrity = read_runner_test_file("tests/support/e2e_integrity.rs");
+
+    assert!(
+        integrity.contains("pub struct SourceCommandAudit"),
+        "E2E integrity support should define a typed source-command audit",
+    );
+    assert!(
+        integrity.contains("pub enum SourceCommandPhase"),
+        "E2E integrity support should classify source commands by phase",
+    );
+    assert!(
+        integrity.contains("pub struct PostSetupSourceAudit"),
+        "E2E integrity support should expose a dedicated post-setup source audit",
+    );
+    assert!(
+        default_harness.contains("pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit"),
+        "default bootstrap harness should expose post-setup source evidence through a typed public API",
+    );
+    assert!(
+        !e2e_harness.contains("pub fn execute_source_sql(&self, sql: &str)"),
+        "the shared E2E harness should not expose a broad public raw source SQL escape hatch",
+    );
+    assert!(
+        !multi_mapping_harness.contains("fn execute_source_sql(&self, database: &str, sql: &str)"),
+        "multi-mapping support should not maintain a second raw source SQL path outside the typed audit owner",
+    );
+    assert!(
+        !long_lane.contains("harness.execute_source_sql("),
+        "long-lane scenarios should not issue raw source SQL directly; they should use named audited workload helpers",
+    );
+}
+
+#[test]
 fn e2e_integrity_scopes_do_not_expose_fake_skip_or_bypass_migration_toggles() {
     let banned_markers = [
         "--fake",
@@ -176,8 +217,9 @@ fn only_approved_support_files_issue_raw_docker_commands_for_e2e_orchestration()
             .expect("runner-relative test path should strip")
             .to_string_lossy()
             .replace('\\', "/");
-        let contents = fs::read_to_string(runner_root.join(&path))
-            .unwrap_or_else(|error| panic!("runner test file `{path}` should be readable: {error}"));
+        let contents = fs::read_to_string(runner_root.join(&path)).unwrap_or_else(|error| {
+            panic!("runner test file `{path}` should be readable: {error}")
+        });
         if contents.contains("Command::new(\"docker\")") {
             docker_call_sites.push(path);
         }
@@ -185,8 +227,7 @@ fn only_approved_support_files_issue_raw_docker_commands_for_e2e_orchestration()
 
     docker_call_sites.sort();
     assert_eq!(
-        docker_call_sites,
-        approved,
+        docker_call_sites, approved,
         "raw Docker orchestration should stay isolated to the approved E2E support files",
     );
 }
