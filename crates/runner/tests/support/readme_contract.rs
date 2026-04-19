@@ -16,6 +16,10 @@ impl RepositoryReadme {
         }
     }
 
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
     pub fn docker_quick_start(&self) -> ReadmeSection<'_> {
         ReadmeSection {
             text: self.section("## Docker Quick Start"),

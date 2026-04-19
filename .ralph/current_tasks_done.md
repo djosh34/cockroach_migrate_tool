@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 19:27:20 CEST 2026
+Generated: Sun Apr 19 19:37:25 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -479,6 +479,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove any novice-user path that requires a repo checkout, local installs, or build-from-source steps <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/05-task-remove-contributor-rules-from-readme-and-keep-them-in-contributors-docs.md`
+
+```
+## Task: Remove contributor-only coding rules from README and keep the operator path free of internal project structure assumptions <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

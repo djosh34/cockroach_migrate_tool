@@ -66,6 +66,38 @@ fn quick_start_explicitly_says_it_does_not_require_repo_internal_reading() {
 }
 
 #[test]
+fn readme_excludes_contributor_only_workspace_and_validation_guidance() {
+    let readme = RepositoryReadme::load();
+
+    assert!(
+        !readme.text().contains("## Workspace Layout"),
+        "README must not contain a contributor-only workspace layout section"
+    );
+    assert!(
+        !readme.text().contains("## Command Contract"),
+        "README must not contain contributor-only command contract guidance"
+    );
+    assert!(
+        !readme.text().contains("`make check`"),
+        "README must not require operators to learn contributor validation commands"
+    );
+    assert!(
+        !readme.text().contains("`make test`"),
+        "README must not require operators to learn contributor validation commands"
+    );
+}
+
+#[test]
+fn readme_redirects_contributors_to_contributing_doc() {
+    let readme = RepositoryReadme::load();
+
+    assert!(
+        readme.text().contains("For contributor workflow, see `CONTRIBUTING.md`."),
+        "README must redirect contributors to CONTRIBUTING.md instead of embedding contributor-only workflow rules"
+    );
+}
+
+#[test]
 fn docker_quick_start_documents_the_direct_runner_image_build_and_run_contract() {
     let readme = RepositoryReadme::load();
     let docker_quick_start = readme.docker_quick_start();

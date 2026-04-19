@@ -1,12 +1,7 @@
 # Cockroach Migrate Tool
 
 This repository contains the first Rust workspace for the CockroachDB-to-PostgreSQL migration runner.
-
-## Workspace Layout
-
-- `crates/runner`: destination-side runtime for validated config loading, PostgreSQL access wiring, webhook runtime wiring, and reconcile runtime wiring.
-- `crates/source-bootstrap`: source-side CLI for rendering CockroachDB bootstrap SQL from typed YAML config.
-- `Dockerfile`: single-binary destination image for the `runner` runtime.
+For contributor workflow, see `CONTRIBUTING.md`.
 
 ## Source Bootstrap Quick Start
 
@@ -153,19 +148,6 @@ After startup, the runtime serves:
 - `POST /ingest/<mapping_id>`
 
 The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
-
-## Command Contract
-
-- `make check`: run the workspace lint gate.
-- `make lint`: same as `make check`.
-- `make test`: run the default workspace test suite.
-- `make test-long`: run the ignored long-test lane.
-
-Raw Cargo commands remain available when you want a narrower loop:
-
-- `cargo check --workspace`
-- `cargo clippy --workspace --all-targets -- -D warnings`
-- `cargo test --workspace`
 
 ## CI Publish Safety
 
