@@ -21,6 +21,8 @@ const (
 	JobStatusSucceeded JobStatus = "succeeded"
 	JobStatusFailed    JobStatus = "failed"
 	JobStatusStopped   JobStatus = "stopped"
+
+	verifyRequestBodyMaxBytes = 64 << 10
 )
 
 type Runner interface {
@@ -94,8 +96,8 @@ func (s *Service) Close() {
 
 func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 	var jobRequest JobRequest
-	if err := decodeJSONBody(r, &jobRequest); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSONBody(w, r, &jobRequest); err != nil {
+		writeDecodeJSONError(w, err)
 		return
 	}
 	runRequest, err := jobRequest.Compile()
@@ -195,8 +197,8 @@ func (s *Service) handlePostStop(w http.ResponseWriter, r *http.Request) {
 	var request struct {
 		JobID string `json:"job_id"`
 	}
-	if err := decodeJSONBody(r, &request); err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+	if err := decodeJSONBody(w, r, &request); err != nil {
+		writeDecodeJSONError(w, err)
 		return
 	}
 
@@ -298,16 +300,38 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-func decodeJSONBody(r *http.Request, destination any) error {
-	decoder := json.NewDecoder(r.Body)
+var errRequestBodyTooLarge = errors.New("request body exceeds maximum size")
+
+func writeDecodeJSONError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errRequestBodyTooLarge) {
+		writeJSONError(w, http.StatusRequestEntityTooLarge, err.Error())
+		return
+	}
+	writeJSONError(w, http.StatusBadRequest, err.Error())
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, destination any) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, verifyRequestBodyMaxBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(destination); err != nil {
-		return err
+		return normalizeDecodeJSONError(err)
 	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	var extraDocument any
+	if err := decoder.Decode(&extraDocument); err != io.EOF {
+		if err != nil {
+			return normalizeDecodeJSONError(err)
+		}
 		return errors.New("request body must contain exactly one JSON object")
 	}
 	return nil
+}
+
+func normalizeDecodeJSONError(err error) error {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		return errRequestBodyTooLarge
+	}
+	return err
 }
 
 type jobReporter struct {

@@ -754,6 +754,43 @@ func TestPostJobsRejectsTrailingJSONDocuments(t *testing.T) {
 	}
 }
 
+func TestPostJobsRejectsOversizedRequestBody(t *testing.T) {
+	t.Parallel()
+
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner: runner,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/jobs",
+		"application/json",
+		bytes.NewBufferString(`{"filters":{"include":{"schema":"`+strings.Repeat("a", 1<<20)+`"}}}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.NotEmpty(t, payload.Error)
+
+	select {
+	case <-runner.started:
+		t.Fatal("runner must not start when request body exceeds the limit")
+	default:
+	}
+}
+
 func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	t.Parallel()
 

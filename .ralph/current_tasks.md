@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 09:02:28 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-request-body-size-is-unbounded.md`
-
-```
-## Bug: Verify HTTP request body size is unbounded <status>not_started</status> <passes>false</passes> <priority>high</priority>
-
-<description>
-The verify HTTP audit found that `POST /jobs` and `POST /stop` decode directly from the full request body without a size cap. The new strict decoder rejects unknown fields and trailing documents, but it still allows arbitrarily large request bodies to be read into memory before validation completes.
-```
-
-==============
+Generated: Sun Apr 19 09:11:13 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-retains-completed-jobs-and-metrics-forever.md`
 
