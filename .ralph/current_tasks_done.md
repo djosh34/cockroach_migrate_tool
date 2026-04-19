@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 03:53:48 PM CEST 2026
+Generated: Sun Apr 19 16:18:01 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -468,6 +468,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove bash-based bootstrap flows and replace the old script contract with generated SQL output only <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/01-task-prune-the-codebase-down-to-a-verify-only-source-slice-and-prove-removal.md`
+
+```
+## Task: Prune the codebase down to the verify-only source slice and prove all unrelated code was removed <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

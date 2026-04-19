@@ -228,14 +228,13 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
     let destination_failure =
         harness.fail_destination_customer_email_write(1, "alice+reconcile-failure@example.com");
     harness.update_source_customer_email(1, "alice+reconcile-failure@example.com");
-    harness.wait_for_helper_shadow_customers(
-        "1:alice+reconcile-failure@example.com,2:bob@example.com",
-    );
     let stderr = harness.wait_for_runner_failed_exit();
     assert!(
         stderr.contains("failed to apply reconcile upsert"),
         "runner stderr did not include reconcile failure context:\n{stderr}"
     );
+    harness
+        .assert_helper_shadow_customers_snapshot("1:alice+reconcile-failure@example.com,2:bob@example.com");
     harness.assert_destination_customers_snapshot("1:alice@example.com,2:bob@example.com");
     let failed = harness.customer_tracking_progress();
     assert_eq!(

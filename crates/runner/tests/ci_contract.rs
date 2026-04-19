@@ -2,9 +2,12 @@
 mod github_workflow_contract_support;
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
+#[path = "support/verify_source_contract.rs"]
+mod verify_source_contract_support;
 
 use github_workflow_contract_support::GithubWorkflowContract;
 use runner_docker_contract_support::RunnerDockerContract;
+use verify_source_contract_support::VerifySourceContract;
 
 #[test]
 fn master_image_workflow_triggers_only_on_pushes_to_master() {
@@ -79,4 +82,34 @@ fn master_image_workflow_keeps_registry_coordinates_in_one_shared_boundary() {
 #[test]
 fn dockerfile_declares_a_scratch_runtime_image_with_only_the_runner_binary() {
     RunnerDockerContract::assert_dockerfile_uses_a_scratch_runtime_with_only_runner_binary();
+}
+
+#[test]
+fn vendored_molt_tree_is_pruned_to_the_verify_source_slice() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_top_level_entries_are_within_the_verify_slice();
+    contract.assert_root_command_does_not_wire_fetch();
+}
+
+#[test]
+fn vendored_molt_command_surface_is_verify_only() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_cmd_tree_is_verify_only();
+    contract.assert_fetch_only_files_are_absent();
+}
+
+#[test]
+fn vendored_molt_manifest_excludes_fetch_only_dependency_families() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_fetch_only_dependency_families_are_absent();
+}
+
+#[test]
+fn vendored_molt_testutils_boundary_is_an_explicit_verify_test_exception() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_testutils_exception_is_narrow_and_explicit();
 }

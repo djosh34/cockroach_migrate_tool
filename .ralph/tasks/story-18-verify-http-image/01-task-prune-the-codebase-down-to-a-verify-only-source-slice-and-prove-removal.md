@@ -1,4 +1,4 @@
-## Task: Prune the codebase down to the verify-only source slice and prove all unrelated code was removed <status>not_started</status> <passes>false</passes>
+## Task: Prune the codebase down to the verify-only source slice and prove all unrelated code was removed <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,13 +25,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers identification of the minimal verify build slice and proof of unrelated-code removal
-- [ ] The verify image build path contains only packages required for verify behavior
-- [ ] Automated checks fail if removed unrelated code creeps back into the verify image path
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers identification of the minimal verify build slice and proof of unrelated-code removal
+- [x] The verify image build path contains only packages required for verify behavior
+- [x] Automated checks fail if removed unrelated code creeps back into the verify image path
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-18-verify-http-image/01-task-prune-the-codebase-down-to-a-verify-only-source-slice-and-prove-removal_plans/2026-04-19-verify-source-slice-prune-plan.md</plan>

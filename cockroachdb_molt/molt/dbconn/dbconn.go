@@ -13,7 +13,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lib/pq/oid"
-	_ "github.com/pingcap/tidb/types/parser_driver"
+	_ "github.com/pingcap/tidb/parser/test_driver"
 )
 
 type ID string

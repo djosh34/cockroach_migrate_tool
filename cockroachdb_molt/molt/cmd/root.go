@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cockroachdb/molt/cmd/fetch"
 	"github.com/cockroachdb/molt/cmd/verify"
 	"github.com/spf13/cobra"
 )
@@ -32,9 +31,7 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(EscapePasswordCommand())
 	rootCmd.AddCommand(verify.Command())
-	rootCmd.AddCommand(fetch.Command())
 	rootCmd.Version = fmt.Sprintf("v%s", moltVersion)
 	// Hide completion options, because irrelevant.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
