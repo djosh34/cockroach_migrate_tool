@@ -1,4 +1,4 @@
-## Task: Produce an exhaustive novice-user manual experience report <status>not_started</status> <passes>false</passes>
+## Task: Produce an exhaustive novice-user manual experience report <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Manually try the whole system as a novice user and produce a very exhaustive, deeply investigative Markdown report of the actual experience. The higher order goal is to measure operator friction honestly from the user's perspective rather than from the implementer's assumptions.
@@ -46,13 +46,13 @@ This task must stand on its own and evaluate the current system as implemented a
 
 
 <acceptance_criteria>
-- [ ] The report is based on an actual manual novice-user trial, not a hypothetical writeup
-- [ ] The required artifact files are produced in `.ralph/tasks/story-14-reports/artifacts/report-novice-user/`
-- [ ] The report explicitly states whether the README alone was sufficient, and if not, exactly where and why it failed
-- [ ] The report records every command used and every point where the user needed to pause, infer, investigate, or look elsewhere
-- [ ] The report includes concrete simplification recommendations prioritized by actual user friction
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] The report is based on an actual manual novice-user trial, not a hypothetical writeup
+- [x] The required artifact files are produced in `.ralph/tasks/story-14-reports/artifacts/report-novice-user/`
+- [x] The report explicitly states whether the README alone was sufficient, and if not, exactly where and why it failed
+- [x] The report records every command used and every point where the user needed to pause, infer, investigate, or look elsewhere
+- [x] The report includes concrete simplification recommendations prioritized by actual user friction
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>

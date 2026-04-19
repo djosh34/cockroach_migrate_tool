@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 10:13:31 AM CEST 2026
+Generated: Sun Apr 19 10:33:50 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -383,6 +383,17 @@ Must use tdd skill to complete
 
 <description>
 Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-14-reports/01-task-report-novice-user-manual-experience.md`
+
+```
+## Task: Produce an exhaustive novice-user manual experience report <status>completed</status> <passes>true</passes>
+
+<description>
+**Goal:** Manually try the whole system as a novice user and produce a very exhaustive, deeply investigative Markdown report of the actual experience. The higher order goal is to measure operator friction honestly from the user's perspective rather than from the implementer's assumptions.
 ```
 
 ==============
