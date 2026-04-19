@@ -646,6 +646,9 @@ impl GithubWorkflowContract {
         let manifest_env = self
             .job_env("publish-manifest")
             .expect("publish-manifest job should define an env mapping");
+        let publish_env = self
+            .job_env("publish-image")
+            .expect("publish-image job should define an env mapping");
         let outputs = manifest_job
             .get(Value::String("outputs".to_owned()))
             .and_then(Value::as_mapping)
@@ -660,6 +663,15 @@ impl GithubWorkflowContract {
 
         let manifest_step = self.step_named(manifest_job, "Publish manifest");
         let manifest_script = self.step_run_script(manifest_step, "Publish manifest");
+        assert_eq!(
+            publish_env
+                .get(Value::String("PUBLISHED_IMAGE_REF_FILE".to_owned()))
+                .map(value_as_str),
+            Some(
+                "${{ github.workspace }}/published-image-refs/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env"
+            ),
+            "publish-image job should keep the per-lane image-ref artifact on a workspace-scoped path that GitHub accepts at job-env evaluation time",
+        );
         assert_eq!(
             manifest_env
                 .get(Value::String("PUBLISHED_IMAGE_MANIFEST".to_owned()))

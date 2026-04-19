@@ -113,7 +113,7 @@ jobs:
             platform_tag_suffix: arm64
     runs-on: ${{ matrix.platform.runner }}
     env:
-      PUBLISHED_IMAGE_REF_FILE: ${{ runner.temp }}/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env
+      PUBLISHED_IMAGE_REF_FILE: ${{ github.workspace }}/published-image-refs/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env
     permissions:
       contents: read
       packages: write
@@ -196,6 +196,7 @@ jobs:
             --tag "${platform_image_ref}" \
             --push \
             "${{ matrix.image.context }}"
+          mkdir -p "$(dirname "${PUBLISHED_IMAGE_REF_FILE}")"
           {
             printf 'image_id=%s\n' "${{ matrix.image.image_id }}"
             printf 'manifest_key=%s\n' "${{ matrix.image.manifest_key }}"
