@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,6 +38,8 @@ type Service struct {
 	runner      Runner
 	idGenerator func() string
 	now         func() time.Time
+	sourceDB    string
+	targetDB    string
 	jobs        map[string]*job
 	activeJobID string
 }
@@ -48,7 +51,7 @@ type job struct {
 	finishedAt    *time.Time
 	cancel        context.CancelFunc
 	failureReason *string
-	result        jobResult
+	progress      jobProgressSnapshot
 }
 
 type jobResult struct {
@@ -87,7 +90,7 @@ type jobMismatch struct {
 	Info   string `json:"info,omitempty"`
 }
 
-func NewService(_ Config, deps Dependencies) *Service {
+func NewService(cfg Config, deps Dependencies) *Service {
 	if deps.Runner == nil {
 		panic("verifyservice.Dependencies.Runner must be set")
 	}
@@ -97,10 +100,20 @@ func NewService(_ Config, deps Dependencies) *Service {
 	if deps.Now == nil {
 		deps.Now = time.Now
 	}
+	sourceDB, err := databaseNameFromURL(cfg.Verify.Source.URL)
+	if err != nil {
+		panic(err)
+	}
+	targetDB, err := databaseNameFromURL(cfg.Verify.Destination.URL)
+	if err != nil {
+		panic(err)
+	}
 	return &Service{
 		runner:      deps.Runner,
 		idGenerator: deps.IDGenerator,
 		now:         deps.Now,
+		sourceDB:    sourceDB,
+		targetDB:    targetDB,
 		jobs:        make(map[string]*job),
 	}
 }
@@ -110,6 +123,7 @@ func (s *Service) Handler() http.Handler {
 	mux.HandleFunc("POST /jobs", s.handlePostJobs)
 	mux.HandleFunc("GET /jobs/{job_id}", s.handleGetJob)
 	mux.HandleFunc("POST /stop", s.handlePostStop)
+	mux.Handle("GET /metrics", newMetricsHandler(s))
 	return mux
 }
 
@@ -169,7 +183,7 @@ func (s *Service) startJob(request RunRequest) (*job, error) {
 		status:    JobStatusRunning,
 		startedAt: s.now(),
 		cancel:    cancel,
-		result:    newJobResult(),
+		progress:  newJobProgressSnapshot(),
 	}
 	s.jobs[job.id] = job
 	s.activeJobID = job.id
@@ -202,7 +216,7 @@ func (s *Service) finishJob(jobID string, err error) {
 		job.status = JobStatusFailed
 		failureReason := err.Error()
 		job.failureReason = &failureReason
-		job.result.Errors = append(job.result.Errors, failureReason)
+		job.progress.recordError(failureReason)
 	}
 
 	if s.activeJobID == jobID {
@@ -315,7 +329,7 @@ func (j job) response() any {
 		StartedAt:     j.startedAt.UTC().Format(time.RFC3339),
 		FinishedAt:    finishedAt,
 		FailureReason: j.failureReason,
-		Result:        j.result.copy(),
+		Result:        j.progress.result(),
 	}
 }
 
@@ -377,24 +391,6 @@ func max(left int, right int) int {
 	return right
 }
 
-func newJobResult() jobResult {
-	return jobResult{
-		StatusMessages: []jobStatusMessage{},
-		Summaries:      []jobSummary{},
-		Mismatches:     []jobMismatch{},
-		Errors:         []string{},
-	}
-}
-
-func (r jobResult) copy() jobResult {
-	return jobResult{
-		StatusMessages: append([]jobStatusMessage(nil), r.StatusMessages...),
-		Summaries:      append([]jobSummary(nil), r.Summaries...),
-		Mismatches:     append([]jobMismatch(nil), r.Mismatches...),
-		Errors:         append([]string(nil), r.Errors...),
-	}
-}
-
 func (s *Service) recordReport(jobID string, obj inconsistency.ReportableObject) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -403,23 +399,7 @@ func (s *Service) recordReport(jobID string, obj inconsistency.ReportableObject)
 	if !ok {
 		return
 	}
-
-	switch reported := obj.(type) {
-	case inconsistency.StatusReport:
-		job.result.StatusMessages = append(job.result.StatusMessages, jobStatusMessage{Info: reported.Info})
-	case inconsistency.SummaryReport:
-		job.result.Summaries = append(job.result.Summaries, jobSummary{
-			Info:  reported.Info,
-			Stats: toRowStatsDTO(reported.Stats),
-		})
-	case inconsistency.MismatchingTableDefinition:
-		job.result.Mismatches = append(job.result.Mismatches, jobMismatch{
-			Kind:   "table_definition",
-			Schema: string(reported.Schema),
-			Table:  string(reported.Table),
-			Info:   reported.Info,
-		})
-	}
+	job.progress.record(obj)
 }
 
 func toRowStatsDTO(stats inconsistency.RowStats) rowStatsDTO {
@@ -435,4 +415,15 @@ func toRowStatsDTO(stats inconsistency.RowStats) rowStatsDTO {
 		NumExtraneous:         stats.NumExtraneous,
 		NumLiveRetry:          stats.NumLiveRetry,
 	}
+}
+
+func databaseNameFromURL(rawURL string) (string, error) {
+	if rawURL == "" {
+		return "", nil
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(parsed.Path, "/"), nil
 }

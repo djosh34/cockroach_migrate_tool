@@ -1,4 +1,4 @@
-## Task: Expose verify job progress and result metrics from the HTTP verify service <status>not_started</status> <passes>false</passes>
+## Task: Expose verify job progress and result metrics from the HTTP verify service <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -32,12 +32,12 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers `/metrics` exposure and validates the required per-job progress/result metrics
-- [ ] Every exported verify metric uses the `cockroach_migration_tool_verify_` prefix
-- [ ] Metrics include a `job_id` label and expose per source database/table row counts, per destination database/table row counts, checked rows, mismatches, and errors
-- [ ] Operators can observe running and completed verification jobs without scraping ad-hoc log text
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+ - [x] Red/green TDD covers `/metrics` exposure and validates the required per-job progress/result metrics
+ - [x] Every exported verify metric uses the `cockroach_migration_tool_verify_` prefix
+ - [x] Metrics include a `job_id` label and expose per source database/table row counts, per destination database/table row counts, checked rows, mismatches, and errors
+ - [x] Operators can observe running and completed verification jobs without scraping ad-hoc log text
+ - [x] `make check` — passes cleanly
+ - [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+ - [x] `make lint` — passes cleanly
+ - [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>

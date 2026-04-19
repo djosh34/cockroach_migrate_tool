@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +18,8 @@ import (
 	"github.com/cockroachdb/molt/utils"
 	"github.com/cockroachdb/molt/verify/inconsistency"
 	"github.com/cockroachdb/molt/verifyservice"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -101,6 +105,319 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	require.Equal(t, "running", payload.Status)
 	require.Equal(t, "2026-04-19T18:31:00Z", payload.StartedAt)
 	require.Nil(t, payload.FinishedAt)
+}
+
+func TestMetricsExposesRunningJobState(t *testing.T) {
+	t.Parallel()
+
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	response, err := http.Get(server.URL + "/metrics")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.Contains(
+		t,
+		string(body),
+		`cockroach_migration_tool_verify_job_state{job_id="job-000001",status="running"} 1`,
+	)
+}
+
+func TestMetricsExposeRunningTableProgress(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(ctx context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.StatusReport{Info: "verifying public.accounts"})
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary",
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 7,
+			},
+		})
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			Source: verifyservice.DatabaseConfig{
+				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
+			},
+			Destination: verifyservice.DatabaseConfig{
+				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/metrics")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		metrics := string(body)
+		return strings.Contains(metrics, `cockroach_migration_tool_verify_job_state{job_id="job-000001",status="running"} 1`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} 7`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_checked_rows_total{job_id="job-000001",schema="public",table="accounts"} 7`) &&
+			!strings.Contains(metrics, "molt_verify_")
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestMetricsKeepLatestTableTotalsAndExposeMismatchKinds(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(ctx context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary 1",
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 3,
+				NumSuccess:  1,
+				NumMissing:  1,
+				NumMismatch: 1,
+			},
+		})
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary 2",
+			Stats: inconsistency.RowStats{
+				Schema:                "public",
+				Table:                 "accounts",
+				NumVerified:           7,
+				NumSuccess:            2,
+				NumConditionalSuccess: 3,
+				NumMissing:            1,
+				NumMismatch:           4,
+				NumColumnMismatch:     5,
+				NumExtraneous:         6,
+			},
+		})
+		reporter.Report(inconsistency.MismatchingTableDefinition{
+			DBTable: dbtable.DBTable{
+				Name: dbtable.Name{
+					Schema: "public",
+					Table:  "accounts",
+				},
+			},
+			Info: "table definition mismatch",
+		})
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			Source: verifyservice.DatabaseConfig{
+				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
+			},
+			Destination: verifyservice.DatabaseConfig{
+				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/metrics")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		metrics := string(body)
+		return strings.Count(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} `) == 1 &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_source_rows_total{database="source_db",job_id="job-000001",schema="public",table="accounts"} 7`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_destination_rows_total{database="target_db",job_id="job-000001",schema="public",table="accounts"} 15`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="missing",schema="public",table="accounts"} 1`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="mismatch",schema="public",table="accounts"} 4`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="column_mismatch",schema="public",table="accounts"} 5`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="extraneous",schema="public",table="accounts"} 6`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_mismatches_total{job_id="job-000001",kind="table_definition",schema="public",table="accounts"} 1`)
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestMetricsExposeFailedJobStateAndErrors(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.StatusReport{Info: "about to fail"})
+		return errors.New("verify exploded")
+	})
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/metrics")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		metrics := string(body)
+		return strings.Contains(metrics, `cockroach_migration_tool_verify_job_state{job_id="job-000001",status="failed"} 1`) &&
+			strings.Contains(metrics, `cockroach_migration_tool_verify_errors_total{job_id="job-000001"} 1`)
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestMetricsKeepLabelSetsNarrowAndExcludeFreeText(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.StatusReport{Info: "verifying public.accounts with free text"})
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary with free text",
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 7,
+				NumMismatch: 2,
+			},
+		})
+		reporter.Report(inconsistency.MismatchingTableDefinition{
+			DBTable: dbtable.DBTable{
+				Name: dbtable.Name{
+					Schema: "public",
+					Table:  "accounts",
+				},
+			},
+			Info: "table definition mismatch with free text",
+		})
+		return errors.New("verify exploded with free text")
+	})
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			Source: verifyservice.DatabaseConfig{
+				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
+			},
+			Destination: verifyservice.DatabaseConfig{
+				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		response, err := http.Get(server.URL + "/metrics")
+		require.NoError(t, err)
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		if response.StatusCode != http.StatusOK {
+			return false
+		}
+
+		body, err := io.ReadAll(response.Body)
+		require.NoError(t, err)
+		metrics := string(body)
+		if !strings.Contains(metrics, `cockroach_migration_tool_verify_errors_total{job_id="job-000001"} 1`) {
+			return false
+		}
+
+		parser := expfmt.TextParser{}
+		families, err := parser.TextToMetricFamilies(strings.NewReader(metrics))
+		require.NoError(t, err)
+		require.Equal(t, []string{"job_id", "status"}, metricLabelNames(t, families["cockroach_migration_tool_verify_job_state"]))
+		require.Equal(t, []string{"database", "job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_source_rows_total"]))
+		require.Equal(t, []string{"database", "job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_destination_rows_total"]))
+		require.Equal(t, []string{"job_id", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_checked_rows_total"]))
+		require.Equal(t, []string{"job_id", "kind", "schema", "table"}, metricLabelNames(t, families["cockroach_migration_tool_verify_mismatches_total"]))
+		require.Equal(t, []string{"job_id"}, metricLabelNames(t, families["cockroach_migration_tool_verify_errors_total"]))
+		require.NotContains(t, metrics, "verifying public.accounts with free text")
+		require.NotContains(t, metrics, "accounts summary with free text")
+		require.NotContains(t, metrics, "table definition mismatch with free text")
+		require.NotContains(t, metrics, "verify exploded with free text")
+		return true
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func TestPostJobsRejectsConcurrentStartAttempts(t *testing.T) {
@@ -614,4 +931,18 @@ func sequentialTimeGenerator(times ...time.Time) func() time.Time {
 		times = times[1:]
 		return next
 	}
+}
+
+func metricLabelNames(t *testing.T, family *dto.MetricFamily) []string {
+	t.Helper()
+
+	require.NotNil(t, family)
+	require.NotEmpty(t, family.Metric)
+
+	names := make([]string, 0, len(family.Metric[0].Label))
+	for _, label := range family.Metric[0].Label {
+		names = append(names, label.GetName())
+	}
+	sort.Strings(names)
+	return names
 }
