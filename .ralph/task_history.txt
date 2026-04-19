@@ -71,3 +71,4 @@
 .ralph/tasks/story-11-e2e-chaos/02-task-e2e-receiver-crash-and-restart-recovery.md
 .ralph/tasks/story-11-e2e-chaos/03-task-e2e-network-fault-injection-imposed-externally.md
 .ralph/tasks/story-11-e2e-chaos/04-task-e2e-transaction-failure-recovery.md
+.ralph/tasks/story-11-e2e-chaos/05-task-e2e-source-high-write-churn-during-transfer.md

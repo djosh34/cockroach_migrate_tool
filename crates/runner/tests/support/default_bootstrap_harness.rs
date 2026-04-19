@@ -41,6 +41,60 @@ SELECT COALESCE(
 FROM _cockroach_migration_tool."app-a__public__customers";
 "#;
 
+const HIGH_SOURCE_CUSTOMER_WRITE_CHURN_SQL: &str = r#"
+UPDATE public.customers
+SET email = 'alice+churn-1@example.com'
+WHERE id = 1;
+INSERT INTO public.customers (id, email) VALUES
+    (3, 'carol+new@example.com'),
+    (4, 'dora+new@example.com'),
+    (5, 'erin+new@example.com');
+UPDATE public.customers
+SET email = 'carol+updated@example.com'
+WHERE id = 3;
+DELETE FROM public.customers
+WHERE id = 3;
+INSERT INTO public.customers (id, email) VALUES
+    (3, 'carol+reborn@example.com');
+UPDATE public.customers
+SET email = 'bob+churn-1@example.com'
+WHERE id = 2;
+UPDATE public.customers
+SET email = 'dora+steady@example.com'
+WHERE id = 4;
+UPDATE public.customers
+SET email = 'erin+updated@example.com'
+WHERE id = 5;
+DELETE FROM public.customers
+WHERE id = 4;
+INSERT INTO public.customers (id, email) VALUES
+    (6, 'frank+ephemeral@example.com'),
+    (4, 'dora+returning@example.com');
+UPDATE public.customers
+SET email = 'dora+steady@example.com'
+WHERE id = 4;
+DELETE FROM public.customers
+WHERE id IN (5, 6);
+INSERT INTO public.customers (id, email) VALUES
+    (5, 'erin+restored@example.com');
+UPDATE public.customers
+SET email = 'alice+final@example.com'
+WHERE id = 1;
+UPDATE public.customers
+SET email = 'bob+final@example.com'
+WHERE id = 2;
+"#;
+
+pub struct CustomerWriteChurnExpectation {
+    final_customers_snapshot: String,
+}
+
+impl CustomerWriteChurnExpectation {
+    pub fn final_customers_snapshot(&self) -> &str {
+        &self.final_customers_snapshot
+    }
+}
+
 pub struct DefaultBootstrapHarness {
     inner: CdcE2eHarness,
 }
@@ -94,6 +148,16 @@ impl DefaultBootstrapHarness {
         );
     }
 
+    pub fn run_high_source_customer_write_churn_workload(&self) -> CustomerWriteChurnExpectation {
+        self.inner
+            .execute_source_sql(HIGH_SOURCE_CUSTOMER_WRITE_CHURN_SQL);
+        CustomerWriteChurnExpectation {
+            final_customers_snapshot:
+                "1:alice+final@example.com,2:bob+final@example.com,3:carol+reborn@example.com,4:dora+steady@example.com,5:erin+restored@example.com"
+                    .to_owned(),
+        }
+    }
+
     pub fn assert_destination_customer_count(&self, customer_id: i64, expected_count: usize) {
         let actual = self
             .inner
@@ -134,6 +198,10 @@ impl DefaultBootstrapHarness {
             "destination customers",
             duration,
         );
+    }
+
+    pub fn assert_runner_alive(&self) {
+        self.inner.assert_runner_alive();
     }
 
     pub fn delete_source_customer(&self, customer_id: i64) {

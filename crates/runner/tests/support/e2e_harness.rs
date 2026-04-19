@@ -240,7 +240,7 @@ impl CdcE2eHarness {
 
     pub fn wait_for_destination_query(&self, sql: &str, expected: &str, description: &str) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let actual = self.query_destination(sql);
             if actual.trim() == expected {
                 return;
@@ -264,7 +264,7 @@ impl CdcE2eHarness {
     ) {
         let deadline = Instant::now() + duration;
         loop {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let actual = self.query_destination(sql);
             assert_eq!(
                 actual.trim(),
@@ -281,7 +281,7 @@ impl CdcE2eHarness {
 
     pub fn wait_for_helper_table_row_counts(&self, expectations: &[(&str, usize)]) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             if expectations
                 .iter()
                 .all(|(table, expected_rows)| self.helper_table_row_count(table) == *expected_rows)
@@ -310,7 +310,7 @@ impl CdcE2eHarness {
 
     pub fn wait_for_helper_tables(&self, expected: &str, description: &str) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let actual = self.helper_tables();
             if actual.trim() == expected {
                 return;
@@ -358,7 +358,7 @@ impl CdcE2eHarness {
     }
 
     pub fn verify_migration(&self) -> String {
-        self.assert_runner_alive();
+        self.assert_runner_process_alive();
         let output = run_command_capture(
             Command::new(env!("CARGO_BIN_EXE_runner"))
                 .args(["verify", "--config"])
@@ -383,6 +383,10 @@ impl CdcE2eHarness {
         output
     }
 
+    pub fn assert_runner_alive(&self) {
+        self.assert_runner_process_alive();
+    }
+
     pub fn arm_single_external_sink_fault_for_request_body(
         &self,
         body_substring: &str,
@@ -396,7 +400,7 @@ impl CdcE2eHarness {
 
     pub fn wait_for_duplicate_gateway_delivery_of_request_body(&self, body_substring: &str) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let gateway = self
                 .webhook_chaos_gateway
                 .as_ref()
@@ -424,7 +428,7 @@ impl CdcE2eHarness {
         fault: ExternalSinkFault,
     ) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let gateway = self
                 .webhook_chaos_gateway
                 .as_ref()
@@ -452,7 +456,7 @@ impl CdcE2eHarness {
         statuses: &[reqwest::StatusCode],
     ) {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let gateway = self
                 .webhook_chaos_gateway
                 .as_ref()
@@ -601,7 +605,7 @@ impl CdcE2eHarness {
         F: FnMut(&MappingTrackingProgress) -> bool,
     {
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let progress = self.tracking_progress(mapped_table);
             if predicate(&progress) {
                 return progress;
@@ -654,7 +658,7 @@ impl CdcE2eHarness {
         let quoted_upsert_prefix =
             sql_string_literal(&format!("INSERT INTO \"{schema_name}\".\"{table_name}\""));
         for _ in 0..120 {
-            self.assert_runner_alive();
+            self.assert_runner_process_alive();
             let blocked_sessions = self.query_destination(&format!(
                 "SELECT count(*)::text
                  FROM pg_stat_activity
@@ -846,7 +850,7 @@ mappings:
         .expect("source-bootstrap config should be written");
     }
 
-    fn assert_runner_alive(&self) {
+    fn assert_runner_process_alive(&self) {
         let mut process = self.runner_process.borrow_mut();
         let Some(runner_process) = process.as_mut() else {
             return;

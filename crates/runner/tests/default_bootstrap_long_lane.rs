@@ -474,6 +474,57 @@ fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_po
 
 #[test]
 #[ignore = "long lane"]
+fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_transfer() {
+    let harness = DefaultBootstrapHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    let baseline = harness.customer_tracking_progress();
+
+    let expectation = harness.run_high_source_customer_write_churn_workload();
+
+    harness.wait_for_helper_shadow_customers(expectation.final_customers_snapshot());
+    harness.wait_for_destination_customers(expectation.final_customers_snapshot());
+    let received = harness.wait_for_customer_tracking_progress(
+        "customer tracking should record source churn beyond the bootstrap watermark",
+        |progress| progress.stream.received_has_advanced_since(&baseline.stream),
+    );
+    let received_watermark = received
+        .stream
+        .latest_received_resolved_watermark
+        .clone()
+        .expect("churn workload should produce a received watermark");
+    let converged = harness.wait_for_customer_tracking_progress(
+        "customer tracking should reconcile through the churn watermark without storing an error",
+        |progress| {
+            progress.has_reconciled_through(received_watermark.as_str())
+                && progress.table.last_error.is_none()
+        },
+    );
+    assert!(
+        converged
+            .stream
+            .has_received_through(received_watermark.as_str()),
+        "received watermark should remain monotonic after churn catch-up",
+    );
+    harness.assert_helper_shadow_customers_stable(
+        expectation.final_customers_snapshot(),
+        Duration::from_secs(3),
+    );
+    harness.assert_destination_customers_stable(
+        expectation.final_customers_snapshot(),
+        Duration::from_secs(3),
+    );
+    harness.assert_runner_alive();
+    let verify_output = harness.verify_default_migration_output();
+    assert!(
+        !verify_output.contains("_cockroach_migration_tool"),
+        "verify output should mention only the real migrated table: {verify_output}"
+    );
+}
+
+#[test]
+#[ignore = "long lane"]
 fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_tables() {
     let harness = CompositePkExclusionHarness::start();
 
