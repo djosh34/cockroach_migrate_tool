@@ -52,7 +52,7 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 		shutdownErrCh <- server.Shutdown(shutdownCtx)
 	}()
 
-	err = server.ListenAndServeTLS(cfg.Listener.TLS.CertPath, cfg.Listener.TLS.KeyPath)
+	err = server.ListenAndServeTLS("", "")
 	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -69,6 +69,12 @@ func (cfg ListenerTLSConfig) ServerTLSConfig() (*tls.Config, error) {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
+
+	serverCertificate, err := tls.LoadX509KeyPair(cfg.CertPath, cfg.KeyPath)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig.Certificates = []tls.Certificate{serverCertificate}
 
 	if cfg.ClientAuth.Mode != ListenerClientAuthModeMTLS {
 		return tlsConfig, nil

@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 08:50:32 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-https-runtime-does-not-load-server-certificate.md`
-
-```
-## Bug: Verify HTTP HTTPS runtime does not load the configured server certificate <status>not_started</status> <passes>false</passes> <priority>high</priority>
-
-<description>
-The verify HTTP audit found that the HTTPS runtime path builds `server.TLSConfig` without loading `listener.tls.cert_path` and `listener.tls.key_path` into `TLSConfig.Certificates`. `Run(...)` then calls `ListenAndServeTLS("", "")`, which per the standard-library contract requires the certificate to already be present in `TLSConfig` when empty filenames are used.
-```
-
-==============
+Generated: Sun Apr 19 09:02:28 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-request-body-size-is-unbounded.md`
 

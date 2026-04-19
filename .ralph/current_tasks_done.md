@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 08:50:32 PM CEST 2026
+Generated: Sun Apr 19 09:02:28 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -20,6 +20,17 @@ The verify HTTP audit found that the listener accepts insecure remote-service mo
 
 <description>
 The verify HTTP audit found that `GET /jobs/{job_id}` and `GET /metrics` expose operational details to any caller on the listener. The current behavior includes job IDs, timestamps, failure reasons, mismatch details, source and destination database names, schema names, table names, and mismatch counts, with no authentication or authorization layer in the service itself.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-https-runtime-does-not-load-server-certificate.md`
+
+```
+## Bug: Verify HTTP HTTPS runtime does not load the configured server certificate <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+The verify HTTP audit found that the HTTPS runtime path builds `server.TLSConfig` without loading `listener.tls.cert_path` and `listener.tls.key_path` into `TLSConfig.Certificates`. `Run(...)` then calls `ListenAndServeTLS("", "")`, which per the standard-library contract requires the certificate to already be present in `TLSConfig` when empty filenames are used.
 ```
 
 ==============
