@@ -39,6 +39,8 @@ func TestReportTelemetry(t *testing.T) {
 func countTelemetry(t *testing.T, conn *pgx.Conn) map[string]int {
 	ret := make(map[string]int)
 	ctx := context.Background()
+	_, err := conn.Exec(ctx, "SET allow_unsafe_internals = true")
+	require.NoError(t, err)
 	rows, err := conn.Query(ctx, "select feature_name, usage_count from crdb_internal.feature_usage")
 	require.NoError(t, err)
 	defer rows.Close()

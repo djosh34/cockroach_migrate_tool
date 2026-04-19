@@ -3,12 +3,12 @@ package mysqlconv
 import (
 	"database/sql"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lib/pq/oid"
 	"github.com/pingcap/tidb/parser/ast"
 	"github.com/pingcap/tidb/parser/model"
-	"github.com/pkg/errors"
 )
 
 func MySQLASTColumnField(name tree.Name) *ast.ColumnNameExpr {

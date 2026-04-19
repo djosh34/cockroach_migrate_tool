@@ -16,7 +16,7 @@ func DataTypeToOID(dataType string, logger zerolog.Logger) (oid.Oid, error) {
 			logger.Err(err)
 			return 0, err
 		}
-		logger.Warn().Msgf(tf.Message)
+		logger.Warn().Msg(tf.Message)
 	}
 	return t.Oid(), nil
 }

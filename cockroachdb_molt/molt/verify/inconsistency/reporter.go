@@ -110,7 +110,7 @@ func (l LogReporter) Report(obj ReportableObject) {
 			Dict("source_values", targetVals).
 			Dict("target_values", sourceValues).
 			Strs("primary_key", zipPrimaryKeysForReporting(obj.PrimaryKeyValues)).
-			Msgf(msg)
+			Msg(msg)
 	case MissingRow:
 		dataLogger.Warn().
 			Str("table_schema", string(obj.Schema)).

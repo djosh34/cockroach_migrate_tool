@@ -1,6 +1,6 @@
 module github.com/cockroachdb/molt
 
-go 1.21
+go 1.26
 
 require (
 	github.com/cockroachdb/apd/v3 v3.1.0
@@ -12,7 +12,6 @@ require (
 	github.com/lib/pq v1.10.6
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/pingcap/tidb/parser v0.0.0-20211124132551-4a1b2e9fe5b5
-	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.18.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shopspring/decimal v1.3.1
@@ -53,6 +52,7 @@ require (
 	github.com/pierrre/geohash v1.0.0 // indirect
 	github.com/pingcap/errors v0.11.5-0.20210425183316-da1aaba5fb63 // indirect
 	github.com/pingcap/log v0.0.0-20210906054005-afc726e70354 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.46.0 // indirect

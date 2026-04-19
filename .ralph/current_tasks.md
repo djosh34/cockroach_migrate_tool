@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 16:18:01 CEST 2026
+Generated: Sun Apr 19 16:55:46 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/04-task-remove-novice-user-dependence-on-repo-clone-and-local-tooling.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove contributor-only coding rules from README and keep the operator path free of internal project structure assumptions <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/02-task-upgrade-the-verify-slice-to-go-1-26-and-bump-all-dependencies.md`
-
-```
-## Task: Upgrade the verify-only slice to Go 1.26 and bump its dependencies before packaging the image <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -105,6 +94,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Run a five-pass security audit of the verify HTTP surface and file bugs for every issue found <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/10-task-prune-cockroachdb-molt-down-to-the-postgresql-cockroachdb-verify-hot-path-and-add-root-license-notices.md`
+
+```
+## Task: Prune `cockroachdb_molt` down to the PostgreSQL/CockroachDB verify hot path and add root license notices <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -270,6 +270,28 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-24-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md`
+
+```
+## Task: Audit full end-to-end coverage for duplicate CDC delivery, recreated feeds, and source-destination schema mismatch, then add any missing cases to the full e2e suite <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-25-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md`
+
+```
+## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

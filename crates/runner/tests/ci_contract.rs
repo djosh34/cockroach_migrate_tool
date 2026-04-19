@@ -108,6 +108,20 @@ fn vendored_molt_manifest_excludes_fetch_only_dependency_families() {
 }
 
 #[test]
+fn vendored_molt_manifest_declares_go_1_26() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_module_declares_go_version("1.26");
+}
+
+#[test]
+fn vendored_molt_retained_source_does_not_import_pkg_errors() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_retained_source_does_not_import("github.com/pkg/errors");
+}
+
+#[test]
 fn vendored_molt_testutils_boundary_is_an_explicit_verify_test_exception() {
     let contract = VerifySourceContract::load();
 

@@ -36,7 +36,10 @@ EOF_APPEND_PROGRESS_LOG
 - [ ] you are really done if and only if ALL of these pass 100%:
     - [ ] `make check` & `make lint` (they are the same)
     - [ ] `make test`
-    - [ ] `make test-long`
+    - [ ] You MUST NOT run `make test-long` or any e2e lane for a normal non-story-finishing task
+    - [ ] `make test-long` / e2e is allowed only when you are finishing the entire story, or when the task explicitly says the long / e2e lane is required
+    - [ ] Treat `make test-long` / e2e as a story-end validation gate only, never as a default end-of-task check
+    - [ ] Time is valuable: running the long / e2e lane on every task slows development down far too much and is therefore the wrong default
     - [ ] Final check if code isn't more muddy using improve-code-boundaries skill, otherwise resolve it
 
 - [ ] only when you're done, and all checks pass:

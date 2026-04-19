@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 16:18:01 CEST 2026
+Generated: Sun Apr 19 16:55:46 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -479,6 +479,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Prune the codebase down to the verify-only source slice and prove all unrelated code was removed <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/02-task-upgrade-the-verify-slice-to-go-1-26-and-bump-all-dependencies.md`
+
+```
+## Task: Upgrade the verify-only slice to Go 1.26 and bump its dependencies before packaging the image <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

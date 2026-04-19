@@ -8,7 +8,6 @@ pub struct VerifySourceContract {
     molt_root: PathBuf,
     root_command_text: String,
     go_mod_text: String,
-    go_sum_text: String,
 }
 
 impl VerifySourceContract {
@@ -16,7 +15,6 @@ impl VerifySourceContract {
         let molt_root = repo_root().join("cockroachdb_molt/molt");
         let root_command_path = molt_root.join("cmd/root.go");
         let go_mod_path = molt_root.join("go.mod");
-        let go_sum_path = molt_root.join("go.sum");
         let root_command_text = fs::read_to_string(&root_command_path).unwrap_or_else(|error| {
             panic!(
                 "verify root command `{}` should be readable: {error}",
@@ -26,15 +24,11 @@ impl VerifySourceContract {
         let go_mod_text = fs::read_to_string(&go_mod_path).unwrap_or_else(|error| {
             panic!("go.mod `{}` should be readable: {error}", go_mod_path.display())
         });
-        let go_sum_text = fs::read_to_string(&go_sum_path).unwrap_or_else(|error| {
-            panic!("go.sum `{}` should be readable: {error}", go_sum_path.display())
-        });
 
         Self {
             molt_root,
             root_command_text,
             go_mod_text,
-            go_sum_text,
         }
     }
 
@@ -109,15 +103,31 @@ impl VerifySourceContract {
             "golang.org/x/oauth2",
             "google.golang.org/api",
         ] {
-            assert!(
-                !self.go_mod_text.contains(forbidden_module),
-                "verify-only go.mod must not retain fetch-only dependency `{forbidden_module}`",
-            );
-            assert!(
-                !self.go_sum_text.contains(forbidden_module),
-                "verify-only go.sum must not retain fetch-only dependency `{forbidden_module}`",
-            );
+            self.assert_retained_source_does_not_import(forbidden_module);
+            self.assert_direct_requirement_is_absent(forbidden_module);
         }
+    }
+
+    pub fn assert_retained_source_does_not_import(&self, forbidden_module: &str) {
+        let import_sites = self.go_source_import_sites(forbidden_module);
+
+        assert!(
+            import_sites.is_empty(),
+            "verify-only retained source must not import `{forbidden_module}`, found imports in: {import_sites:?}",
+        );
+    }
+
+    pub fn assert_module_declares_go_version(&self, expected_version: &str) {
+        let declared_version = self
+            .go_mod_text
+            .lines()
+            .find_map(|line| line.strip_prefix("go ").map(str::trim))
+            .unwrap_or_else(|| panic!("verify-only go.mod should declare a Go version"));
+
+        assert_eq!(
+            declared_version, expected_version,
+            "verify-only go.mod should declare Go {expected_version}, found Go {declared_version}",
+        );
     }
 
     pub fn assert_testutils_exception_is_narrow_and_explicit(&self) {
@@ -132,6 +142,82 @@ impl VerifySourceContract {
             unexpected_entries.is_empty(),
             "verify-only vendored tree should keep only the explicit retained testutils exception, found unexpected testutils files: {unexpected_entries:?}",
         );
+    }
+
+    fn assert_direct_requirement_is_absent(&self, forbidden_module: &str) {
+        let direct_requirements = self.direct_requirements();
+
+        assert!(
+            !direct_requirements.contains(forbidden_module),
+            "verify-only go.mod must not retain direct dependency `{forbidden_module}`",
+        );
+    }
+
+    fn direct_requirements(&self) -> BTreeSet<String> {
+        let mut direct_requirements = BTreeSet::new();
+        let mut in_require_block = false;
+
+        for raw_line in self.go_mod_text.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with("//") {
+                continue;
+            }
+            if line == "require (" {
+                in_require_block = true;
+                continue;
+            }
+            if in_require_block && line == ")" {
+                in_require_block = false;
+                continue;
+            }
+            if in_require_block {
+                if let Some(requirement) = parse_direct_requirement_line(line) {
+                    direct_requirements.insert(requirement);
+                }
+                continue;
+            }
+            if let Some(requirement) = line
+                .strip_prefix("require ")
+                .and_then(parse_direct_requirement_line)
+            {
+                direct_requirements.insert(requirement);
+            }
+        }
+
+        direct_requirements
+    }
+
+    fn go_source_import_sites(&self, forbidden_module: &str) -> Vec<String> {
+        let mut import_sites = Vec::new();
+
+        for source_file in go_source_files(&self.molt_root) {
+            let source_text = fs::read_to_string(&source_file).unwrap_or_else(|error| {
+                panic!(
+                    "verify source file `{}` should be readable: {error}",
+                    source_file.display()
+                )
+            });
+            if go_imports(&source_text)
+                .iter()
+                .any(|import_path| import_path == forbidden_module)
+            {
+                import_sites.push(
+                    source_file
+                        .strip_prefix(&self.molt_root)
+                        .unwrap_or_else(|error| {
+                            panic!(
+                                "source file `{}` should stay under verify root `{}`: {error}",
+                                source_file.display(),
+                                self.molt_root.display()
+                            )
+                        })
+                        .display()
+                        .to_string(),
+                );
+            }
+        }
+
+        import_sites
     }
 }
 
@@ -176,6 +262,76 @@ fn read_dir_names(dir: &Path) -> BTreeSet<String> {
                 .into_owned()
         })
         .collect()
+}
+
+fn parse_direct_requirement_line(line: &str) -> Option<String> {
+    if line.contains("// indirect") {
+        return None;
+    }
+
+    line.split_whitespace().next().map(str::to_owned)
+}
+
+fn go_source_files(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+
+    for entry in fs::read_dir(dir)
+        .unwrap_or_else(|error| panic!("directory `{}` should be readable: {error}", dir.display()))
+    {
+        let path = entry
+            .unwrap_or_else(|error| {
+                panic!("directory entry under `{}` should be readable: {error}", dir.display())
+            })
+            .path();
+        if path.is_dir() {
+            files.extend(go_source_files(&path));
+            continue;
+        }
+        if path.extension().and_then(|extension| extension.to_str()) == Some("go") {
+            files.push(path);
+        }
+    }
+
+    files.sort();
+    files
+}
+
+fn go_imports(source_text: &str) -> Vec<String> {
+    let mut imports = Vec::new();
+    let mut in_import_block = false;
+
+    for raw_line in source_text.lines() {
+        let line = raw_line.trim();
+        if in_import_block {
+            if line == ")" {
+                in_import_block = false;
+                continue;
+            }
+            if let Some(import_path) = extract_go_import_path(line) {
+                imports.push(import_path);
+            }
+            continue;
+        }
+        if let Some(import_clause) = line.strip_prefix("import ") {
+            if import_clause == "(" {
+                in_import_block = true;
+                continue;
+            }
+            if let Some(import_path) = extract_go_import_path(import_clause) {
+                imports.push(import_path);
+            }
+        }
+    }
+
+    imports
+}
+
+fn extract_go_import_path(import_clause: &str) -> Option<String> {
+    let first_quote = import_clause.find('"')?;
+    let remainder = &import_clause[first_quote + 1..];
+    let second_quote = remainder.find('"')?;
+
+    Some(remainder[..second_quote].to_owned())
 }
 
 fn repo_root() -> PathBuf {
