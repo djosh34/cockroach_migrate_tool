@@ -8,24 +8,33 @@ Must use tdd skill to complete
 
 In scope:
 - `/metrics` endpoint
+- all verify metrics prefixed with `cockroach_migration_tool_verify_`
 - per-job labels including `job_id`
-- metrics for rows todo, transferred/checked, total, error count, mismatch count, and equivalent verify progress counters available from the implementation
+- metrics that expose per source database and per source table row counts
+- metrics that expose per destination database and per destination table row counts
+- metrics that expose checked row counts
+- metrics that expose mismatch counts
+- metrics that expose error counts
+- metric naming and labels that make `rows todo` implied from source-versus-destination counts rather than exported as a separate vague metric
 - tests that assert metric correctness and cardinality choices explicitly
 
 Out of scope:
-- external dashboarding
+- external dashboarding, which will be done later in another task
 
 Decisions already made:
 - metrics must expose progress of verification
+- every verify metric must use the `cockroach_migration_tool_verify_` prefix
 - metrics must include a label per verification job named `job_id`
-- results should include row and mismatch/error visibility rather than only binary success/failure
+- results should include source row counts, destination row counts, checked rows, mismatches, and errors rather than only binary success/failure
+- `rows todo` should not be exported as its own metric when it can be derived from clearer source-versus-destination count metrics
 
 </description>
 
 
 <acceptance_criteria>
 - [ ] Red/green TDD covers `/metrics` exposure and validates the required per-job progress/result metrics
-- [ ] Metrics include a `job_id` label and expose job progress, totals, mismatches, and errors
+- [ ] Every exported verify metric uses the `cockroach_migration_tool_verify_` prefix
+- [ ] Metrics include a `job_id` label and expose per source database/table row counts, per destination database/table row counts, checked rows, mismatches, and errors
 - [ ] Operators can observe running and completed verification jobs without scraping ad-hoc log text
 - [ ] `make check` — passes cleanly
 - [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
