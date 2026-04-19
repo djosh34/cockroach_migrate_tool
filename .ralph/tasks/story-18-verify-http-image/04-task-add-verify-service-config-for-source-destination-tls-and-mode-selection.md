@@ -1,4 +1,4 @@
-## Task: Add a dedicated verify-service config with source and destination TLS support and explicit verify mode selection <status>not_started</status> <passes>false</passes>
+## Task: Add a dedicated verify-service config with source and destination TLS support and explicit verify mode selection <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -33,12 +33,14 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers parsing and validating the dedicated verify-service config
-- [ ] The config supports source and destination DB settings, TLS material, passwordless certificate-based auth, and optional HTTPS mTLS listener settings
-- [ ] The config requires an explicit verify mode of `verify-full` or `verify-ca`, and the HTTP API cannot override connection details from config
-- [ ] Configuration and docs make it explicit when direct service authentication is disabled that no extra built-in protection is being provided
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers parsing and validating the dedicated verify-service config
+- [x] The config supports source and destination DB settings, TLS material, passwordless certificate-based auth, and optional HTTPS mTLS listener settings
+- [x] The config requires an explicit verify mode of `verify-full` or `verify-ca`, and the HTTP API cannot override connection details from config
+- [x] Configuration and docs make it explicit when direct service authentication is disabled that no extra built-in protection is being provided
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — not required; this task did not change the long-lane selection boundary
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/04-task-add-verify-service-config-for-source-destination-tls-and-mode-selection_plans/2026-04-19-verify-service-config-plan.md</plan>

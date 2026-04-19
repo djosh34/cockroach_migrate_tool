@@ -1,0 +1,20 @@
+listener:
+  bind_addr: 0.0.0.0:8443
+  transport:
+    mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_auth:
+      mode: mtls
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb
+    tls:
+      mode: verify-full
+      ca_cert_path: /config/certs/source-ca.crt
+  destination:
+    url: postgresql://verify_target@crdb.internal:26257/appdb
+    tls:
+      mode: verify-ca
+      ca_cert_path: /config/certs/destination-ca.crt

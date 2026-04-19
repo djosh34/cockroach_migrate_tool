@@ -7,7 +7,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var DBConnConfig = dbconn.Config{}
+type dbConnConfig struct {
+	Source string
+	Target string
+}
+
+var DBConnConfig = dbConnConfig{}
 
 func RegisterDBConnFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().StringVar(

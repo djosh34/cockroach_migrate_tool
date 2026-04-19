@@ -65,6 +65,7 @@ impl VerifySourceContract {
             String::from("internal"),
             String::from("root.go"),
             String::from("verify"),
+            String::from("verifyservice"),
         ]);
         let unexpected_entries = actual_entries
             .difference(&allowed_entries)
@@ -73,7 +74,7 @@ impl VerifySourceContract {
 
         assert!(
             unexpected_entries.is_empty(),
-            "vendored MOLT cmd tree should keep only the verify command surface, found unexpected entries: {unexpected_entries:?}",
+            "vendored MOLT cmd tree should keep only the verify and verify-service command surfaces, found unexpected entries: {unexpected_entries:?}",
         );
         assert!(
             !self.root_command_text.contains("EscapePasswordCommand()"),
@@ -244,6 +245,7 @@ fn verify_slice_top_level_entries() -> BTreeSet<String> {
         "testutils",
         "utils",
         "verify",
+        "verifyservice",
     ]
     .into_iter()
     .map(str::to_owned)

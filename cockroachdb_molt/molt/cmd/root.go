@@ -5,33 +5,22 @@ import (
 	"os"
 
 	"github.com/cockroachdb/molt/cmd/verify"
+	verifyservicecmd "github.com/cockroachdb/molt/cmd/verifyservice"
 	"github.com/spf13/cobra"
 )
 
 const rootCmdUse = "molt"
 
-var rootCmd = &cobra.Command{
-	Use:   "molt",
-	Short: "Onboarding assistance for migrating to CockroachDB",
-	Long:  `MOLT (Migrate Off Legacy Things) provides tooling which assists migrating off other database providers to CockroachDB.`,
-}
+var rootCmd = NewRootCmd()
 
-func walk(c *cobra.Command, f func(*cobra.Command)) {
-	f(c)
-	for _, c := range c.Commands() {
-		walk(c, f)
+func NewRootCmd() *cobra.Command {
+	rootCmd := &cobra.Command{
+		Use:   "molt",
+		Short: "Onboarding assistance for migrating to CockroachDB",
+		Long:  `MOLT (Migrate Off Legacy Things) provides tooling which assists migrating off other database providers to CockroachDB.`,
 	}
-}
-
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func init() {
 	rootCmd.AddCommand(verify.Command())
+	rootCmd.AddCommand(verifyservicecmd.Command())
 	rootCmd.Version = fmt.Sprintf("v%s", moltVersion)
 	// Hide completion options, because irrelevant.
 	rootCmd.CompletionOptions.HiddenDefaultCmd = true
@@ -46,4 +35,19 @@ func init() {
 			c.Short = fmt.Sprintf("Help command for %s.", rootCmdUse)
 		}
 	})
+	return rootCmd
+}
+
+func walk(c *cobra.Command, f func(*cobra.Command)) {
+	f(c)
+	for _, c := range c.Commands() {
+		walk(c, f)
+	}
+}
+
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

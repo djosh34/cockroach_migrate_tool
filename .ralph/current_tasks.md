@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 05:13:23 PM CEST 2026
+Generated: Sun Apr 19 05:33:18 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/04-task-remove-novice-user-dependence-on-repo-clone-and-local-tooling.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove contributor-only coding rules from README and keep the operator path free of internal project structure assumptions <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/04-task-add-verify-service-config-for-source-destination-tls-and-mode-selection.md`
-
-```
-## Task: Add a dedicated verify-service config with source and destination TLS support and explicit verify mode selection <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

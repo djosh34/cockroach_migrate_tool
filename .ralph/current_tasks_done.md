@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 05:13:23 PM CEST 2026
+Generated: Sun Apr 19 05:33:18 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -501,6 +501,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build a scratch verify image from the pruned verify-only source <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/04-task-add-verify-service-config-for-source-destination-tls-and-mode-selection.md`
+
+```
+## Task: Add a dedicated verify-service config with source and destination TLS support and explicit verify mode selection <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
