@@ -1,0 +1,40 @@
+from_create_table
+CREATE TABLE da_test_table (
+    tiny_int_test TINYINT,
+    tinyint4_test TINYINT(4),
+    smallint_test SMALLINT,
+    int_test INTEGER,
+    largeint_test BIGINT,
+    datetime_test DATETIME,
+    timestamp_test TIMESTAMP,
+    date_test DATE,
+    bit_test BIT,
+    text_test TEXT,
+    medtext_test MEDIUMTEXT,
+    longtext_test LONGTEXT,
+    varchar_test VARCHAR(20),
+    float_test FLOAT,
+    bigfloat_test DOUBLE,
+    numeric_test DECIMAL,
+    qchar CHAR(30),
+    enum_test ENUM('a', 'b', 'c')
+)
+----
+tiny_int_test: int2
+tinyint4_test: int2
+smallint_test: int2
+int_test: int4
+largeint_test: int
+datetime_test: timestamp
+timestamp_test: timestamptz
+date_test: date
+bit_test: varbit
+text_test: string
+medtext_test: string
+longtext_test: string
+varchar_test: varchar
+float_test: float4
+bigfloat_test: float
+numeric_test: decimal
+qchar: varchar
+enum_test: (non-standard) 3500

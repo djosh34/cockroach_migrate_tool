@@ -1,0 +1,12 @@
+[
+  {
+    "table": "public.manytypes",
+    "column_type_map": [
+      {
+        "column": "is_active",
+        "source_type": "boolean",
+        "crdb_type": "inet"
+      }
+    ]
+  }
+]

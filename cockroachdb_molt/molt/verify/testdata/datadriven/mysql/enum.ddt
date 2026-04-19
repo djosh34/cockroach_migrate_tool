@@ -1,0 +1,30 @@
+exec source
+CREATE TABLE enum_table(id INT8 PRIMARY KEY, s ENUM('a', 'b'))
+----
+[mysql] 0 rows affected
+
+exec target
+CREATE TYPE enum_type AS ENUM('a', 'c')
+----
+[crdb] CREATE TYPE
+
+exec target
+CREATE TABLE enum_table(id INT8 PRIMARY KEY, s enum_type)
+----
+[crdb] CREATE TABLE
+
+exec source
+INSERT INTO enum_table VALUES (1, "a"), (2, "b")
+----
+[mysql] 2 rows affected
+
+exec target
+INSERT INTO enum_table VALUES (1, 'a'), (2, 'c')
+----
+[crdb] INSERT 0 2
+
+verify
+----
+{"level":"info","message":"starting verify on public.enum_table, shard 1/1"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"enum_table","source_values":{"s":"b"},"target_values":{"s":"c"},"primary_key":["2"],"message":"mismatching row value"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"enum_table","num_truth_rows":2,"num_success":1,"num_conditional_success":0,"num_missing":0,"num_mismatch":1,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.enum_table (shard 1/1)"}

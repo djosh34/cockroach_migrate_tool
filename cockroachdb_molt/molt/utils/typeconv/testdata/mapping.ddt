@@ -1,0 +1,319 @@
+type-mapping
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "INT2"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]
+----
+[{tableName:t1, [{colName:*, mapping:{integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}},{colName:name, mapping:{bit varying:{family:StringFamilyStringFamily width:0 precision:0 locale:"" visible_type:0 oid:25 time_precision_is_set:false}}}]}]
+
+type-mapping
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "INT2"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  },
+    {
+      "table": "t2",
+      "column_type_map": [
+        {
+          "column": "*",
+          "source_type": "integer",
+          "crdb_type": "INT2"
+        }
+      ]
+    }
+]
+----
+[{tableName:t1, [{colName:*, mapping:{integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}},{colName:name, mapping:{bit varying:{family:StringFamilyStringFamily width:0 precision:0 locale:"" visible_type:0 oid:25 time_precision_is_set:false}}}]},{tableName:t2, [{colName:*, mapping:{integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}}]}]
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "name",
+        "source_type": "integer",
+        "crdb_type": "INT2"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  },
+    {
+      "table": "t2",
+      "column_type_map": [
+        {
+          "column": "*",
+          "source_type": "integer",
+          "crdb_type": "INT2"
+        }
+      ]
+    }
+]
+----
+mapping rule for column "name" from table "t1" has been defined: {integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "name",
+        "crdb_type": "INT2"
+      }
+    ]
+  }
+]
+----
+mapping rule for column name from table t1 is not found
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+      "source_type": "integer",
+        "crdb_type": "INT2"
+      }
+    ]
+  }
+]
+----
+column name is not specified for overriding type map
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "name",
+        "source_type": "INT2"
+      }
+    ]
+  }
+]
+----
+mapping rule for column name from table t1 is not found
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "dota"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]
+----
+cannot get the crdb type for "dota": cannot assert the type "dota" as *types.T on crdb
+
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "INT2"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  },
+    {
+      "table": "t1",
+      "column_type_map": [
+        {
+          "column": "*",
+          "source_type": "integer",
+          "crdb_type": "INT2"
+        }
+      ]
+    }
+]
+----
+mapping rule for table "t1" has been defined: [{colName:*, mapping:{integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}},{colName:name, mapping:{bit varying:{family:StringFamilyStringFamily width:0 precision:0 locale:"" visible_type:0 oid:25 time_precision_is_set:false}}}]
+
+
+type-mapping
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "INT2",
+        "some-random-field": "painted-paradise"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string",
+        "some-random-field": "painted-paradise"
+      }
+    ]
+  }
+]
+----
+[{tableName:t1, [{colName:*, mapping:{integer:{family:IntFamilyIntFamily width:16 precision:0 locale:"" visible_type:0 oid:21 time_precision_is_set:false}}},{colName:name, mapping:{bit varying:{family:StringFamilyStringFamily width:0 precision:0 locale:"" visible_type:0 oid:25 time_precision_is_set:false}}}]}]
+
+
+type-mapping expect-error
+[{}]
+----
+table name is not specified for overriding type map
+
+
+type-mapping expect-error
+[
+  {
+      "column_type_map": [
+        {
+          "column": "*",
+          "source_type": "integer",
+          "crdb_type": "INT2",
+          "some-random-field": "painted-paradise"
+        },
+        {
+          "column": "name",
+          "source_type": "bit varying",
+          "crdb_type": "string",
+          "some-random-field": "painted-paradise"
+        }
+      ]
+  }
+]
+----
+table name is not specified for overriding type map
+
+type-mapping expect-error
+[{'table': yes}]
+----
+unable to unmarshal json mapping: invalid character '\'' looking for beginning of object key string
+
+
+type-mapping expect-error
+[
+  {
+    "wrong-table-field": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "integer",
+        "crdb_type": "INT2"
+      },
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]
+----
+table name is not specified for overriding type map
+
+type-mapping
+[
+  {
+    "table": "t1",
+    "column_type_map": []
+  }
+]
+----
+[{tableName:t1, []}]
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [{}]
+  }
+]
+----
+column name is not specified for overriding type map
+
+
+type-mapping expect-error
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {},
+      {
+        "column": "name",
+        "source_type": "bit varying",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]
+----
+column name is not specified for overriding type map
+
+type-mapping
+[
+  {
+    "table": "t1",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "string",
+        "crdb_type": "timestamp(3)"
+      },
+    {
+      "column": "c1",
+      "source_type": "timetz(2)",
+      "crdb_type": "string"
+    }
+    ]
+  }
+]
+----
+[{tableName:t1, [{colName:*, mapping:{string:{family:TimestampFamilyTimestampFamily width:0 precision:3 locale:"" visible_type:0 oid:1114 time_precision_is_set:true}}},{colName:c1, mapping:{timetz(2):{family:StringFamilyStringFamily width:0 precision:0 locale:"" visible_type:0 oid:25 time_precision_is_set:false}}}]}]

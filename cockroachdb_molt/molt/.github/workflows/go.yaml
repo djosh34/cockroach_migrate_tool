@@ -1,0 +1,114 @@
+name: Go Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  GO_VERSION: "1.22"
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Start Dependencies
+        working-directory: docker
+        run: docker compose up -d
+
+      # Just cache based on job and go.sum contents.
+      - name: Write cache key
+        run: echo '${{ github.job }} ${{ hashFiles('go.sum') }}' > CACHE_KEY
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: CACHE_KEY
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Download CDC sink binary
+        run: |
+          curl -o cdc.tgz https://storage.googleapis.com/cdc-sink-binaries/cdc-sink-linux-amd64-master.tgz
+          tar -xvzf cdc.tgz
+          mv cdc-sink-linux-amd64-master/cdc-sink cdc-sink
+          chmod +x cdc-sink
+
+      - name: Test
+        run: |
+          echo "current commit SHA: ${{ github.event.pull_request.head.sha }}"
+          # We want to skip all the scale testing.
+          go test -skip ^TestScale$ -v -race -coverpkg=./... -covermode=atomic -coverprofile=${{ env.COVER_OUT }} ./... 2>&1 | tee test_output.txt
+          go run github.com/jstemmer/go-junit-report -set-exit-code < test_output.txt > report.xml
+        env:
+          ENTERPRISE_ORG: ${{ vars.ENTERPRISE_ORG }}
+          ENTERPRISE_LICENSE: ${{ secrets.ENTERPRISE_LICENSE }}
+
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: |
+            report.xml
+          output: test-summary.md
+        if: always()
+
+      - name: Writing markdown summary
+        run: |
+          cat test-summary.md >> $GITHUB_STEP_SUMMARY
+        if: always()
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-artifacts
+          path: |
+            test-summary.md
+            test_output.txt
+            report.xml
+        if: always()
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/checkout@v3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          args: --timeout=5m
+
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Just cache based on job and go.sum contents.
+      - name: Write cache key
+        run: echo '${{ github.job }} ${{ hashFiles('go.sum') }}' > CACHE_KEY
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: CACHE_KEY
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: crlfmt returns no deltas
+        if: ${{ always() }}
+        run: |
+          DELTA=$(go run github.com/cockroachdb/crlfmt -ignore '_gen\.go|\.gen\.go' .)
+          echo $DELTA
+          test -z "$DELTA"

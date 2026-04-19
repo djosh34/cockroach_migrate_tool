@@ -1,0 +1,12 @@
+[
+  {
+    "table": "public.manytypes",
+    "column_type_map": [
+      {
+        "column": "*",
+        "source_type": "inet",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]

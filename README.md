@@ -192,27 +192,6 @@ After startup, the runtime serves:
 
 The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>`, `runner compare-schema --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path>`, `runner render-postgres-setup --config <path> --output-dir <dir>`, `runner render-helper-plan --config <path> --mapping <id> --cockroach-schema <path> --postgres-schema <path> --output-dir <dir>`, and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
-## Write-Freeze Cutover Runbook
-
-Use one mapping-scoped runbook for cutover. Before handover starts, run `runner verify --config <path> --mapping <id> --source-url <cockroach-url>` repeatedly while PostgreSQL is shadowing CockroachDB so parity is already a normal check, not a last-minute surprise.
-
-1. Block writes at the API boundary for the mapping you are handing over.
-2. Run `runner cutover-readiness --config <path> --mapping <id> --source-url <cockroach-url>` until it reports `ready=true`.
-3. Run one final `runner verify --config <path> --mapping <id> --source-url <cockroach-url>` after readiness reports drained.
-4. Switch application traffic to PostgreSQL only after those checks finish cleanly.
-
-Do not switch traffic until writes are frozen, `runner cutover-readiness` has drained to zero with `ready=true`, and the final `runner verify` reports equality.
-
-## CI Publish Safety
-
-Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, and tag pushes do not trigger the protected image-publish workflow.
-
-The `publish` job still carries an explicit `if:` gate that requires a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the release path.
-
-Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.
-
-Before any push, the workflow builds one release-image archive, scans that exact archive with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifact for review.
-
 ## Command Contract
 
 - `make check`: run the workspace lint gate.
@@ -226,15 +205,3 @@ Raw Cargo commands remain available when you want a narrower loop:
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
 
-## Dependency Policy
-
-The foundation of this workspace is intentionally opinionated.
-
-- PostgreSQL access uses `sqlx`.
-- Application error boundaries use `thiserror`.
-- CLI parsing uses `clap`.
-- YAML configuration uses `serde` and `serde_yaml`.
-- HTTP runtime code uses `axum`.
-- TLS and HTTP must use established crates. Hand-rolled protocol, config, or error layers are not allowed.
-
-If a future change needs a new dependency, it must establish a real boundary or behavior in the same story. Dependency-only tasks and throwaway wrappers are out of scope for this codebase.

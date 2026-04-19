@@ -1,0 +1,147 @@
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "DROP TABLE IF EXISTS notnulltable; CREATE TABLE notnulltable (x int primary key, y text not null, z text);"
+----
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO notnulltable VALUES  (1, 'hello', 'sfhgjahsf'), (2, 'fhjsdfgj', 'NULL'), (3, 'asdajd', 'dfshdfhgj'), (4, 'dqwd', NULL), (5, 'fdafhjdf', 'adgjadgfa'), (6, 'fdafhjdf', 'adgjadgfa'), (7, 'fdafhjdf', 'adgjadgfa'), (8, '', null), (9, '', 'NULL'), (10, '', '');"
+----
+
+exec
+psql 'postgres://postgres@localhost:5432/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM notnulltable"
+----
+Null display is "REALNULL".
+ x  |    y     |     z     
+----+----------+-----------
+  1 | hello    | sfhgjahsf
+  2 | fhjsdfgj | NULL
+  3 | asdajd   | dfshdfhgj
+  4 | dqwd     | REALNULL
+  5 | fdafhjdf | adgjadgfa
+  6 | fdafhjdf | adgjadgfa
+  7 | fdafhjdf | adgjadgfa
+  8 |          | REALNULL
+  9 |          | NULL
+ 10 |          | 
+(10 rows)
+
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'notnulltable' --direct-copy --non-interactive --table-handling 'drop-on-target-and-recreate'
+----
+{"level":"info","message":"default compression to none"}
+{"level":"info","message":"checking database details"}
+{"level":"info","message":"creating schema for tables: [public.notnulltable]"}
+{"level":"info","message":"getting column types for table: public.notnulltable"}
+{"level":"info","message":"finished getting column types for table: public.notnulltable"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.notnulltable (x INT4 NOT NULL PRIMARY KEY, y STRING NOT NULL, z STRING)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.notnulltable public.notnulltable]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":10,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.notnulltable"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM notnulltable"
+----
+Null display is "REALNULL".
+ x  |    y     |     z     
+----+----------+-----------
+  1 | hello    | sfhgjahsf
+  2 | fhjsdfgj | NULL
+  3 | asdajd   | dfshdfhgj
+  4 | dqwd     | REALNULL
+  5 | fdafhjdf | adgjadgfa
+  6 | fdafhjdf | adgjadgfa
+  7 | fdafhjdf | adgjadgfa
+  8 |          | REALNULL
+  9 |          | NULL
+ 10 |          | 
+(10 rows)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'notnulltable'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.notnulltable, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"notnulltable","num_truth_rows":10,"num_success":10,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.notnulltable (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO notnulltable VALUES (11, '', 'import flag');"
+----
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'notnulltable' --local-path /tmp/basic --local-path-listen-addr '0.0.0.0:9115' --table-handling 'drop-on-target-and-recreate'  --cleanup=true --non-interactive
+----
+{"level":"info","message":"default compression to GZIP"}
+{"level":"info","message":"checking database details"}
+{"level":"info","source_table":"public.notnulltable","target_table":"public.notnulltable","message":"found matching table"}
+{"level":"info","message":"creating schema for tables: [public.notnulltable]"}
+{"level":"info","message":"getting column types for table: public.notnulltable"}
+{"level":"info","message":"finished getting column types for table: public.notnulltable"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.notnulltable (x INT4 NOT NULL PRIMARY KEY, y STRING NOT NULL, z STRING)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.notnulltable public.notnulltable]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":11,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","message":"starting data import on target"}
+{"level":"info","message":"imported 11 rows for batch for files 1 to 4"}
+{"level":"info","type":"summary","net_duration_ms":1000,"net_duration":"000h 00m 01s","import_duration_ms":1000,"import_duration":"000h 00m 01s","export_duration_ms":1000,"export_duration":"000h 00m 01s","num_rows":11,"cdc_cursor":"0/19E3610","message":"data import on target for table complete"}
+{"level":"info","message":"cleaning up resources created during fetch run"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.notnulltable"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+{"level":"info","message":"http server intentionally shut down"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM notnulltable"
+----
+Null display is "REALNULL".
+ x  |    y     |      z      
+----+----------+-------------
+  1 | hello    | sfhgjahsf
+  2 | fhjsdfgj | NULL
+  3 | asdajd   | dfshdfhgj
+  4 | dqwd     | REALNULL
+  5 | fdafhjdf | adgjadgfa
+  6 | fdafhjdf | adgjadgfa
+  7 | fdafhjdf | adgjadgfa
+  8 |          | REALNULL
+  9 |          | NULL
+ 10 |          | 
+ 11 |          | import flag
+(11 rows)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'notnulltable'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.notnulltable, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"notnulltable","num_truth_rows":11,"num_success":11,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.notnulltable (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}
+
+# This is to show that how an empty string in crdb is printed, to verify that we migrated the correct data.
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "INSERT INTO notnulltable VALUES (12, '', NULL)"
+----
+INSERT 0 1
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM notnulltable"
+----
+Null display is "REALNULL".
+ x  |    y     |      z      
+----+----------+-------------
+  1 | hello    | sfhgjahsf
+  2 | fhjsdfgj | NULL
+  3 | asdajd   | dfshdfhgj
+  4 | dqwd     | REALNULL
+  5 | fdafhjdf | adgjadgfa
+  6 | fdafhjdf | adgjadgfa
+  7 | fdafhjdf | adgjadgfa
+  8 |          | REALNULL
+  9 |          | NULL
+ 10 |          | 
+ 11 |          | import flag
+ 12 |          | REALNULL
+(12 rows)

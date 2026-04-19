@@ -1,0 +1,44 @@
+services:
+  mysql:
+    volumes:
+      - ./mysql-init:/docker-entrypoint-initdb.d
+
+  postgresql:
+    volumes:
+      - ./pg-init:/docker-entrypoint-initdb.d
+
+  cockroachdb:
+    volumes:
+      - ./cockroach-init:/docker-entrypoint-initdb.d
+
+  cockroachdbtarget:
+    volumes:
+      - ./cockroach-init:/docker-entrypoint-initdb.d
+
+  # Add observability helpers.
+  prometheus:
+    image: prom/prometheus:latest
+    restart: always
+    working_dir: /prometheus
+    command: --config.file=prometheus.yml
+    ports:
+      - "9090:9090"
+    expose:
+      - "9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:latest
+    working_dir: /grafana
+    depends_on:
+      - prometheus
+    ports:
+      - 3000:3000
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./grafana/dashboard.json:/grafana/dashboard/dashboard.json
+      - ./grafana/dashboard.yaml:/etc/grafana/provisioning/dashboards/main.yaml
+      - ./grafana/datasource.yml:/etc/grafana/provisioning/datasources/prometheus_ds.yml

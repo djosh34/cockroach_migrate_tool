@@ -1,0 +1,153 @@
+#
+# Throw in all the common types and compare them.
+#
+
+exec all
+CREATE TABLE test_table (
+    id INT4,
+    id_b INT4 DEFAULT 0,
+    int2_test INT2 DEFAULT 1,
+    int4_test INT4 DEFAULT 1,
+    int8_test INT8 DEFAULT -1,
+    float4_test FLOAT4 DEFAULT -1.5,
+    float8_test FLOAT8 DEFAULT 434343,
+    date_test DATE DEFAULT '2020-09-11',
+    text_test TEXT,
+    varchar_test VARCHAR(3) DEFAULT 'e',
+    PRIMARY KEY (id, id_b)
+)
+----
+[mysql] 0 rows affected
+[crdb] CREATE TABLE
+
+exec all
+INSERT INTO test_table (id) VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+----
+[mysql] 10 rows affected
+[crdb] INSERT 0 10
+
+verify
+----
+{"level":"info","message":"starting verify on public.test_table, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"test_table","num_truth_rows":10,"num_success":10,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.test_table (shard 1/1)"}
+
+exec all
+DROP TABLE test_table
+----
+[mysql] 0 rows affected
+[crdb] DROP TABLE
+
+# All the slightly differently named tables.
+exec source
+CREATE TABLE test_table (
+    tinyint_test INT1 DEFAULT 1,
+    id INT4 PRIMARY KEY,
+    ts_table TIMESTAMP NOT NULL DEFAULT '2020-01-02 19:18:17',
+    dt_table DATETIME NOT NULL DEFAULT '2020-01-02 19:18:17'
+)
+----
+[mysql] 0 rows affected
+
+exec target
+CREATE TABLE test_table (
+    id INT8 PRIMARY KEY,
+    tinyint_test INT4 DEFAULT 1,
+    ts_table TIMESTAMPTZ NOT NULL DEFAULT '2020-01-02 19:18:17',
+    dt_table TIMESTAMP NOT NULL DEFAULT '2020-01-02 19:18:17'
+)
+----
+[crdb] CREATE TABLE
+
+exec all
+INSERT INTO test_table (id) VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10);
+----
+[mysql] 10 rows affected
+[crdb] INSERT 0 10
+
+verify
+----
+{"level":"info","message":"starting verify on public.test_table, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"test_table","num_truth_rows":10,"num_success":10,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.test_table (shard 1/1)"}
+
+verify splits=3
+----
+{"level":"info","message":"starting verify on public.test_table, shard 1/3, range: [<beginning> - 4)"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"test_table","num_truth_rows":3,"num_success":3,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.test_table (shard 1/3)"}
+{"level":"info","message":"starting verify on public.test_table, shard 2/3, range: [4 - 7)"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"test_table","num_truth_rows":3,"num_success":3,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.test_table (shard 2/3)"}
+{"level":"info","message":"starting verify on public.test_table, shard 3/3, range: [7 - <end>]"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"test_table","num_truth_rows":4,"num_success":4,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.test_table (shard 3/3)"}
+
+exec all
+DROP TABLE test_table
+----
+[mysql] 0 rows affected
+[crdb] DROP TABLE
+
+# Table with differences.
+
+exec all
+CREATE TABLE common_table (
+    id INT8 PRIMARY KEY,
+    str TEXT
+)
+----
+[mysql] 0 rows affected
+[crdb] CREATE TABLE
+
+exec source
+INSERT INTO common_table VALUES
+    (100, 'same value'),
+    (125, 'i am missing'),
+    (150, 'different value'),
+    (175, NULL),
+    (200, 'also same value'),
+    (250, 'missing on lie')
+----
+[mysql] 6 rows affected
+
+exec target
+INSERT INTO common_table VALUES
+    (50, 'extraneous row'),
+    (100, 'same value'),
+    (150, NULL),
+    (175, NULL),
+    (200, 'also same value'),
+    (300, 'missing on truth')
+----
+[crdb] INSERT 0 6
+
+# Verify with extraneous rows on non source of truth.
+verify
+----
+{"level":"info","message":"starting verify on public.common_table, shard 1/1"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["50"],"message":"extraneous row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["125"],"message":"missing row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","source_values":{"str":"different value"},"target_values":{"str":"NULL"},"primary_key":["150"],"message":"mismatching row value"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["250"],"message":"missing row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["300"],"message":"extraneous row"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"common_table","num_truth_rows":6,"num_success":3,"num_conditional_success":0,"num_missing":2,"num_mismatch":1,"num_extraneous":2,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.common_table (shard 1/1)"}
+
+# Verify with extraneous rows on source of truth.
+exec source
+INSERT INTO common_table VALUES
+     (400, 'same value')
+----
+[mysql] 1 rows affected
+
+verify
+----
+{"level":"info","message":"starting verify on public.common_table, shard 1/1"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["50"],"message":"extraneous row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["125"],"message":"missing row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","source_values":{"str":"different value"},"target_values":{"str":"NULL"},"primary_key":["150"],"message":"mismatching row value"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["250"],"message":"missing row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["300"],"message":"extraneous row"}
+{"level":"warn","type":"data","table_schema":"public","table_name":"common_table","primary_key":["400"],"message":"missing row"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"common_table","num_truth_rows":7,"num_success":3,"num_conditional_success":0,"num_missing":3,"num_mismatch":1,"num_extraneous":2,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.common_table (shard 1/1)"}
+
+exec all
+DROP TABLE common_table
+----
+[mysql] 0 rows affected
+[crdb] DROP TABLE

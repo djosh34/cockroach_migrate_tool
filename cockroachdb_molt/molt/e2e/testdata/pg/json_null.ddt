@@ -1,0 +1,225 @@
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "DROP TABLE IF EXISTS nulljson; CREATE TABLE nulljson (id SERIAL PRIMARY KEY, json_data json NOT NULL DEFAULT '{}'::json); "
+----
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljson VALUES (1, 'null'); "
+----
+
+exec expect-error
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljson VALUES (2, 'NULL'); "
+----
+ERROR:  invalid input syntax for type json
+LINE 1: INSERT INTO nulljson VALUES (2, 'NULL'); 
+                                        ^
+DETAIL:  Token "NULL" is invalid.
+CONTEXT:  JSON data, line 1: NULL
+
+exec expect-error
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljson VALUES (2, 'NulL'); "
+----
+ERROR:  invalid input syntax for type json
+LINE 1: INSERT INTO nulljson VALUES (2, 'NulL'); 
+                                        ^
+DETAIL:  Token "NulL" is invalid.
+CONTEXT:  JSON data, line 1: NulL
+
+exec
+psql 'postgres://postgres@localhost:5432/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljson"
+----
+Null display is "REALNULL".
+ id | json_data 
+----+-----------
+  1 | null
+(1 row)
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljson' --direct-copy --non-interactive --table-handling 'drop-on-target-and-recreate'
+----
+{"level":"info","message":"default compression to none"}
+{"level":"info","message":"checking database details"}
+{"level":"info","message":"creating schema for tables: [public.nulljson]"}
+{"level":"info","message":"getting column types for table: public.nulljson"}
+{"level":"info","message":"finished getting column types for table: public.nulljson"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.nulljson (id INT4 NOT NULL PRIMARY KEY, json_data JSONB NOT NULL)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.nulljson public.nulljson]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":1,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.nulljson"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljson"
+----
+Null display is "REALNULL".
+ id | json_data 
+----+-----------
+  1 | null
+(1 row)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljson'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.nulljson, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"nulljson","num_truth_rows":1,"num_success":1,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.nulljson (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljson VALUES (2, '{}');"
+----
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljson' --local-path /tmp/basic --local-path-listen-addr '0.0.0.0:9115' --table-handling 'drop-on-target-and-recreate'  --cleanup=true --non-interactive
+----
+{"level":"info","message":"default compression to GZIP"}
+{"level":"info","message":"checking database details"}
+{"level":"info","source_table":"public.nulljson","target_table":"public.nulljson","message":"found matching table"}
+{"level":"info","message":"creating schema for tables: [public.nulljson]"}
+{"level":"info","message":"getting column types for table: public.nulljson"}
+{"level":"info","message":"finished getting column types for table: public.nulljson"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.nulljson (id INT4 NOT NULL PRIMARY KEY, json_data JSONB NOT NULL)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.nulljson public.nulljson]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":2,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","message":"starting data import on target"}
+{"level":"info","message":"imported 2 rows for batch for files 1 to 2"}
+{"level":"info","type":"summary","net_duration_ms":1000,"net_duration":"000h 00m 01s","import_duration_ms":1000,"import_duration":"000h 00m 01s","export_duration_ms":1000,"export_duration":"000h 00m 01s","num_rows":2,"cdc_cursor":"0/19E3610","message":"data import on target for table complete"}
+{"level":"info","message":"cleaning up resources created during fetch run"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.nulljson"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+{"level":"info","message":"http server intentionally shut down"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljson"
+----
+Null display is "REALNULL".
+ id | json_data 
+----+-----------
+  1 | null
+  2 | {}
+(2 rows)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljson'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.nulljson, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"nulljson","num_truth_rows":2,"num_success":2,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.nulljson (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}
+
+# Jsonb
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "DROP TABLE IF EXISTS nulljsonb; CREATE TABLE nulljsonb (id SERIAL PRIMARY KEY, jsonb_data jsonb NOT NULL DEFAULT '{}'::jsonb); "
+----
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljsonb VALUES (1, 'null'); "
+----
+
+exec expect-error
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljsonb VALUES (2, 'NULL'); "
+----
+ERROR:  invalid input syntax for type json
+LINE 1: INSERT INTO nulljsonb VALUES (2, 'NULL'); 
+                                         ^
+DETAIL:  Token "NULL" is invalid.
+CONTEXT:  JSON data, line 1: NULL
+
+exec expect-error
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljsonb VALUES (2, 'NulL'); "
+----
+ERROR:  invalid input syntax for type json
+LINE 1: INSERT INTO nulljsonb VALUES (2, 'NulL'); 
+                                         ^
+DETAIL:  Token "NulL" is invalid.
+CONTEXT:  JSON data, line 1: NulL
+
+exec
+psql 'postgres://postgres@localhost:5432/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljsonb"
+----
+Null display is "REALNULL".
+ id | jsonb_data 
+----+------------
+  1 | null
+(1 row)
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljsonb' --direct-copy --non-interactive --table-handling 'drop-on-target-and-recreate'
+----
+{"level":"info","message":"default compression to none"}
+{"level":"info","message":"checking database details"}
+{"level":"info","message":"creating schema for tables: [public.nulljsonb]"}
+{"level":"info","message":"getting column types for table: public.nulljsonb"}
+{"level":"info","message":"finished getting column types for table: public.nulljsonb"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.nulljsonb (id INT4 NOT NULL PRIMARY KEY, jsonb_data JSONB NOT NULL)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.nulljsonb public.nulljsonb]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":1,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.nulljsonb"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljsonb"
+----
+Null display is "REALNULL".
+ id | jsonb_data 
+----+------------
+  1 | null
+(1 row)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljsonb'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.nulljsonb, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"nulljsonb","num_truth_rows":1,"num_success":1,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.nulljsonb (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}
+
+exec silent
+psql 'postgres://postgres@localhost:5432/defaultdb' -c "INSERT INTO nulljsonb VALUES (2, '{}');"
+----
+
+fetch --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljsonb' --local-path /tmp/basic --local-path-listen-addr '0.0.0.0:9115' --table-handling 'drop-on-target-and-recreate'  --cleanup=true --non-interactive
+----
+{"level":"info","message":"default compression to GZIP"}
+{"level":"info","message":"checking database details"}
+{"level":"info","source_table":"public.nulljsonb","target_table":"public.nulljsonb","message":"found matching table"}
+{"level":"info","message":"creating schema for tables: [public.nulljsonb]"}
+{"level":"info","message":"getting column types for table: public.nulljsonb"}
+{"level":"info","message":"finished getting column types for table: public.nulljsonb"}
+{"level":"info","message":"creating new table with [CREATE TABLE public.nulljsonb (id INT4 NOT NULL PRIMARY KEY, jsonb_data JSONB NOT NULL)]"}
+{"level":"info","message":"after recreating table, dbTables: {[[public.nulljsonb public.nulljsonb]] [] []}"}
+{"level":"info","message":"verifying common tables"}
+{"level":"info","message":"establishing snapshot"}
+{"level":"info","type":"summary","num_tables":1,"cdc_cursor":"0/19E3610","message":"starting fetch"}
+{"level":"warn","message":"clearing all continuation tokens because running in clear continuation mode"}
+{"level":"info","message":"data extraction phase starting"}
+{"level":"info","type":"summary","num_rows":2,"export_duration_ms":1000,"export_duration":"000h 00m 01s","message":"data extraction from source complete"}
+{"level":"info","message":"starting data import on target"}
+{"level":"info","message":"imported 2 rows for batch for files 1 to 2"}
+{"level":"info","type":"summary","net_duration_ms":1000,"net_duration":"000h 00m 01s","import_duration_ms":1000,"import_duration":"000h 00m 01s","export_duration_ms":1000,"export_duration":"000h 00m 01s","num_rows":2,"cdc_cursor":"0/19E3610","message":"data import on target for table complete"}
+{"level":"info","message":"cleaning up resources created during fetch run"}
+{"level":"info","type":"summary","fetch_id":"0000000000","num_tables":1,"tables":["public.nulljsonb"],"cdc_cursor":"0/19E3610","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"fetch complete"}
+{"level":"info","message":"http server intentionally shut down"}
+
+exec
+psql 'postgres://root@localhost:26257/defaultdb?sslmode=disable' -c "\pset null 'REALNULL'" -c "SELECT * FROM nulljsonb"
+----
+Null display is "REALNULL".
+ id | jsonb_data 
+----+------------
+  1 | null
+  2 | {}
+(2 rows)
+
+verify --source 'postgres://postgres@localhost:5432/defaultdb' --target 'postgres://root@localhost:26257/defaultdb?sslmode=disable' --table-filter 'nulljsonb'
+----
+{"level":"info","message":"verification in progress"}
+{"level":"info","message":"starting verify on public.nulljsonb, shard 1/1"}
+{"level":"info","type":"summary","table_schema":"public","table_name":"nulljsonb","num_truth_rows":2,"num_success":2,"num_conditional_success":0,"num_missing":0,"num_mismatch":0,"num_extraneous":0,"num_live_retry":0,"num_column_mismatch":0,"message":"finished row verification on public.nulljsonb (shard 1/1)"}
+{"level":"info","net_duration_ms":1000,"net_duration":"000h 00m 01s","message":"verification complete"}

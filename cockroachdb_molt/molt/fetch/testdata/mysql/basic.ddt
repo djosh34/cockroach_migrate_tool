@@ -1,0 +1,94 @@
+exec all
+CREATE TABLE tbl1(id INT PRIMARY KEY, t TEXT)
+----
+[source] 0 rows affected
+[target] CREATE TABLE
+
+exec source
+INSERT INTO tbl1 VALUES (1, 'aaa'), (2, 'bb b'), (3, 'ééé'), (4, '🫡🫡🫡'), (5, '娜娜'), (6, 'Лукас'), (7, 'ルカス')
+----
+[source] 7 rows affected
+
+exec all
+CREATE TABLE tbl2(id INT PRIMARY KEY, t TEXT)
+----
+[source] 0 rows affected
+[target] CREATE TABLE
+
+exec source
+INSERT INTO tbl2 VALUES (11, 'aaa'), (22, 'bb b'), (33, 'ééé'), (44, '🫡🫡🫡'), (55, '娜娜'), (66, 'Лукас'), (77, 'ルカス')
+----
+[source] 7 rows affected
+
+fetch
+----
+
+query all
+SELECT * FROM tbl1
+----
+[source] 0 rows affected
+[target]:
+id	t
+1	aaa
+2	bb b
+3	ééé
+4	🫡🫡🫡
+5	娜娜
+6	Лукас
+7	ルカス
+tag: SELECT 7
+
+query all
+SELECT * FROM tbl2
+----
+[source] 0 rows affected
+[target]:
+id	t
+11	aaa
+22	bb b
+33	ééé
+44	🫡🫡🫡
+55	娜娜
+66	Лукас
+77	ルカス
+tag: SELECT 7
+
+exec source
+INSERT INTO tbl2 VALUES (111, 'aaa'), (333, 'bbb')
+----
+[source] 2 rows affected
+
+fetch useCopy
+----
+
+query all
+SELECT * FROM tbl1
+----
+[source] 0 rows affected
+[target]:
+id	t
+1	aaa
+2	bb b
+3	ééé
+4	🫡🫡🫡
+5	娜娜
+6	Лукас
+7	ルカス
+tag: SELECT 7
+
+query all
+SELECT * FROM tbl2
+----
+[source] 0 rows affected
+[target]:
+id	t
+11	aaa
+22	bb b
+33	ééé
+44	🫡🫡🫡
+55	娜娜
+66	Лукас
+77	ルカス
+111	aaa
+333	bbb
+tag: SELECT 9

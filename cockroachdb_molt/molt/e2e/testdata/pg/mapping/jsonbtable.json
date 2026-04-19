@@ -1,0 +1,12 @@
+[
+  {
+    "table": "public.jsonbtable",
+    "column_type_map": [
+      {
+        "column": "shipping_address",
+        "source_type": "jsonb",
+        "crdb_type": "string"
+      }
+    ]
+  }
+]
