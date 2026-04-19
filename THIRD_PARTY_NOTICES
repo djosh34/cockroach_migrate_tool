@@ -1,0 +1,19 @@
+Third-Party Notices
+===================
+
+Proprietary repository scope
+----------------------------
+
+The Rust workspace and root repository material are proprietary:
+All Rights Reserved - Joshua Azimullah.
+
+Apache-2.0 vendored component
+-----------------------------
+
+Path: `cockroachdb_molt/molt`
+License: Apache License, Version 2.0
+Canonical license text in this repository: `cockroachdb_molt/molt/LICENSE`
+
+This vendored component is retained only for the PostgreSQL/CockroachDB verify
+hot path used by this repository. The surrounding Rust workspace is not covered
+by Apache-2.0.

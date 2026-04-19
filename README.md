@@ -3,6 +3,16 @@
 This repository contains the first Rust workspace for the CockroachDB-to-PostgreSQL migration runner.
 For contributor workflow, see `CONTRIBUTING.md`.
 
+## Licensing
+
+The Rust workspace and repository-root material are proprietary:
+All Rights Reserved - Joshua Azimullah.
+
+The vendored verify-derived component under `cockroachdb_molt/molt` remains
+under the Apache License, Version 2.0. The retained Apache-2.0 text lives at
+`cockroachdb_molt/molt/LICENSE`, and the repository-level split is summarized
+in `THIRD_PARTY_NOTICES`.
+
 ## Source Bootstrap Quick Start
 
 The supported novice-user path starts from pulling published images only. This flow does not require a repository checkout, a local Rust install, or any image build from source.

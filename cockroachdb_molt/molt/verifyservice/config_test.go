@@ -44,6 +44,18 @@ func TestLoadConfigRejectsUnpairedClientCertificateMaterial(t *testing.T) {
 	})
 }
 
+func TestLoadConfigRejectsNonPostgresDatabaseSchemes(t *testing.T) {
+	t.Run("mysql source", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-mysql-source-url.yml"))
+		require.ErrorContains(t, err, "verify.source.url must use postgres or postgresql scheme")
+	})
+
+	t.Run("oracle destination", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-oracle-destination-url.yml"))
+		require.ErrorContains(t, err, "verify.destination.url must use postgres or postgresql scheme")
+	})
+}
+
 func TestLoadConfigValidatesListenerProtectionModes(t *testing.T) {
 	t.Run("http listener is rejected", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-http-listener.yml"))

@@ -37,14 +37,6 @@ func CRDBTargetConnStr() string {
 	return crdbInstanceURL
 }
 
-func MySQLConnStr() string {
-	mysqlInstanceURL := "jdbc:mysql://root@tcp(localhost:3306)/defaultdb"
-	if override, ok := os.LookupEnv("MYSQL_URL"); ok {
-		mysqlInstanceURL = override
-	}
-	return mysqlInstanceURL
-}
-
 func ExecConnQuery(ctx context.Context, q string, conn dbconn.Conn) (res string, err error) {
 	switch ct := conn.(type) {
 	case *dbconn.PGConn:
@@ -53,18 +45,8 @@ func ExecConnQuery(ctx context.Context, q string, conn dbconn.Conn) (res string,
 			return "", err
 		}
 		return tag.String(), err
-	case *dbconn.MySQLConn:
-		tag, err := ct.ExecContext(ctx, q)
-		if err != nil {
-			return "", err
-		}
-		r, err := tag.RowsAffected()
-		if err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("[%s] %d rows affected\n", conn.ID(), r), nil
 	default:
-		return "", errors.AssertionFailedf("unhandled Conn type: %T", conn)
+		return "", errors.AssertionFailedf("only PG connections are supported, got %T", conn)
 	}
 }
 
@@ -95,20 +77,8 @@ func ExecConnTestdata(t *testing.T, d *datadriven.TestData, conns dbconn.Ordered
 				continue
 			}
 			sb.WriteString(fmt.Sprintf("[%s] %s\n", conn.ID(), tag.String()))
-		case *dbconn.MySQLConn:
-			tag, err := conn.ExecContext(ctx, d.Input)
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("[%s] error: %s\n", conn.ID(), err.Error()))
-				continue
-			}
-			r, err := tag.RowsAffected()
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("[%s] error getting rows affected: %s\n", conn.ID(), err.Error()))
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("[%s] %d rows affected\n", conn.ID(), r))
 		default:
-			t.Fatalf("unhandled Conn type: %T", conn)
+			t.Fatalf("only PG connections are supported, got %T", conn)
 		}
 	}
 
@@ -172,20 +142,8 @@ func QueryConnCommand(t *testing.T, d *datadriven.TestData, conns dbconn.Ordered
 				continue
 			}
 			sb.WriteString(fmt.Sprintf("tag: %s\n", rows.CommandTag()))
-		case *dbconn.MySQLConn:
-			tag, err := conn.ExecContext(ctx, d.Input)
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("[%s] error: %s\n", conn.ID(), err.Error()))
-				continue
-			}
-			r, err := tag.RowsAffected()
-			if err != nil {
-				sb.WriteString(fmt.Sprintf("[%s] error getting rows affected: %s\n", conn.ID(), err.Error()))
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("[%s] %d rows affected\n", conn.ID(), r))
 		default:
-			t.Fatalf("unhandled Conn type: %T", conn)
+			t.Fatalf("only PG connections are supported, got %T", conn)
 		}
 	}
 

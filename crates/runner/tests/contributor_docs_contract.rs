@@ -9,8 +9,8 @@ fn contributing_doc_path() -> PathBuf {
 
 #[test]
 fn contributing_doc_preserves_workspace_and_validation_guidance() {
-    let contributing = fs::read_to_string(contributing_doc_path())
-        .expect("CONTRIBUTING.md should be readable");
+    let contributing =
+        fs::read_to_string(contributing_doc_path()).expect("CONTRIBUTING.md should be readable");
 
     assert!(
         contributing.contains("## Workspace Layout"),

@@ -112,6 +112,29 @@ impl VerifySourceContract {
         }
     }
 
+    pub fn assert_non_pg_verify_legacy_is_absent(&self) {
+        for forbidden_path in ["molttelemetry", "mysqlconv", "mysqlurl", "oracleconv"] {
+            let full_path = self.molt_root.join(forbidden_path);
+            assert!(
+                !full_path.exists(),
+                "verify-only vendored tree must not retain unsupported path `{}`",
+                full_path.display(),
+            );
+        }
+
+        for forbidden_module in [
+            "github.com/cockroachdb/molt/molttelemetry",
+            "github.com/cockroachdb/molt/mysqlconv",
+            "github.com/cockroachdb/molt/mysqlurl",
+            "github.com/cockroachdb/molt/oracleconv",
+            "github.com/go-sql-driver/mysql",
+            "github.com/sijms/go-ora/v2",
+        ] {
+            self.assert_retained_source_does_not_import(forbidden_module);
+            self.assert_direct_requirement_is_absent(forbidden_module);
+        }
+    }
+
     pub fn assert_retained_source_does_not_import(&self, forbidden_module: &str) {
         let import_sites = self.go_source_import_sites(forbidden_module);
 
@@ -237,10 +260,6 @@ fn verify_slice_top_level_entries() -> BTreeSet<String> {
         "go.sum",
         "main.go",
         "moltlogger",
-        "molttelemetry",
-        "mysqlconv",
-        "mysqlurl",
-        "oracleconv",
         "parsectx",
         "pgconv",
         "retry",

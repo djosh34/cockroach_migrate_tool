@@ -5,7 +5,6 @@ import (
 	"context"
 	"sort"
 
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/molt/dbconn"
 	"github.com/cockroachdb/molt/dbtable"
@@ -41,66 +40,6 @@ func Verify(ctx context.Context, conns dbconn.OrderedConns) (utils.Result, error
 	for _, conn := range conns {
 		var tms []dbtable.DBTable
 		switch conn := conn.(type) {
-		case *dbconn.MySQLConn:
-			rows, err := conn.QueryContext(
-				ctx,
-				`SELECT table_name FROM information_schema.tables
-WHERE table_schema = database() AND table_type = "BASE TABLE"
-ORDER BY table_name`,
-			)
-			if err != nil {
-				return utils.Result{}, err
-			}
-
-			for rows.Next() {
-				var tn string
-				if err := rows.Scan(&tn); err != nil {
-					return utils.Result{}, errors.Wrap(err, "error decoding tables metadata")
-				}
-				// Fake the public schema for now.
-				tm := dbtable.DBTable{
-					Name: dbtable.Name{
-						Schema: "public",
-						Table:  tree.Name(tn),
-					},
-				}
-				tms = append(tms, tm)
-			}
-			if rows.Err() != nil {
-				return utils.Result{}, errors.Wrap(err, "error collecting tables metadata")
-			}
-			if err := rows.Close(); err != nil {
-				return utils.Result{}, err
-			}
-		case *dbconn.OracleConn:
-			rows, err := conn.QueryContext(
-				ctx,
-				`select tablespace_name, table_name from all_tables where tablespace_name not in ( 'SYSTEM', 'SYSAUX', 'ADMINISTRATOR' )`,
-			)
-			if err != nil {
-				return utils.Result{}, err
-			}
-
-			for rows.Next() {
-				var sn string
-				var tn string
-				if err := rows.Scan(&sn, &tn); err != nil {
-					return utils.Result{}, errors.Wrap(err, "error decoding tables metadata")
-				}
-				tm := dbtable.DBTable{
-					Name: dbtable.Name{
-						Schema: tree.Name(sn),
-						Table:  tree.Name(tn),
-					},
-				}
-				tms = append(tms, tm)
-			}
-			if rows.Err() != nil {
-				return utils.Result{}, errors.Wrap(err, "error collecting tables metadata")
-			}
-			if err := rows.Close(); err != nil {
-				return utils.Result{}, err
-			}
 		case *dbconn.PGConn:
 			rows, err := conn.Query(
 				ctx,
@@ -126,7 +65,7 @@ ORDER BY 3, 2`,
 			}
 			rows.Close()
 		default:
-			return utils.Result{}, errors.Newf("connection %T not supported", conn)
+			return utils.Result{}, errors.Newf("only PG connections are supported, got %T", conn)
 		}
 
 		// Sort tables by schemas and names.

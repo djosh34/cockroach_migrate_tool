@@ -71,19 +71,6 @@ func TestDataDrivenPG(t *testing.T) {
 	)
 }
 
-func TestDataDrivenMySQL(t *testing.T) {
-	datadriven.Walk(
-		t,
-		"testdata/datadriven/mysql",
-		func(t *testing.T, path string) {
-			testDataDriven(t, path, []connArg{
-				{id: "mysql", connStr: testutils.MySQLConnStr()},
-				{id: "crdb", connStr: testutils.CRDBConnStr()},
-			})
-		},
-	)
-}
-
 func TestDataDrivenCRDB(t *testing.T) {
 	datadriven.Walk(
 		t,

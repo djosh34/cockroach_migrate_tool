@@ -4,18 +4,12 @@ import (
 	"context"
 	"fmt"
 	"go/constant"
-	"strings"
 	"time"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree/treecmp"
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/molt/dbconn"
-	"github.com/cockroachdb/molt/mysqlconv"
-	"github.com/pingcap/tidb/parser/ast"
-	"github.com/pingcap/tidb/parser/format"
-	"github.com/pingcap/tidb/parser/model"
-	"github.com/pingcap/tidb/parser/opcode"
 	"golang.org/x/time/rate"
 )
 
@@ -63,10 +57,6 @@ func NewScanIterator(
 	switch conn := conn.(type) {
 	case *dbconn.PGConn:
 		it.scanQuery = newPGScanQuery(table, rowBatchSize)
-	case *dbconn.MySQLConn:
-		it.scanQuery = newMySQLScanQuery(table, rowBatchSize)
-	case *dbconn.OracleConn:
-		it.scanQuery = newOracleScanQuery(table, rowBatchSize)
 	default:
 		return nil, errors.Newf("unsupported conn type %T", conn)
 	}
@@ -132,26 +122,6 @@ func (it *scanIterator) nextPage(ctx context.Context) {
 					return nil, errors.Wrapf(err, "[pg]error getting rows for table %s.%s from %s", it.table.Schema, it.table.Table.Name, it.conn.ID)
 				}
 				currRows = &pgRows{
-					Rows:    newRows,
-					typMap:  it.conn.TypeMap(),
-					typOIDs: it.table.ColumnOIDs,
-				}
-			case *dbconn.MySQLConn:
-				newRows, err := conn.QueryContext(ctx, q, args...)
-				if err != nil {
-					return nil, errors.Wrapf(err, "[sql]error getting rows for table %s in %s", it.table.Table.Name, it.conn.ID())
-				}
-				currRows = &mysqlRows{
-					Rows:    newRows,
-					typMap:  it.conn.TypeMap(),
-					typOIDs: it.table.ColumnOIDs,
-				}
-			case *dbconn.OracleConn:
-				newRows, err := conn.QueryContext(ctx, q, args...)
-				if err != nil {
-					return nil, errors.Wrapf(err, "error getting rows for table %s in %s", it.table.Table.Name, it.conn.ID())
-				}
-				currRows = &oracleRows{
 					Rows:    newRows,
 					typMap:  it.conn.TypeMap(),
 					typOIDs: it.table.ColumnOIDs,
@@ -247,65 +217,6 @@ func NewPGBaseSelectClause(table Table) *tree.Select {
 	return baseSelectExpr
 }
 
-type oracleStatement struct {
-	rowBatchSize int
-}
-
-func newOracleScanQuery(table ScanTable, rowBatchSize int) scanQuery {
-	if len(table.StartPKVals) > 0 || len(table.EndPKVals) > 0 {
-		panic("sharding on oracle not yet supported")
-	}
-	return scanQuery{
-		table: table,
-		base: &oracleStatement{
-			rowBatchSize: rowBatchSize,
-		},
-	}
-}
-
-func newMySQLScanQuery(table ScanTable, rowBatchSize int) scanQuery {
-	stmt := newMySQLBaseSelectClause(table.Table)
-	stmt.Limit = &ast.Limit{Count: ast.NewValueExpr(rowBatchSize, "", "")}
-	return scanQuery{
-		base:  stmt,
-		table: table,
-	}
-}
-
-func newMySQLBaseSelectClause(table Table) *ast.SelectStmt {
-	fields := &ast.FieldList{
-		Fields: make([]*ast.SelectField, len(table.ColumnsWithAttr)),
-	}
-	for i, col := range table.ColumnsWithAttr {
-		fields.Fields[i] = &ast.SelectField{
-			Expr: mysqlconv.MySQLASTColumnField(col.Name),
-		}
-	}
-	orderBy := &ast.OrderByClause{
-		Items: make([]*ast.ByItem, len(table.PrimaryKeyColumns)),
-	}
-	for i, pkCol := range table.PrimaryKeyColumns {
-		orderBy.Items[i] = &ast.ByItem{
-			Expr: mysqlconv.MySQLASTColumnField(pkCol),
-		}
-	}
-	return &ast.SelectStmt{
-		SelectStmtOpts: &ast.SelectStmtOpts{
-			SQLCache: true,
-		},
-		From: &ast.TableRefsClause{
-			TableRefs: &ast.Join{
-				Left: &ast.TableSource{
-					Source: &ast.TableName{Name: model.NewCIStr(string(table.Table))},
-				},
-			},
-		},
-		Fields:  fields,
-		Kind:    ast.SelectStmtKindSelect,
-		OrderBy: orderBy,
-	}
-}
-
 func (sq *scanQuery) generate(pkCursor tree.Datums) (string, []any, error) {
 	switch stmt := sq.base.(type) {
 	case *tree.Select:
@@ -341,108 +252,8 @@ func (sq *scanQuery) generate(pkCursor tree.Datums) (string, []any, error) {
 		f := tree.NewFmtCtx(tree.FmtParsableNumerics)
 		f.FormatNode(stmt)
 		return f.CloseAndGetString(), nil, nil
-	case *oracleStatement:
-		// TODO: escaping names is not supported.
-		sb := strings.Builder{}
-		sb.WriteString("SELECT ")
-		for i := range sq.table.ColumnsWithAttr {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(string(sq.table.ColumnsWithAttr.ColumnNames()[i]))
-		}
-		sb.WriteString(" FROM ")
-		sb.WriteString(string(sq.table.Name.Table))
-
-		if len(pkCursor) > 0 {
-			sb.WriteString(" WHERE ")
-			// TODO: support multi-pk keys
-			if len(sq.table.PrimaryKeyColumns) > 1 {
-				panic("unsupported")
-			}
-			f := tree.NewFmtCtx(tree.FmtBareStrings)
-			f.FormatNode(pkCursor[0])
-			// TODO: support converting data types back into string representations in oracle.
-			sb.WriteString(fmt.Sprintf("%s > '%s'", sq.table.PrimaryKeyColumns[0], f.CloseAndGetString()))
-		}
-
-		sb.WriteString(" ORDER BY ")
-		for i := range sq.table.PrimaryKeyColumns {
-			if i > 0 {
-				sb.WriteString(", ")
-			}
-			sb.WriteString(string(sq.table.PrimaryKeyColumns[i]))
-		}
-		sb.WriteString(fmt.Sprintf(" FETCH NEXT %d ROWS ONLY", stmt.rowBatchSize))
-		return sb.String(), nil, nil
-	case *ast.SelectStmt:
-		andClause := &ast.BinaryOperationExpr{
-			Op: opcode.LogicAnd,
-			L:  ast.NewValueExpr(1, "", ""),
-			R:  ast.NewValueExpr(1, "", ""),
-		}
-		// Use the cursor if available, otherwise not.
-		if len(pkCursor) > 0 {
-			andClause.L = makeMySQLCompareExpr(
-				opcode.GT,
-				sq.table.ColumnsWithAttr.ColumnNames(),
-				pkCursor,
-			)
-		} else if len(sq.table.StartPKVals) > 0 {
-			andClause.L = makeMySQLCompareExpr(
-				opcode.GE,
-				sq.table.ColumnsWithAttr.ColumnNames(),
-				sq.table.StartPKVals,
-			)
-		}
-		if len(sq.table.EndPKVals) > 0 {
-			andClause.R = makeMySQLCompareExpr(
-				opcode.LT,
-				sq.table.ColumnsWithAttr.ColumnNames(),
-				sq.table.EndPKVals,
-			)
-		}
-		stmt.Where = andClause
-		var sb strings.Builder
-		if err := stmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags, &sb)); err != nil {
-			return "", nil, errors.Wrap(err, "error generating MySQL statement")
-		}
-		return sb.String(), nil, nil
 	}
 	return "", nil, errors.AssertionFailedf("unknown scan query type: %T", sq.base)
-}
-
-func makeMySQLCompareExpr(
-	op opcode.Op, cols []tree.Name, vals tree.Datums,
-) *ast.BinaryOperationExpr {
-	cmpExpr := &ast.BinaryOperationExpr{
-		Op: op,
-	}
-	colNames := make([]ast.ExprNode, len(vals))
-	colVals := make([]ast.ExprNode, len(vals))
-
-	if len(vals) > 1 {
-		for i := range vals {
-			colNames[i] = mysqlconv.MySQLASTColumnField(cols[i])
-			colVals[i] = datumToMySQLValue(vals[i])
-		}
-		cmpExpr.L = &ast.RowExpr{Values: colNames}
-		cmpExpr.R = &ast.RowExpr{Values: colVals}
-	} else {
-		cmpExpr.L = mysqlconv.MySQLASTColumnField(cols[0])
-		f := tree.NewFmtCtx(tree.FmtParsableNumerics | tree.FmtBareStrings)
-		f.FormatNode(vals[0])
-		cmpExpr.R = ast.NewValueExpr(f.CloseAndGetString(), "", "")
-	}
-	return cmpExpr
-}
-
-func datumToMySQLValue(val tree.Datum) ast.ValueExpr {
-	f := tree.NewFmtCtx(tree.FmtParsableNumerics | tree.FmtBareStrings)
-	f.FormatNode(val)
-	// NOTE: this may not correct for all types.
-	// We shouldn't cast everything to string at the very least.
-	return ast.NewValueExpr(f.CloseAndGetString(), "", "")
 }
 
 func makePGCompareExpr(

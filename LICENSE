@@ -1,0 +1,16 @@
+Copyright (c) Joshua Azimullah.
+All Rights Reserved - Joshua Azimullah.
+
+The Rust workspace in this repository, including the crates under `crates/`,
+the root `Cargo.toml`, and the repository root support files unless stated
+otherwise, is proprietary and not licensed for redistribution or reuse.
+
+Exception for vendored verify-derived component:
+
+The code under `cockroachdb_molt/molt` is a separate vendored component that
+remains governed by the Apache License, Version 2.0. The full Apache-2.0 text
+for that component is retained at `cockroachdb_molt/molt/LICENSE`.
+
+If a file lives outside `cockroachdb_molt/molt` and does not carry a more
+specific notice, treat it as part of the proprietary Rust workspace and root
+repository material covered by this notice.

@@ -92,7 +92,9 @@ fn readme_redirects_contributors_to_contributing_doc() {
     let readme = RepositoryReadme::load();
 
     assert!(
-        readme.text().contains("For contributor workflow, see `CONTRIBUTING.md`."),
+        readme
+            .text()
+            .contains("For contributor workflow, see `CONTRIBUTING.md`."),
         "README must redirect contributors to CONTRIBUTING.md instead of embedding contributor-only workflow rules"
     );
 }

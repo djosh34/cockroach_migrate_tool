@@ -2,12 +2,15 @@
 mod github_workflow_contract_support;
 #[path = "support/published_image_contract.rs"]
 mod published_image_contract_support;
+#[path = "support/repo_license_contract.rs"]
+mod repo_license_contract_support;
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
 #[path = "support/verify_source_contract.rs"]
 mod verify_source_contract_support;
 
 use github_workflow_contract_support::GithubWorkflowContract;
+use repo_license_contract_support::RepoLicenseContract;
 use runner_docker_contract_support::RunnerDockerContract;
 use verify_source_contract_support::VerifySourceContract;
 
@@ -110,6 +113,13 @@ fn vendored_molt_manifest_excludes_fetch_only_dependency_families() {
 }
 
 #[test]
+fn vendored_molt_tree_excludes_non_postgres_backends_and_telemetry() {
+    let contract = VerifySourceContract::load();
+
+    contract.assert_non_pg_verify_legacy_is_absent();
+}
+
+#[test]
 fn vendored_molt_manifest_declares_go_1_26() {
     let contract = VerifySourceContract::load();
 
@@ -128,4 +138,11 @@ fn vendored_molt_testutils_boundary_is_an_explicit_verify_test_exception() {
     let contract = VerifySourceContract::load();
 
     contract.assert_testutils_exception_is_narrow_and_explicit();
+}
+
+#[test]
+fn repo_root_license_boundary_is_explicit() {
+    let contract = RepoLicenseContract::load();
+
+    contract.assert_root_declares_proprietary_rust_workspace_and_apache_vendored_component();
 }

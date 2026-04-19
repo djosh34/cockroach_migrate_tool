@@ -99,6 +99,9 @@ func (cfg Config) Validate() error {
 }
 
 func (cfg DatabaseConfig) validate(path string) error {
+	if err := validatePostgresScheme(cfg.URL); err != nil {
+		return errors.Newf("%s.url %s", path, err.Error())
+	}
 	if err := cfg.TLS.Mode.Validate(); err != nil {
 		return errors.Newf("%s.tls.mode %s", path, err.Error())
 	}
@@ -111,6 +114,19 @@ func (cfg DatabaseConfig) validate(path string) error {
 		return errors.Newf("%s.tls.client_cert_path and %s.tls.client_key_path must both be set", path, path)
 	}
 	return nil
+}
+
+func validatePostgresScheme(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.Wrap(err, "must be a valid URL")
+	}
+	switch parsed.Scheme {
+	case "postgres", "postgresql":
+		return nil
+	default:
+		return errors.New("must use postgres or postgresql scheme")
+	}
 }
 
 func (mode DBTLSMode) Validate() error {

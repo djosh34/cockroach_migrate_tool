@@ -23,11 +23,6 @@ func TestPointLookupQuery(t *testing.T) {
 					pt.pks = append(pt.pks, parseDatums(t, line, ","))
 				}
 				return ""
-			case "mysql":
-				pt.conn = &dbconn.MySQLConn{}
-				q, err := pt.genQuery()
-				require.NoError(t, err)
-				return q
 			case "pg":
 				pt.conn = &dbconn.PGConn{}
 				q, err := pt.genQuery()

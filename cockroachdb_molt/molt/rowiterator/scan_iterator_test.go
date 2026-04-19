@@ -30,9 +30,6 @@ func TestScanQuery(t *testing.T) {
 			case "end_pk":
 				table.EndPKVals = parseDatums(t, d.Input, "\n")
 				return ""
-			case "mysql":
-				sq = newMySQLScanQuery(table, 10000)
-				return ""
 			case "pg":
 				sq = newPGScanQuery(table, 10000)
 				return ""

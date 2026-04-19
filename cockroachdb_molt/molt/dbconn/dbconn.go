@@ -9,31 +9,13 @@ import (
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/types"
 	"github.com/cockroachdb/errors"
-	"github.com/cockroachdb/molt/molttelemetry"
-	"github.com/go-sql-driver/mysql"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/lib/pq/oid"
-	_ "github.com/pingcap/tidb/parser/test_driver"
 )
 
 type ID string
 
 type OrderedConns [2]Conn
-
-func RegisterTelemetry(conns OrderedConns) error {
-	cockroachFound := false
-	for _, conn := range conns {
-		if conn.IsCockroach() {
-			cockroachFound = true
-			molttelemetry.RegisterConnString(conn.ConnStr())
-			break
-		}
-	}
-	if !cockroachFound {
-		return errors.AssertionFailedf("source or target must be cockroach")
-	}
-	return nil
-}
 
 type Conn interface {
 	ID() ID
@@ -69,12 +51,8 @@ func Connect(ctx context.Context, preferredID ID, connStr string) (Conn, error) 
 			id = ID(u.Hostname() + ":" + u.Port())
 		}
 		return ConnectPG(ctx, id, connStr)
-	case strings.Contains(before[0], "mysql"):
-		return ConnectMySQL(ctx, id, connStr)
-	case strings.Contains(before[0], "oracle"):
-		return ConnectOracle(ctx, id, connStr)
 	}
-	return nil, errors.Newf("unrecognised scheme %s from %s", before[0], connStr)
+	return nil, errors.Newf("only postgres and postgresql schemes are supported, got %s from %s", before[0], connStr)
 }
 
 // TestOnlyCleanDatabase returns a connection to a clean database.
@@ -101,39 +79,8 @@ func TestOnlyCleanDatabase(ctx context.Context, id ID, url string, dbName string
 		cfgCopy := c.Config().Copy()
 		cfgCopy.Database = dbName
 		return ConnectPGConfig(ctx, c.id, cfgCopy, true /*testOnly*/)
-	case *MySQLConn:
-		if _, err := c.ExecContext(ctx, "DROP DATABASE IF EXISTS "+dbName); err != nil {
-			return nil, err
-		}
-		if _, err := c.ExecContext(ctx, "CREATE DATABASE "+dbName); err != nil {
-			return nil, err
-		}
-		cfgCopy, err := mysql.ParseDSN(c.url)
-		if err != nil {
-			return nil, errors.Wrapf(err, "error parsing dsn", url)
-		}
-		cfgCopy.DBName = dbName
-		return ConnectMySQL(ctx, c.id, cfgCopy.FormatDSN())
-	case *OracleConn:
-		if _, err := c.ExecContext(ctx, "DROP USER "+dbName+" CASCADE"); err != nil && !strings.Contains(err.Error(), "ORA-01918") {
-			return nil, err
-		}
-		if _, err := c.ExecContext(ctx, "CREATE USER "+dbName); err != nil {
-			return nil, err
-		}
-		if _, err := c.ExecContext(ctx, "GRANT dba TO "+dbName); err != nil {
-			return nil, err
-		}
-		conn, err := ConnectOracle(ctx, c.id, c.connStr)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := c.ExecContext(ctx, "alter session set current_schema "+dbName); err != nil {
-			return nil, err
-		}
-		return conn, nil
 	}
-	return nil, errors.AssertionFailedf("clean database not supported for %T", c)
+	return nil, errors.AssertionFailedf("clean database only supported for PG connections, got %T", c)
 }
 
 func GetDataType(ctx context.Context, inConn Conn, oid oid.Oid) (*pgtype.Type, error) {

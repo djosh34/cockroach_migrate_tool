@@ -2,15 +2,11 @@ package rowiterator
 
 import (
 	"context"
-	"strings"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree/treecmp"
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/molt/dbconn"
-	"github.com/cockroachdb/molt/mysqlconv"
-	"github.com/pingcap/tidb/parser/ast"
-	"github.com/pingcap/tidb/parser/format"
 )
 
 type pointLookupIterator struct {
@@ -56,16 +52,6 @@ func (it *pointLookupIterator) HasNext(ctx context.Context) bool {
 					return err
 				}
 				currRows = &pgRows{
-					Rows:    rows,
-					typMap:  it.conn.TypeMap(),
-					typOIDs: it.table.ColumnOIDs,
-				}
-			case *dbconn.MySQLConn:
-				rows, err := conn.QueryContext(ctx, q)
-				if err != nil {
-					return err
-				}
-				currRows = &mysqlRows{
 					Rows:    rows,
 					typMap:  it.conn.TypeMap(),
 					typOIDs: it.table.ColumnOIDs,
@@ -139,37 +125,6 @@ func (it *pointLookupIterator) genQuery() (string, error) {
 		f := tree.NewFmtCtx(tree.FmtParsableNumerics)
 		f.FormatNode(stmt)
 		return f.CloseAndGetString(), nil
-	case *dbconn.MySQLConn:
-		stmt := newMySQLBaseSelectClause(it.table)
-
-		inExpr := &ast.PatternInExpr{}
-		if len(it.table.PrimaryKeyColumns) > 1 {
-			colNames := &ast.RowExpr{}
-			for _, col := range it.table.PrimaryKeyColumns {
-				colNames.Values = append(colNames.Values, mysqlconv.MySQLASTColumnField(col))
-			}
-			inExpr.Expr = colNames
-		} else {
-			inExpr.Expr = mysqlconv.MySQLASTColumnField(it.table.PrimaryKeyColumns[0])
-		}
-		for _, pk := range it.pks {
-			if len(pk) > 1 {
-				pkTup := &ast.RowExpr{}
-				for _, val := range pk {
-					pkTup.Values = append(pkTup.Values, datumToMySQLValue(val))
-				}
-				inExpr.List = append(inExpr.List, pkTup)
-			} else {
-				inExpr.List = append(inExpr.List, datumToMySQLValue(pk[0]))
-			}
-		}
-		stmt.Where = inExpr
-
-		var sb strings.Builder
-		if err := stmt.Restore(format.NewRestoreCtx(format.DefaultRestoreFlags, &sb)); err != nil {
-			return "", errors.Wrap(err, "error generating MySQL statement")
-		}
-		return sb.String(), nil
 	default:
 		return "", errors.AssertionFailedf("unknown connection type: %T", conn)
 	}

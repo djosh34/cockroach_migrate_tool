@@ -1,4 +1,4 @@
-## Task: Prune `cockroachdb_molt` down to the PostgreSQL/CockroachDB verify hot path and add root license notices <status>not_started</status> <passes>false</passes>
+## Task: Prune `cockroachdb_molt` down to the PostgreSQL/CockroachDB verify hot path and add root license notices <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -31,13 +31,15 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD proves every retained `cockroachdb_molt` Go package path is required by the PostgreSQL/CockroachDB verify hot path
-- [ ] All non-supported database paths, including MySQL, Oracle, and any other non-PostgreSQL/CockroachDB connectors or helpers, are removed from `cockroachdb_molt`
-- [ ] Telemetry and any other non-hot-path instrumentation are removed from `cockroachdb_molt`
-- [ ] Automated checks fail if removed database backends, telemetry paths, or other dead code re-enter the verify slice
-- [ ] Repo-root licensing files clearly state `All Rights Reserved - Joshua Azimullah` for the Rust code in the repo root and explicitly reference the Apache-2.0 license for the `cockroachdb_molt` verify-derived component
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD proves every retained `cockroachdb_molt` Go package path is required by the PostgreSQL/CockroachDB verify hot path
+- [x] All non-supported database paths, including MySQL, Oracle, and any other non-PostgreSQL/CockroachDB connectors or helpers, are removed from `cockroachdb_molt`
+- [x] Telemetry and any other non-hot-path instrumentation are removed from `cockroachdb_molt`
+- [x] Automated checks fail if removed database backends, telemetry paths, or other dead code re-enter the verify slice
+- [x] Repo-root licensing files clearly state `All Rights Reserved - Joshua Azimullah` for the Rust code in the repo root and explicitly reference the Apache-2.0 license for the `cockroachdb_molt` verify-derived component
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/10-task-prune-cockroachdb-molt-down-to-the-postgresql-cockroachdb-verify-hot-path-and-add-root-license-notices_plans/2026-04-19-pg-crdb-verify-hot-path-prune-and-root-licensing-plan.md</plan>

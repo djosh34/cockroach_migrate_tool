@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::{blocking::Client, Certificate, Identity};
+use reqwest::{Certificate, Identity, blocking::Client};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
