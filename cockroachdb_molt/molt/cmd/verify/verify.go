@@ -50,7 +50,7 @@ func Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "verify",
 		Short: "Verify table schemas and row data align.",
-		Long:  `Verify ensure table schemas and row data between the two databases are aligned.`,
+		Long:  `Verify that table schemas and row data between the two databases are aligned.`,
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			// Flag dependencies need to be checked here because in this hook is when
 			// we can determine if the flag has been changed by the user (i.e. user set a value).

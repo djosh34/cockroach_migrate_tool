@@ -223,6 +223,7 @@ impl VerifySourceContract {
 
 fn verify_slice_top_level_entries() -> BTreeSet<String> {
     [
+        "Dockerfile",
         "LICENSE",
         "cmd",
         "comparectx",

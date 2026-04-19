@@ -77,6 +77,7 @@ impl E2eIntegrityContractAudit {
             "tests/support/e2e_harness.rs",
             "tests/support/runner_container_process.rs",
             "tests/support/runner_image_harness.rs",
+            "tests/support/verify_image_harness.rs",
         ];
         let tests_dir = repo_root().join("crates/runner/tests");
         let runner_root = repo_root().join("crates/runner");
@@ -102,7 +103,7 @@ impl E2eIntegrityContractAudit {
         docker_call_sites.sort();
         assert_eq!(
             docker_call_sites, approved,
-            "raw Docker orchestration should stay isolated to the approved E2E support files",
+            "raw Docker orchestration should stay isolated to the approved test support files",
         );
     }
 }

@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 16:55:46 CEST 2026
+Generated: Sun Apr 19 05:13:23 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/04-task-remove-novice-user-dependence-on-repo-clone-and-local-tooling.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Remove contributor-only coding rules from README and keep the operator path free of internal project structure assumptions <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/03-task-build-a-scratch-verify-image-from-the-pruned-verify-source.md`
-
-```
-## Task: Build a scratch verify image from the pruned verify-only source <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -211,17 +200,6 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-verify-novice-user-registry-only/01-task-verify-registry-only-novice-user-can-complete-the-supported-flow.md`
-
-```
-## Task: Verify a novice user can complete the supported flow from published images alone with zero repo access <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md`
 
 ```
@@ -237,6 +215,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>not_started</status> <passes>false</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-verify-novice-user-registry-only/01-task-verify-registry-only-novice-user-can-complete-the-supported-flow.md`
+
+```
+## Task: Verify a novice user can complete the supported flow from published images alone with zero repo access <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
