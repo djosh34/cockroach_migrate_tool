@@ -76,3 +76,21 @@ func TestValidateConfigHelpStaysConfigOnly(t *testing.T) {
 	require.NotContains(t, stdout.String(), "verify-full override")
 	require.Empty(t, stderr.String())
 }
+
+func TestRunHelpStaysConfigOnly(t *testing.T) {
+	cmd := rootcmd.NewRootCmd()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"verify-service", "run", "--help"})
+
+	err := cmd.Execute()
+	require.NoError(t, err, stderr.String())
+	require.Contains(t, stdout.String(), "--config string")
+	require.NotContains(t, stdout.String(), "--source")
+	require.NotContains(t, stdout.String(), "--target")
+	require.NotContains(t, stdout.String(), "--source-url")
+	require.NotContains(t, stdout.String(), "--target-url")
+	require.Empty(t, stderr.String())
+}

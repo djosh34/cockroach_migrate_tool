@@ -260,7 +260,10 @@ impl GithubWorkflowContract {
         );
 
         for (step_name, repository_env) in [
-            ("Build runner release image archive", "RUNNER_IMAGE_REPOSITORY"),
+            (
+                "Build runner release image archive",
+                "RUNNER_IMAGE_REPOSITORY",
+            ),
             (
                 "Build source-bootstrap release image archive",
                 "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
@@ -298,7 +301,8 @@ impl GithubWorkflowContract {
                 "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",
             ),
         ] {
-            let push_script = self.step_run_script(self.step_named(publish_job, step_name), step_name);
+            let push_script =
+                self.step_run_script(self.step_named(publish_job, step_name), step_name);
             let expected_push = format!(
                 "docker push \"${{{{ env.REGISTRY }}}}/${{{{ env.{repository_env} }}}}:${{{{ github.sha }}}}\""
             );
@@ -334,7 +338,8 @@ impl GithubWorkflowContract {
                 .get(Value::String(archive_env.to_owned()))
                 .map(value_as_str)
                 .unwrap_or_else(|| panic!("workflow should define a shared `{archive_env}` env"));
-            let build_inputs = self.step_inputs(self.step_named(publish_job, build_step), build_step);
+            let build_inputs =
+                self.step_inputs(self.step_named(publish_job, build_step), build_step);
             let expected_output = format!("type=docker,dest=${{{{ env.{archive_env} }}}}");
             assert_eq!(
                 build_inputs
@@ -369,7 +374,8 @@ impl GithubWorkflowContract {
                 "publish job must push `{build_step}` only after loading the scanned archive",
             );
 
-            let scan_script = self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
+            let scan_script =
+                self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
             assert!(
                 scan_script.contains(&format!("${{{{ env.{archive_env} }}}}")),
                 "scan step `{scan_step}` must read the release archive through the shared env boundary",
@@ -406,7 +412,8 @@ impl GithubWorkflowContract {
                 .get(Value::String(report_env.to_owned()))
                 .map(value_as_str)
                 .unwrap_or_else(|| panic!("workflow should define a shared `{report_env}` env"));
-            let scan_script = self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
+            let scan_script =
+                self.step_run_script(self.step_named(publish_job, scan_step), scan_step);
             let expected_output_flag = format!("--output \"${{{{ env.{report_env} }}}}\"");
             for required_flag in [
                 "--severity HIGH,CRITICAL",
@@ -474,7 +481,9 @@ impl GithubWorkflowContract {
             "workflow should define a shared RUNNER_IMAGE_REPOSITORY env boundary",
         );
         assert!(
-            env.contains_key(Value::String("SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned())),
+            env.contains_key(Value::String(
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()
+            )),
             "workflow should define a shared SOURCE_BOOTSTRAP_IMAGE_REPOSITORY env boundary",
         );
         let expected_runner_repository = format!(
@@ -492,8 +501,10 @@ impl GithubWorkflowContract {
             PublishedImageContract::source_bootstrap_image_repository()
         );
         assert_eq!(
-            env.get(Value::String("SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()))
-                .map(value_as_str),
+            env.get(Value::String(
+                "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY".to_owned()
+            ))
+            .map(value_as_str),
             Some(expected_source_bootstrap_repository.as_str()),
             "workflow should define the source-bootstrap image repository once through a shared env boundary",
         );
@@ -504,7 +515,10 @@ impl GithubWorkflowContract {
         );
 
         for (step_name, repository_env) in [
-            ("Build runner release image archive", "RUNNER_IMAGE_REPOSITORY"),
+            (
+                "Build runner release image archive",
+                "RUNNER_IMAGE_REPOSITORY",
+            ),
             (
                 "Build source-bootstrap release image archive",
                 "SOURCE_BOOTSTRAP_IMAGE_REPOSITORY",

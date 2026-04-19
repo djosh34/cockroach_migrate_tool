@@ -1,4 +1,4 @@
-## Task: Build an ultra-scoped HTTP job API for single active verify runs using config-defined connections only <status>not_started</status> <passes>false</passes>
+## Task: Build an ultra-scoped HTTP job API for single active verify runs using config-defined connections only <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -44,14 +44,16 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers single-active-job behavior, `409 Conflict` on concurrent start attempts, job creation, live job lookup, stop behavior, in-memory job lifecycle, restart-loss behavior, and optional scoped filter inputs
-- [ ] `POST` returns a stable job identifier, `GET` returns JSON live status or final verify result for that same job including mismatches and failure reason, the service does not allow ambiguous job/result mapping, and repeated `GET` calls keep returning the newest result until process restart
-- [ ] The service returns only the explicit states `running`, `succeeded`, `failed`, and `stopped`
-- [ ] The service returns conflict when a concurrent start is attempted, `POST /stop` without a `job_id` stops all active verify work, `POST /stop` with a `job_id` stops only that job, and unknown/non-active targeted stops return `404`
-- [ ] The HTTP API cannot change database connection details, TLS material, or verify mode, and remains limited to create-job/read-result behavior
-- [ ] If direct service authentication is disabled, the service and docs state explicitly that no extra built-in protection is being provided
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers single-active-job behavior, `409 Conflict` on concurrent start attempts, job creation, live job lookup, stop behavior, in-memory job lifecycle, restart-loss behavior, and optional scoped filter inputs
+- [x] `POST` returns a stable job identifier, `GET` returns JSON live status or final verify result for that same job including mismatches and failure reason, the service does not allow ambiguous job/result mapping, and repeated `GET` calls keep returning the newest result until process restart
+- [x] The service returns only the explicit states `running`, `succeeded`, `failed`, and `stopped`
+- [x] The service returns conflict when a concurrent start is attempted, `POST /stop` without a `job_id` stops all active verify work, `POST /stop` with a `job_id` stops only that job, and unknown/non-active targeted stops return `404`
+- [x] The HTTP API cannot change database connection details, TLS material, or verify mode, and remains limited to create-job/read-result behavior
+- [x] If direct service authentication is disabled, the service and docs state explicitly that no extra built-in protection is being provided
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — not required; this task did not change the long-lane selection boundary
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-18-verify-http-image/05-task-build-an-ultra-scoped-http-job-api-for-single-active-verify-runs_plans/2026-04-19-verify-http-job-api-plan.md</plan>

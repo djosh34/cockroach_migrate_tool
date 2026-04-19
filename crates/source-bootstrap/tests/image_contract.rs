@@ -1,14 +1,14 @@
+#[path = "support/readme_contract.rs"]
+mod readme_contract_support;
 #[path = "support/source_bootstrap_image_contract.rs"]
 mod source_bootstrap_image_contract_support;
 #[path = "support/source_bootstrap_image_harness.rs"]
 mod source_bootstrap_image_harness_support;
-#[path = "support/readme_contract.rs"]
-mod readme_contract_support;
 
+use readme_contract_support::RepositoryReadme;
 use source_bootstrap_image_contract_support::SourceBootstrapImageContract;
 use source_bootstrap_image_harness_support::SourceBootstrapImageHarness;
 use std::{fs, path::PathBuf};
-use readme_contract_support::RepositoryReadme;
 
 #[test]
 fn source_bootstrap_image_dockerfile_lives_in_the_source_bootstrap_slice() {
@@ -42,7 +42,8 @@ fn readme_source_bootstrap_fixture_renders_through_the_published_image_entrypoin
         fixture_text.trim_end(),
         "README source bootstrap YAML should match its canonical fixture",
     );
-    fs::write(&config_path, fixture_text).expect("README source bootstrap config should be writable");
+    fs::write(&config_path, fixture_text)
+        .expect("README source bootstrap config should be writable");
     fs::write(&ca_cert_path, b"dummy-ca\n").expect("CA cert fixture should be writable");
 
     let output = harness.render_bootstrap_sql(&temp_dir, "/work/source-bootstrap.yml");

@@ -61,9 +61,7 @@ impl VerifyDockerContract {
             "verify image runtime must not hand off through `/bin/sh`",
         );
         assert!(
-            runtime_commands
-                .iter()
-                .all(|line| !line.contains(".sh")),
+            runtime_commands.iter().all(|line| !line.contains(".sh")),
             "verify image runtime must not rely on wrapper shell scripts",
         );
         assert!(
@@ -78,9 +76,9 @@ impl VerifyDockerContract {
             "verify image runtime stage must copy only the compiled verify binary payload",
         );
         assert!(
-            runtime_commands.iter().any(|line| {
-                line.starts_with("ENTRYPOINT [\"") && !line.contains("/bin/sh")
-            }),
+            runtime_commands
+                .iter()
+                .any(|line| { line.starts_with("ENTRYPOINT [\"") && !line.contains("/bin/sh") }),
             "verify image runtime must start a binary directly with JSON entrypoint syntax",
         );
     }
@@ -88,16 +86,15 @@ impl VerifyDockerContract {
     pub fn assert_image_entrypoint_is_direct_verify_surface(&self, image_entrypoint_json: &str) {
         assert_eq!(
             image_entrypoint_json.trim(),
-            "[\"/usr/local/bin/molt\",\"verify\"]",
-            "verify image must invoke the verify-only command surface directly from the entrypoint",
+            "[\"/usr/local/bin/molt\",\"verify-service\",\"run\"]",
+            "verify image must invoke the verify-service runtime surface directly from the entrypoint",
         );
     }
 
     pub fn assert_verify_help_output(&self, help_output: &str) {
         for required_marker in [
-            "Verify that table schemas and row data between the two databases are aligned.",
-            "--rows",
-            "--table-splits",
+            "Run the dedicated verify-service HTTP API.",
+            "--config string",
         ] {
             assert!(
                 help_output.contains(required_marker),
@@ -106,6 +103,10 @@ impl VerifyDockerContract {
         }
         for forbidden_marker in [
             "validate-config",
+            "--rows",
+            "--table-splits",
+            "--source",
+            "--target",
             "render-postgres-setup",
             "\n  fetch",
             "Use \"molt [command] --help\"",

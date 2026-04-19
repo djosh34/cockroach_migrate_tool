@@ -71,7 +71,8 @@ impl SourceBootstrapImageContract {
             );
         }
         assert!(
-            self.dockerfile_text.contains("-p source-bootstrap --bin source-bootstrap"),
+            self.dockerfile_text
+                .contains("-p source-bootstrap --bin source-bootstrap"),
             "source-bootstrap image must build the dedicated source-bootstrap binary",
         );
         assert_eq!(
@@ -107,7 +108,9 @@ impl SourceBootstrapImageContract {
             OsString::from("-t"),
             OsString::from(image_tag),
             OsString::from("-f"),
-            source_bootstrap_slice_root().join("Dockerfile").into_os_string(),
+            source_bootstrap_slice_root()
+                .join("Dockerfile")
+                .into_os_string(),
             repo_root().into_os_string(),
         ]
     }

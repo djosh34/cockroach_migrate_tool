@@ -1,7 +1,7 @@
-#[path = "support/readme_contract.rs"]
-mod readme_contract_support;
 #[path = "support/published_image_contract.rs"]
 mod published_image_contract_support;
+#[path = "support/readme_contract.rs"]
+mod readme_contract_support;
 #[path = "support/readme_published_image_contract.rs"]
 mod readme_published_image_contract_support;
 #[path = "support/runner_public_contract.rs"]

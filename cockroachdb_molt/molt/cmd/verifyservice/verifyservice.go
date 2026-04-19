@@ -2,8 +2,10 @@ package verifyservice
 
 import (
 	"fmt"
+	"io"
 
 	serviceconfig "github.com/cockroachdb/molt/verifyservice"
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
 
@@ -14,6 +16,7 @@ func Command() *cobra.Command {
 		Long:  "Commands for validating and running the dedicated verify service configuration.",
 	}
 	cmd.AddCommand(validateConfigCommand())
+	cmd.AddCommand(runCommand())
 	return cmd
 }
 
@@ -52,4 +55,37 @@ func validateConfigCommand() *cobra.Command {
 		panic(err)
 	}
 	return cmd
+}
+
+func runCommand() *cobra.Command {
+	var configPath string
+
+	cmd := &cobra.Command{
+		Use:   "run --config <path>",
+		Short: "Run the dedicated verify-service HTTP API.",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := serviceconfig.LoadConfig(configPath)
+			if err != nil {
+				return err
+			}
+			if warning := cfg.DirectServiceAuthWarning(); warning != "" {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s\n", warning); err != nil {
+					return err
+				}
+			}
+			return serviceconfig.Run(cmd.Context(), cfg, serviceconfig.RuntimeDependencies{
+				Logger: newCommandLogger(cmd.ErrOrStderr()),
+			})
+		},
+	}
+	cmd.Flags().StringVar(&configPath, "config", "", "Path to the verify-service config file.")
+	if err := cmd.MarkFlagRequired("config"); err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
+func newCommandLogger(w io.Writer) zerolog.Logger {
+	return zerolog.New(w).With().Timestamp().Logger()
 }

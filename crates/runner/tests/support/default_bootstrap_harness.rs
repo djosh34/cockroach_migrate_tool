@@ -197,7 +197,9 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn assert_helper_shadow_customers_snapshot(&self, expected: &str) {
-        let actual = self.inner.query_destination(HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL);
+        let actual = self
+            .inner
+            .query_destination(HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL);
         assert_eq!(
             actual.trim(),
             expected,

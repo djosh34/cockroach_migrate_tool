@@ -15,7 +15,10 @@ pub struct SourceBootstrapImageHarness {
 impl SourceBootstrapImageHarness {
     pub fn start() -> Self {
         let harness = Self {
-            image_tag: format!("cockroach-migrate-source-bootstrap-test-{}", unique_suffix()),
+            image_tag: format!(
+                "cockroach-migrate-source-bootstrap-test-{}",
+                unique_suffix()
+            ),
         };
         harness.build_image();
         harness
@@ -53,7 +56,9 @@ impl SourceBootstrapImageHarness {
             "source-bootstrap image must emit the rendered SQL header",
         );
         assert!(
-            output.contains("CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"),
+            output.contains(
+                "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"
+            ),
             "source-bootstrap image must render the README mapping changefeed through the container entrypoint",
         );
         assert!(

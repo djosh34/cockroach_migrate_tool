@@ -168,6 +168,49 @@ func TestFilterResult(t *testing.T) {
 				},
 			},
 		},
+		{
+			desc: "exclude filter",
+			config: FilterConfig{
+				SchemaFilter:        DefaultFilterString,
+				TableFilter:         DefaultFilterString,
+				ExcludeSchemaFilter: "audit",
+				ExcludeTableFilter:  "tmp_",
+			},
+			r: Result{
+				Verified: [][2]dbtable.DBTable{
+					{
+						{Name: dbtable.Name{Schema: "public", Table: "accounts"}},
+						{Name: dbtable.Name{Schema: "public", Table: "accounts"}},
+					},
+					{
+						{Name: dbtable.Name{Schema: "audit", Table: "tmp_events"}},
+						{Name: dbtable.Name{Schema: "audit", Table: "tmp_events"}},
+					},
+				},
+				MissingTables: []MissingTable{
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "public", Table: "orders"}}},
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "audit", Table: "tmp_orders"}}},
+				},
+				ExtraneousTables: []ExtraneousTable{
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "public", Table: "payments"}}},
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "audit", Table: "tmp_payments"}}},
+				},
+			},
+			expected: Result{
+				Verified: [][2]dbtable.DBTable{
+					{
+						{Name: dbtable.Name{Schema: "public", Table: "accounts"}},
+						{Name: dbtable.Name{Schema: "public", Table: "accounts"}},
+					},
+				},
+				MissingTables: []MissingTable{
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "public", Table: "orders"}}},
+				},
+				ExtraneousTables: []ExtraneousTable{
+					{DBTable: dbtable.DBTable{Name: dbtable.Name{Schema: "public", Table: "payments"}}},
+				},
+			},
+		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			r, err := FilterResult(tc.config, tc.r)

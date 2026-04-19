@@ -18,12 +18,15 @@ func DefaultFilterConfig() FilterConfig {
 }
 
 type FilterConfig struct {
-	SchemaFilter FilterString
-	TableFilter  FilterString
+	SchemaFilter        FilterString
+	TableFilter         FilterString
+	ExcludeSchemaFilter FilterString
+	ExcludeTableFilter  FilterString
 }
 
 func FilterResult(cfg FilterConfig, r Result) (Result, error) {
-	if cfg.SchemaFilter == DefaultFilterString && cfg.TableFilter == DefaultFilterString {
+	hasExclude := cfg.ExcludeSchemaFilter != "" || cfg.ExcludeTableFilter != ""
+	if cfg.SchemaFilter == DefaultFilterString && cfg.TableFilter == DefaultFilterString && !hasExclude {
 		return r, nil
 	}
 	schemaRe, err := regexp.CompilePOSIX(cfg.SchemaFilter)
@@ -34,23 +37,35 @@ func FilterResult(cfg FilterConfig, r Result) (Result, error) {
 	if err != nil {
 		return r, err
 	}
+	var excludeSchemaRe *regexp.Regexp
+	var excludeTableRe *regexp.Regexp
+	if hasExclude {
+		excludeSchemaRe, err = regexp.CompilePOSIX(defaultFilterString(cfg.ExcludeSchemaFilter))
+		if err != nil {
+			return r, err
+		}
+		excludeTableRe, err = regexp.CompilePOSIX(defaultFilterString(cfg.ExcludeTableFilter))
+		if err != nil {
+			return r, err
+		}
+	}
 	newResult := Result{
 		Verified:         r.Verified[:0],
 		MissingTables:    r.MissingTables[:0],
 		ExtraneousTables: r.ExtraneousTables[:0],
 	}
 	for _, v := range r.Verified {
-		if MatchesFilter(v[0].Name, schemaRe, tableRe) {
+		if matchesFilters(v[0].Name, schemaRe, tableRe, excludeSchemaRe, excludeTableRe) {
 			newResult.Verified = append(newResult.Verified, v)
 		}
 	}
 	for _, t := range r.MissingTables {
-		if MatchesFilter(t.Name, schemaRe, tableRe) {
+		if matchesFilters(t.Name, schemaRe, tableRe, excludeSchemaRe, excludeTableRe) {
 			newResult.MissingTables = append(newResult.MissingTables, t)
 		}
 	}
 	for _, t := range r.ExtraneousTables {
-		if MatchesFilter(t.Name, schemaRe, tableRe) {
+		if matchesFilters(t.Name, schemaRe, tableRe, excludeSchemaRe, excludeTableRe) {
 			newResult.ExtraneousTables = append(newResult.ExtraneousTables, t)
 		}
 	}
@@ -59,6 +74,29 @@ func FilterResult(cfg FilterConfig, r Result) (Result, error) {
 
 func MatchesFilter(n dbtable.Name, schemaRe, tableRe *regexp.Regexp) bool {
 	return schemaRe.MatchString(string(n.Schema)) && tableRe.MatchString(string(n.Table))
+}
+
+func matchesFilters(
+	n dbtable.Name,
+	includeSchemaRe *regexp.Regexp,
+	includeTableRe *regexp.Regexp,
+	excludeSchemaRe *regexp.Regexp,
+	excludeTableRe *regexp.Regexp,
+) bool {
+	if !MatchesFilter(n, includeSchemaRe, includeTableRe) {
+		return false
+	}
+	if excludeSchemaRe == nil || excludeTableRe == nil {
+		return true
+	}
+	return !MatchesFilter(n, excludeSchemaRe, excludeTableRe)
+}
+
+func defaultFilterString(pattern FilterString) FilterString {
+	if pattern == "" {
+		return DefaultFilterString
+	}
+	return pattern
 }
 
 type Result struct {

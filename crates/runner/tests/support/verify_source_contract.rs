@@ -22,7 +22,10 @@ impl VerifySourceContract {
             )
         });
         let go_mod_text = fs::read_to_string(&go_mod_path).unwrap_or_else(|error| {
-            panic!("go.mod `{}` should be readable: {error}", go_mod_path.display())
+            panic!(
+                "go.mod `{}` should be readable: {error}",
+                go_mod_path.display()
+            )
         });
 
         Self {
@@ -258,7 +261,10 @@ fn read_dir_names(dir: &Path) -> BTreeSet<String> {
         .map(|entry| {
             entry
                 .unwrap_or_else(|error| {
-                    panic!("directory entry under `{}` should be readable: {error}", dir.display())
+                    panic!(
+                        "directory entry under `{}` should be readable: {error}",
+                        dir.display()
+                    )
                 })
                 .file_name()
                 .to_string_lossy()
@@ -283,7 +289,10 @@ fn go_source_files(dir: &Path) -> Vec<PathBuf> {
     {
         let path = entry
             .unwrap_or_else(|error| {
-                panic!("directory entry under `{}` should be readable: {error}", dir.display())
+                panic!(
+                    "directory entry under `{}` should be readable: {error}",
+                    dir.display()
+                )
             })
             .path();
         if path.is_dir() {

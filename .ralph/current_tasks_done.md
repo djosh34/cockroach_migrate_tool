@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 05:56:48 PM CEST 2026
+Generated: Sun Apr 19 18:19:45 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -523,6 +523,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add a dedicated verify-service config with source and destination TLS support and explicit verify mode selection <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/05-task-build-an-ultra-scoped-http-job-api-for-single-active-verify-runs.md`
+
+```
+## Task: Build an ultra-scoped HTTP job API for single active verify runs using config-defined connections only <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
