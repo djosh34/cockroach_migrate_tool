@@ -45,18 +45,28 @@ func TestLoadConfigRejectsUnpairedClientCertificateMaterial(t *testing.T) {
 }
 
 func TestLoadConfigValidatesListenerProtectionModes(t *testing.T) {
+	t.Run("http listener is rejected", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-http-listener.yml"))
+		require.ErrorContains(t, err, "listener.transport.mode must be https")
+	})
+
 	t.Run("https requires cert and key", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-https-without-server-cert.yml"))
 		require.ErrorContains(t, err, "listener.tls.cert_path and listener.tls.key_path must both be set for https")
 	})
 
-	t.Run("mtls requires https", func(t *testing.T) {
+	t.Run("https listener requires mtls", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-https-without-client-auth.yml"))
+		require.ErrorContains(t, err, "listener.tls.client_auth.mode must be mtls")
+	})
+
+	t.Run("http listener is rejected even with mtls configured", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-http-mtls.yml"))
-		require.ErrorContains(t, err, "listener.client_auth.mode mtls requires listener.transport.mode https")
+		require.ErrorContains(t, err, "listener.transport.mode must be https")
 	})
 
 	t.Run("mtls requires client ca", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-mtls-without-client-ca.yml"))
-		require.ErrorContains(t, err, "listener.tls.client_auth.client_ca_path must be set when listener.client_auth.mode is mtls")
+		require.ErrorContains(t, err, "listener.tls.client_auth.client_ca_path must be set when listener.tls.client_auth.mode is mtls")
 	})
 }

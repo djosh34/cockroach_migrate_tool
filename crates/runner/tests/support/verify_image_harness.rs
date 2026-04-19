@@ -8,11 +8,14 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::blocking::Client;
+use reqwest::{Certificate, Identity, blocking::Client};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
 
+use crate::e2e_harness::{
+    investigation_ca_cert_path, investigation_server_cert_path, investigation_server_key_path,
+};
 use crate::e2e_integrity::{VerifyCorrectnessAudit, VerifyJobResponse};
 
 pub struct VerifyImageHarness {
@@ -90,6 +93,16 @@ impl VerifyRuntimeFiles {
             &certs_dir.join("destination-ca.crt"),
             "verify runtime destination ca",
         );
+        copy_cert(
+            &investigation_server_cert_path(),
+            &certs_dir.join("server.crt"),
+            "verify runtime listener server cert",
+        );
+        copy_cert(
+            &investigation_server_key_path(),
+            &certs_dir.join("server.key"),
+            "verify runtime listener server key",
+        );
 
         let config_path = root_dir.join("verify-service.yml");
         fs::write(
@@ -98,10 +111,13 @@ impl VerifyRuntimeFiles {
                 r#"listener:
   bind_addr: 0.0.0.0:8080
   transport:
-    mode: http
+    mode: https
   tls:
+    cert_path: /work/config/certs/server.crt
+    key_path: /work/config/certs/server.key
     client_auth:
-      mode: none
+      mode: mtls
+      client_ca_path: /work/config/certs/source-ca.crt
 verify:
   source:
     url: {source_url}
@@ -159,10 +175,21 @@ impl RunningVerifyImage {
             ]),
             "docker run verify image runtime",
         );
+        let trusted_ca = Certificate::from_pem(
+            &fs::read(investigation_ca_cert_path())
+                .expect("verify runtime investigation ca should be readable"),
+        )
+        .expect("verify runtime investigation ca should parse");
+        let client_identity = client_identity(
+            files.root_dir.join("certs").join("source-client.crt").as_path(),
+            files.root_dir.join("certs").join("source-client.key").as_path(),
+        );
         Self {
             container_name,
-            base_url: format!("http://127.0.0.1:{host_port}"),
+            base_url: format!("https://127.0.0.1:{host_port}"),
             client: Client::builder()
+                .add_root_certificate(trusted_ca)
+                .identity(client_identity)
                 .build()
                 .expect("verify runtime client should build"),
         }
@@ -351,6 +378,24 @@ fn copy_cert(source: &Path, destination: &Path, description: &str) {
             destination.display(),
         )
     });
+}
+
+fn client_identity(cert_path: &Path, key_path: &Path) -> Identity {
+    let cert = fs::read(cert_path).unwrap_or_else(|error| {
+        panic!(
+            "verify runtime client cert should read from `{}`: {error}",
+            cert_path.display(),
+        )
+    });
+    let key = fs::read(key_path).unwrap_or_else(|error| {
+        panic!(
+            "verify runtime client key should read from `{}`: {error}",
+            key_path.display(),
+        )
+    });
+    let mut pem = cert;
+    pem.extend_from_slice(&key);
+    Identity::from_pem(&pem).expect("verify runtime client identity should parse")
 }
 
 fn parse_json<T>(raw: &str, description: &str) -> T

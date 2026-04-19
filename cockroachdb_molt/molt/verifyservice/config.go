@@ -18,14 +18,12 @@ const (
 type ListenerTransportMode string
 
 const (
-	ListenerTransportModeHTTP  ListenerTransportMode = "http"
 	ListenerTransportModeHTTPS ListenerTransportMode = "https"
 )
 
 type ListenerClientAuthMode string
 
 const (
-	ListenerClientAuthModeNone ListenerClientAuthMode = "none"
 	ListenerClientAuthModeMTLS ListenerClientAuthMode = "mtls"
 )
 
@@ -140,50 +138,36 @@ func (cfg DatabaseConfig) ConnectionString() (string, error) {
 	return parsed.String(), nil
 }
 
-func (cfg Config) DirectServiceAuthWarning() string {
-	if cfg.Listener.TLS.ClientAuth.Mode == ListenerClientAuthModeNone {
-		return "warning: no extra built-in protection is being provided by the verify service"
-	}
-	return ""
-}
-
 func (cfg ListenerConfig) validate() error {
 	if err := cfg.Transport.Mode.Validate(); err != nil {
 		return errors.Newf("listener.transport.mode %s", err.Error())
 	}
 	if err := cfg.TLS.ClientAuth.Mode.Validate(); err != nil {
-		return errors.Newf("listener.client_auth.mode %s", err.Error())
+		return errors.Newf("listener.tls.client_auth.mode %s", err.Error())
 	}
-	if cfg.Transport.Mode == ListenerTransportModeHTTPS {
-		if cfg.TLS.CertPath == "" || cfg.TLS.KeyPath == "" {
-			return errors.New("listener.tls.cert_path and listener.tls.key_path must both be set for https")
-		}
+	if cfg.TLS.CertPath == "" || cfg.TLS.KeyPath == "" {
+		return errors.New("listener.tls.cert_path and listener.tls.key_path must both be set for https")
 	}
-	if cfg.TLS.ClientAuth.Mode == ListenerClientAuthModeMTLS {
-		if cfg.Transport.Mode != ListenerTransportModeHTTPS {
-			return errors.New("listener.client_auth.mode mtls requires listener.transport.mode https")
-		}
-		if cfg.TLS.ClientAuth.ClientCAPath == "" {
-			return errors.New("listener.tls.client_auth.client_ca_path must be set when listener.client_auth.mode is mtls")
-		}
+	if cfg.TLS.ClientAuth.ClientCAPath == "" {
+		return errors.New("listener.tls.client_auth.client_ca_path must be set when listener.tls.client_auth.mode is mtls")
 	}
 	return nil
 }
 
 func (mode ListenerTransportMode) Validate() error {
 	switch mode {
-	case ListenerTransportModeHTTP, ListenerTransportModeHTTPS:
+	case ListenerTransportModeHTTPS:
 		return nil
 	default:
-		return errors.New("must be one of: http, https")
+		return errors.New("must be https")
 	}
 }
 
 func (mode ListenerClientAuthMode) Validate() error {
 	switch mode {
-	case ListenerClientAuthModeNone, ListenerClientAuthModeMTLS:
+	case ListenerClientAuthModeMTLS:
 		return nil
 	default:
-		return errors.New("must be one of: none, mtls")
+		return errors.New("must be mtls")
 	}
 }

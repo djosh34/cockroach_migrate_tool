@@ -36,13 +36,11 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 		Addr:    cfg.Listener.BindAddr,
 		Handler: service.Handler(),
 	}
-	if cfg.Listener.Transport.Mode == ListenerTransportModeHTTPS {
-		tlsConfig, err := cfg.Listener.TLS.ServerTLSConfig()
-		if err != nil {
-			return err
-		}
-		server.TLSConfig = tlsConfig
+	tlsConfig, err := cfg.Listener.TLS.ServerTLSConfig()
+	if err != nil {
+		return err
 	}
+	server.TLSConfig = tlsConfig
 
 	shutdownErrCh := make(chan error, 1)
 	go func() {
@@ -54,15 +52,7 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 		shutdownErrCh <- server.Shutdown(shutdownCtx)
 	}()
 
-	var err error
-	switch cfg.Listener.Transport.Mode {
-	case ListenerTransportModeHTTPS:
-		err = server.ListenAndServeTLS("", "")
-	case ListenerTransportModeHTTP:
-		err = server.ListenAndServe()
-	default:
-		return errors.Newf("unsupported listener transport mode %q", cfg.Listener.Transport.Mode)
-	}
+	err = server.ListenAndServeTLS(cfg.Listener.TLS.CertPath, cfg.Listener.TLS.KeyPath)
 	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}

@@ -41,12 +41,6 @@ func validateConfigCommand() *cobra.Command {
 				cfg.Verify.Source.TLS.Mode,
 				cfg.Verify.Destination.TLS.Mode,
 			)
-			if err != nil {
-				return err
-			}
-			if warning := cfg.DirectServiceAuthWarning(); warning != "" {
-				_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s\n", warning)
-			}
 			return err
 		},
 	}
@@ -68,11 +62,6 @@ func runCommand() *cobra.Command {
 			cfg, err := serviceconfig.LoadConfig(configPath)
 			if err != nil {
 				return err
-			}
-			if warning := cfg.DirectServiceAuthWarning(); warning != "" {
-				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s\n", warning); err != nil {
-					return err
-				}
 			}
 			return serviceconfig.Run(cmd.Context(), cfg, serviceconfig.RuntimeDependencies{
 				Logger: newCommandLogger(cmd.ErrOrStderr()),

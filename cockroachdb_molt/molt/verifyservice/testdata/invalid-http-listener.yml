@@ -1,11 +1,10 @@
 listener:
-  bind_addr: 0.0.0.0:8443
+  bind_addr: 0.0.0.0:8080
   transport:
-    mode: https
+    mode: http
   tls:
     client_auth:
-      mode: mtls
-      client_ca_path: /config/certs/client-ca.crt
+      mode: none
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb

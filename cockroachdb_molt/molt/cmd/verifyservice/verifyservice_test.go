@@ -35,7 +35,7 @@ func TestValidateConfig(t *testing.T) {
 	require.Empty(t, stderr.String())
 }
 
-func TestValidateConfigWarnsWhenDirectServiceAuthDisabled(t *testing.T) {
+func TestValidateConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 	cmd := rootcmd.NewRootCmd()
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
@@ -50,10 +50,13 @@ func TestValidateConfigWarnsWhenDirectServiceAuthDisabled(t *testing.T) {
 
 	err := cmd.Execute()
 	require.NoError(t, err, stderr.String())
-	require.Contains(
-		t,
+	require.Equal(t, ""+
+		"verify-service config is valid\n"+
+		"listener transport: https\n"+
+		"listener client auth: mtls\n"+
+		"source tls mode: verify-full\n"+
+		"destination tls mode: verify-ca\n",
 		stdout.String(),
-		"warning: no extra built-in protection is being provided by the verify service\n",
 	)
 	require.Empty(t, stderr.String())
 }

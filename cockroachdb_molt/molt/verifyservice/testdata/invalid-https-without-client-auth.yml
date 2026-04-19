@@ -6,17 +6,15 @@ listener:
     cert_path: /config/certs/server.crt
     key_path: /config/certs/server.key
     client_auth:
-      mode: mtls
-      client_ca_path: /config/certs/client-ca.crt
+      mode: none
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb
     tls:
       mode: verify-full
       ca_cert_path: /config/certs/source-ca.crt
-      client_cert_path: /config/certs/source-client.crt
   destination:
-    url: postgresql://verify_target:secret@crdb.internal:26257/appdb
+    url: postgresql://verify_target@crdb.internal:26257/appdb
     tls:
       mode: verify-ca
       ca_cert_path: /config/certs/destination-ca.crt
