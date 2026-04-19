@@ -3,6 +3,8 @@ name: master-image
 env:
   REGISTRY: ghcr.io
   IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-runner
+  RELEASE_IMAGE_ARCHIVE: ${{ runner.temp }}/release-image.tar
+  VULNERABILITY_REPORT: ${{ runner.temp }}/vulnerability-report.txt
 
 on:
   push:
@@ -45,5 +47,25 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          push: false
+          outputs: type=docker,dest=${{ env.RELEASE_IMAGE_ARCHIVE }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}
+      - uses: aquasecurity/setup-trivy@v0.2.4
+      - name: Scan release image archive
+        run: trivy image --input "${{ env.RELEASE_IMAGE_ARCHIVE }}" --severity HIGH,CRITICAL --exit-code 1 --format table --output "${{ env.VULNERABILITY_REPORT }}"
+      - name: Print vulnerability report
+        if: always()
+        run: |
+          test -f "${{ env.VULNERABILITY_REPORT }}"
+          cat "${{ env.VULNERABILITY_REPORT }}"
+      - name: Upload vulnerability report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-image-vulnerability-report
+          path: ${{ env.VULNERABILITY_REPORT }}
+          if-no-files-found: error
+      - name: Load scanned release image archive
+        run: docker load --input "${{ env.RELEASE_IMAGE_ARCHIVE }}"
+      - name: Push scanned release image
+        run: docker push "${{ env.REGISTRY }}/${{ env.IMAGE_REPOSITORY }}:${{ github.sha }}"

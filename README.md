@@ -211,6 +211,8 @@ The `publish` job still carries an explicit `if:` gate that requires a `push` ev
 
 Only the `publish` job gets `packages: write`, checkout disables credential persistence, and the pushed image is tagged only with `${{ github.sha }}` from the validated commit.
 
+Before any push, the workflow builds one release-image archive, scans that exact archive with Trivy, fails on `HIGH` or `CRITICAL` findings, and always uploads the scan report artifact for review.
+
 ## Command Contract
 
 - `make check`: run the workspace lint gate.

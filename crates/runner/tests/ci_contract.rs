@@ -56,6 +56,20 @@ fn master_image_workflow_publishes_only_a_commit_tagged_ghcr_image() {
 }
 
 #[test]
+fn master_image_workflow_scans_the_release_archive_before_publishing() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_scans_the_release_archive_before_publishing();
+}
+
+#[test]
+fn master_image_workflow_fails_loudly_and_publishes_a_vulnerability_report() {
+    let workflow = GithubWorkflowContract::load_master_image();
+
+    workflow.assert_release_scan_policy_is_explicit_and_visible();
+}
+
+#[test]
 fn master_image_workflow_keeps_registry_coordinates_in_one_shared_boundary() {
     let workflow = GithubWorkflowContract::load_master_image();
 

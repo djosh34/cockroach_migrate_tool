@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 09:53:01 AM CEST 2026
+Generated: Sun Apr 19 10:13:31 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -402,6 +402,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add a CI sanity and security check task that audits workflow attack vectors, secret exposure, and untrusted PR behavior <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-15-ci-build-test-image-pipeline/03-task-add-free-vulnerability-scan-to-image-publish-workflow.md`
+
+```
+## Task: Add a free vulnerability scan to the image publish workflow so unsafe images fail before release <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
