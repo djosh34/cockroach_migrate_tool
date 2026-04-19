@@ -1,4 +1,4 @@
-## Task: End-to-end test HTTP retry chaos imposed externally <status>not_started</status> <passes>false</passes>
+## Task: End-to-end test HTTP retry chaos imposed externally <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -19,12 +19,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers externally imposed HTTP failure and retry behavior end to end
-- [ ] The binary contains no test-only shortcut logic for this scenario
-- [ ] Real target tables converge correctly after retries
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers externally imposed HTTP failure and retry behavior end to end
+- [x] The binary contains no test-only shortcut logic for this scenario
+- [x] Real target tables converge correctly after retries
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-11-e2e-chaos/01-task-e2e-http-retry-chaos-imposed-externally_plans/2026-04-19-http-retry-chaos-e2e-plan.md</plan>

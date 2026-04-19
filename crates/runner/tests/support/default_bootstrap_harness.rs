@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
+use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig, WebhookSinkMode};
 
 const DEFAULT_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -48,17 +48,13 @@ impl DefaultBootstrapHarness {
 
     pub fn start_with_reconcile_interval(reconcile_interval_secs: u64) -> Self {
         Self {
-            inner: CdcE2eHarness::start(CdcE2eHarnessConfig {
-                mapping_id: "app-a",
-                source_database: "demo_a",
-                destination_database: "app_a",
-                destination_user: "migration_user_a",
-                destination_password: "runner-secret-a",
-                reconcile_interval_secs,
-                selected_tables: &["public.customers"],
-                source_setup_sql: DEFAULT_SOURCE_SETUP_SQL,
-                destination_setup_sql: DEFAULT_DESTINATION_SETUP_SQL,
-            }),
+            inner: Self::build_inner(reconcile_interval_secs, WebhookSinkMode::DirectRunner),
+        }
+    }
+
+    pub fn start_with_retry_chaos() -> Self {
+        Self {
+            inner: Self::build_inner(1, WebhookSinkMode::ExternalChaosGateway),
         }
     }
 
@@ -133,11 +129,50 @@ impl DefaultBootstrapHarness {
         ));
     }
 
+    pub fn arm_single_external_http_500_for_customer_email(&self, email: &str) {
+        self.inner
+            .arm_single_external_http_500_for_request_body(email);
+    }
+
+    pub fn update_source_customer_email(&self, customer_id: i64, email: &str) {
+        self.inner.execute_source_sql(&format!(
+            "UPDATE public.customers
+             SET email = '{email}'
+             WHERE id = {customer_id};",
+            email = email.replace('\'', "''"),
+        ));
+    }
+
+    pub fn wait_for_duplicate_customer_delivery(&self, email: &str) {
+        self.inner
+            .wait_for_duplicate_gateway_delivery_of_request_body(email);
+    }
+
     pub fn verify_default_migration(&self) {
         let _ = self.verify_default_migration_output();
     }
 
     pub fn verify_default_migration_output(&self) -> String {
         self.inner.verify_migration()
+    }
+
+    fn build_inner(
+        reconcile_interval_secs: u64,
+        webhook_sink_mode: WebhookSinkMode,
+    ) -> CdcE2eHarness {
+        CdcE2eHarness::start_with_webhook_sink(
+            CdcE2eHarnessConfig {
+                mapping_id: "app-a",
+                source_database: "demo_a",
+                destination_database: "app_a",
+                destination_user: "migration_user_a",
+                destination_password: "runner-secret-a",
+                reconcile_interval_secs,
+                selected_tables: &["public.customers"],
+                source_setup_sql: DEFAULT_SOURCE_SETUP_SQL,
+                destination_setup_sql: DEFAULT_DESTINATION_SETUP_SQL,
+            },
+            webhook_sink_mode,
+        )
     }
 }

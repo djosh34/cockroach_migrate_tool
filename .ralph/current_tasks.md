@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sun Apr 19 03:08:30 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-11-e2e-chaos/01-task-e2e-http-retry-chaos-imposed-externally.md`
-
-```
-## Task: End-to-end test HTTP retry chaos imposed externally <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sun Apr 19 03:30:11 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-11-e2e-chaos/02-task-e2e-receiver-crash-and-restart-recovery.md`
 

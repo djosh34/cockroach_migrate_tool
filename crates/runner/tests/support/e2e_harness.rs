@@ -13,10 +13,18 @@ use std::{
 use reqwest::{Certificate, blocking::Client};
 use tempfile::TempDir;
 
+use crate::webhook_chaos_gateway::WebhookChaosGateway;
+
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
 const MOLT_IMAGE: &str =
     "cockroachdb/molt@sha256:abe3c90bc42556ad6713cba207b971e6d55dbd54211b53cfcf27cdc14d49e358";
+
+#[derive(Clone, Copy)]
+pub enum WebhookSinkMode {
+    DirectRunner,
+    ExternalChaosGateway,
+}
 
 pub struct CdcE2eHarnessConfig<'a> {
     pub mapping_id: &'a str,
@@ -67,6 +75,8 @@ pub struct CdcE2eHarness {
     config: OwnedHarnessConfig,
     temp_dir: TempDir,
     runner_port: u16,
+    webhook_sink_base_url: String,
+    webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
     source_bootstrap_config_path: PathBuf,
     source_bootstrap_script_path: PathBuf,
@@ -80,6 +90,13 @@ pub struct CdcE2eHarness {
 
 impl CdcE2eHarness {
     pub fn start(config: CdcE2eHarnessConfig<'_>) -> Self {
+        Self::start_with_webhook_sink(config, WebhookSinkMode::DirectRunner)
+    }
+
+    pub fn start_with_webhook_sink(
+        config: CdcE2eHarnessConfig<'_>,
+        webhook_sink_mode: WebhookSinkMode,
+    ) -> Self {
         let config = OwnedHarnessConfig::from(config);
         let docker = DockerEnvironment::new();
         docker.create_network();
@@ -107,6 +124,8 @@ impl CdcE2eHarness {
             config,
             temp_dir,
             runner_port,
+            webhook_sink_base_url: String::new(),
+            webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
             source_bootstrap_config_path: PathBuf::new(),
             source_bootstrap_script_path: PathBuf::new(),
@@ -117,7 +136,7 @@ impl CdcE2eHarness {
             runner_stderr_path: PathBuf::new(),
             runner_process: RefCell::new(None),
         };
-        harness.materialize()
+        harness.materialize(webhook_sink_mode)
     }
 
     pub fn bootstrap_migration(&self) {
@@ -276,6 +295,37 @@ impl CdcE2eHarness {
         output
     }
 
+    pub fn arm_single_external_http_500_for_request_body(&self, body_substring: &str) {
+        self.webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness")
+            .arm_single_external_http_500_for_body_substring(body_substring);
+    }
+
+    pub fn wait_for_duplicate_gateway_delivery_of_request_body(&self, body_substring: &str) {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            if gateway.has_duplicate_delivery_for_body_substring(body_substring) {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        panic!(
+            "gateway did not observe duplicate delivery for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
     pub fn execute_source_sql(&self, sql: &str) {
         self.docker
             .exec_cockroach_sql(&format!("USE {};\n{sql}", self.config.source_database));
@@ -336,7 +386,7 @@ impl CdcE2eHarness {
         ))
     }
 
-    fn materialize(mut self) -> Self {
+    fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
         self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
@@ -353,6 +403,17 @@ impl CdcE2eHarness {
             &self.wrapper_bin_dir.join("molt"),
             &self.docker.cockroach_container,
         );
+        match webhook_sink_mode {
+            WebhookSinkMode::DirectRunner => {
+                self.webhook_sink_base_url =
+                    format!("https://host.docker.internal:{}", self.runner_port);
+            }
+            WebhookSinkMode::ExternalChaosGateway => {
+                let gateway = WebhookChaosGateway::start(self.runner_port);
+                self.webhook_sink_base_url = gateway.public_base_url();
+                self.webhook_chaos_gateway = Some(gateway);
+            }
+        }
         self.write_runner_config();
         self.write_source_bootstrap_config();
         self
@@ -466,7 +527,7 @@ mappings:
                 r#"cockroach:
   url: postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable
 webhook:
-  base_url: https://host.docker.internal:{runner_port}
+  base_url: {webhook_sink_base_url}
   ca_cert_path: {ca_cert_path}
   resolved: 1s
 mappings:
@@ -476,7 +537,7 @@ mappings:
       tables:
 {selected_tables}
 "#,
-                runner_port = self.runner_port,
+                webhook_sink_base_url = self.webhook_sink_base_url,
                 ca_cert_path = investigation_ca_cert_path().display(),
                 mapping_id = self.config.mapping_id,
                 source_database = self.config.source_database,

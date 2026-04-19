@@ -6,6 +6,8 @@ mod default_bootstrap_harness;
 mod e2e_harness;
 #[path = "support/multi_mapping_harness.rs"]
 mod multi_mapping_harness;
+#[path = "support/webhook_chaos_gateway.rs"]
+mod webhook_chaos_gateway;
 
 use std::{thread, time::Duration};
 
@@ -82,6 +84,30 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
     harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_shadow_customers(2);
     harness.verify_default_migration();
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converges() {
+    let harness = DefaultBootstrapHarness::start_with_retry_chaos();
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    harness.arm_single_external_http_500_for_customer_email("alice+retry@example.com");
+    harness.update_source_customer_email(1, "alice+retry@example.com");
+    harness.wait_for_duplicate_customer_delivery("alice+retry@example.com");
+    harness.wait_for_helper_shadow_customers("1:alice+retry@example.com,2:bob@example.com");
+    harness.assert_helper_shadow_customers(2);
+    harness.wait_for_destination_customers("1:alice+retry@example.com,2:bob@example.com");
+    harness.assert_destination_customers_stable(
+        "1:alice+retry@example.com,2:bob@example.com",
+        Duration::from_secs(3),
+    );
+    let verify_output = harness.verify_default_migration_output();
+    assert!(
+        !verify_output.contains("_cockroach_migration_tool"),
+        "verify output should mention only the real migrated table: {verify_output}"
+    );
 }
 
 #[test]

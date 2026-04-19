@@ -34,7 +34,10 @@ fn readme_includes_a_write_freeze_cutover_runbook_with_repeated_verify_during_sh
 fn readme_lists_the_public_cutover_steps_in_operator_order() {
     let readme = repository_readme();
 
-    let freeze = phrase_offset(&readme, "1. Block writes at the API boundary for the mapping you are handing over.");
+    let freeze = phrase_offset(
+        &readme,
+        "1. Block writes at the API boundary for the mapping you are handing over.",
+    );
     let readiness = phrase_offset(
         &readme,
         "2. Run `runner cutover-readiness --config <path> --mapping <id> --source-url <cockroach-url>` until it reports `ready=true`.",
