@@ -15,10 +15,13 @@ use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
 
-mod runner_process;
 mod destination_lock;
+mod destination_write_failure;
+mod runner_process;
 
 pub(crate) use destination_lock::DestinationTableLock;
+pub(crate) use destination_write_failure::DestinationWriteFailure;
+use destination_write_failure::DestinationWriteFailureSpec;
 use runner_process::RunnerProcess;
 
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
@@ -31,7 +34,7 @@ const MOLT_IMAGE: &str =
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
     DirectRunner,
-    ExternalChaosGateway,
+    ObservableChaosGateway,
 }
 
 pub struct CdcE2eHarnessConfig<'a> {
@@ -61,7 +64,10 @@ impl StreamTrackingProgress {
     }
 
     pub fn has_received_through(&self, watermark: &str) -> bool {
-        watermark_at_least(self.latest_received_resolved_watermark.as_deref(), watermark)
+        watermark_at_least(
+            self.latest_received_resolved_watermark.as_deref(),
+            watermark,
+        )
     }
 
     pub fn has_reconciled_through(&self, watermark: &str) -> bool {
@@ -440,6 +446,42 @@ impl CdcE2eHarness {
         );
     }
 
+    pub fn wait_for_gateway_forwarded_status_sequence_for_request_body(
+        &self,
+        body_substring: &str,
+        statuses: &[reqwest::StatusCode],
+    ) {
+        for _ in 0..120 {
+            self.assert_runner_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            if gateway.has_forwarded_downstream_status_sequence_for_body_substring(
+                body_substring,
+                statuses,
+            ) {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        let expected = statuses
+            .iter()
+            .map(|status| status.as_str().to_owned())
+            .collect::<Vec<_>>()
+            .join(" -> ");
+        panic!(
+            "gateway did not observe forwarded downstream status sequence `{expected}` for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            read_file(&self.runner_stderr_path),
+        );
+    }
+
     pub fn execute_source_sql(&self, sql: &str) {
         self.docker
             .exec_cockroach_sql(&format!("USE {};\n{sql}", self.config.source_database));
@@ -538,8 +580,14 @@ impl CdcE2eHarness {
             &self.config.destination_database,
             mapped_table,
             &format!("{suffix}-{}", unique_suffix()),
-            &self.temp_dir.path().join(format!("{suffix}.lock.stdout.log")),
-            &self.temp_dir.path().join(format!("{suffix}.lock.stderr.log")),
+            &self
+                .temp_dir
+                .path()
+                .join(format!("{suffix}.lock.stdout.log")),
+            &self
+                .temp_dir
+                .path()
+                .join(format!("{suffix}.lock.stderr.log")),
         )
     }
 
@@ -568,13 +616,43 @@ impl CdcE2eHarness {
         );
     }
 
+    pub fn install_destination_write_failure(
+        &self,
+        schema_name: &str,
+        table_name: &str,
+        row_predicate_sql: &str,
+        error_message: &str,
+    ) -> DestinationWriteFailure {
+        DestinationWriteFailure::install(
+            self.docker.postgres_host_port,
+            &self.config.destination_database,
+            DestinationWriteFailureSpec {
+                schema_name,
+                table_name,
+                row_predicate_sql,
+                error_message,
+            },
+        )
+    }
+
+    pub fn helper_table_name_for(&self, mapped_table: &str) -> String {
+        self.helper_table_name(mapped_table)
+    }
+
+    pub fn wait_for_runner_failed_exit(&self) -> String {
+        let mut runner_process = self.runner_process.borrow_mut();
+        let mut process = runner_process
+            .take()
+            .expect("runner process should exist before waiting for a failed exit");
+        process.wait_for_failed_exit()
+    }
+
     pub fn wait_for_reconcile_block_on_destination_table(&self, mapped_table: &str) {
         let destination_database = sql_string_literal(&self.config.destination_database);
         let destination_user = sql_string_literal(&self.config.destination_user);
         let (schema_name, table_name) = split_table_reference(mapped_table);
-        let quoted_upsert_prefix = sql_string_literal(&format!(
-            "INSERT INTO \"{schema_name}\".\"{table_name}\""
-        ));
+        let quoted_upsert_prefix =
+            sql_string_literal(&format!("INSERT INTO \"{schema_name}\".\"{table_name}\""));
         for _ in 0..120 {
             self.assert_runner_alive();
             let blocked_sessions = self.query_destination(&format!(
@@ -633,7 +711,7 @@ impl CdcE2eHarness {
                 self.webhook_sink_base_url =
                     format!("https://host.docker.internal:{}", self.runner_port);
             }
-            WebhookSinkMode::ExternalChaosGateway => {
+            WebhookSinkMode::ObservableChaosGateway => {
                 let gateway = WebhookChaosGateway::start(self.runner_port);
                 self.webhook_sink_base_url = gateway.public_base_url();
                 self.webhook_chaos_gateway = Some(gateway);

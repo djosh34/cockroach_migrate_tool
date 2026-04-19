@@ -1,8 +1,7 @@
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     error::Error,
-    fmt,
-    fs,
+    fmt, fs,
     hash::{Hash, Hasher},
     net::TcpListener as StdTcpListener,
     sync::{Arc, Mutex, mpsc},
@@ -48,9 +47,7 @@ impl fmt::Display for ExternalSinkFault {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::HttpStatus { status } => write!(f, "http_status={status}"),
-            Self::AbortConnectionBeforeForward => {
-                f.write_str("abort_connection_before_forward")
-            }
+            Self::AbortConnectionBeforeForward => f.write_str("abort_connection_before_forward"),
         }
     }
 }
@@ -214,12 +211,40 @@ impl WebhookChaosGateway {
                 } if downstream_status.is_success() => {
                     entry.1 = true;
                 }
-                GatewayAttemptOutcome::InjectedFault(_) | GatewayAttemptOutcome::Forwarded { .. } => {}
+                GatewayAttemptOutcome::InjectedFault(_)
+                | GatewayAttemptOutcome::Forwarded { .. } => {}
             }
         }
         outcomes_by_fingerprint
             .values()
             .any(|(fault_seen, success_seen)| *fault_seen && *success_seen)
+    }
+
+    pub(crate) fn has_forwarded_downstream_status_sequence_for_body_substring(
+        &self,
+        body_substring: &str,
+        statuses: &[StatusCode],
+    ) -> bool {
+        if statuses.is_empty() {
+            return true;
+        }
+
+        let state = self
+            .state
+            .lock()
+            .expect("webhook chaos gateway state should lock");
+        let observed = state
+            .attempt_log
+            .iter()
+            .filter(|attempt| attempt.body.contains(body_substring))
+            .filter_map(|attempt| match attempt.outcome {
+                GatewayAttemptOutcome::Forwarded {
+                    downstream_status, ..
+                } => Some(downstream_status),
+                GatewayAttemptOutcome::InjectedFault(_) => None,
+            })
+            .collect::<Vec<_>>();
+        contains_status_subsequence(&observed, statuses)
     }
 
     pub(crate) fn attempt_summary_for_body_substring(&self, body_substring: &str) -> String {
@@ -449,7 +474,10 @@ async fn forward_request(
     )
 }
 
-fn consume_matching_fault(state: &Arc<Mutex<GatewayState>>, body_text: &str) -> Option<ExternalSinkFault> {
+fn consume_matching_fault(
+    state: &Arc<Mutex<GatewayState>>,
+    body_text: &str,
+) -> Option<ExternalSinkFault> {
     let mut state = state
         .lock()
         .expect("webhook chaos gateway state should lock");
@@ -527,6 +555,19 @@ fn request_fingerprint(path: &str, body: &str) -> String {
     path.hash(&mut hasher);
     body.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+fn contains_status_subsequence(observed: &[StatusCode], expected: &[StatusCode]) -> bool {
+    let mut next_expected = 0usize;
+    for status in observed {
+        if *status == expected[next_expected] {
+            next_expected += 1;
+            if next_expected == expected.len() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn load_tls_config() -> Result<ServerConfig, String> {

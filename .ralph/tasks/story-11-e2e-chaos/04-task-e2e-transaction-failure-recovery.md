@@ -1,4 +1,4 @@
-## Task: End-to-end test transaction-failure recovery <status>not_started</status> <passes>false</passes>
+## Task: End-to-end test transaction-failure recovery <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -19,12 +19,13 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers destination transaction failures and recovery end to end
-- [ ] Failure does not lead to silent data loss or skipped work
-- [ ] Real target tables converge correctly after recovery
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers destination transaction failures and recovery end to end
+- [x] Failure does not lead to silent data loss or skipped work
+- [x] Real target tables converge correctly after recovery
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
+<plan>.ralph/tasks/story-11-e2e-chaos/04-task-e2e-transaction-failure-recovery_plans/2026-04-19-transaction-failure-recovery-plan.md</plan>

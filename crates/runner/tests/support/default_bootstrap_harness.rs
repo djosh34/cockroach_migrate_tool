@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crate::e2e_harness::{
-    CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, MappingTrackingProgress,
-    WebhookSinkMode,
+    CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, DestinationWriteFailure,
+    MappingTrackingProgress, WebhookSinkMode,
 };
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
@@ -56,9 +56,9 @@ impl DefaultBootstrapHarness {
         }
     }
 
-    pub fn start_with_external_sink_faults() -> Self {
+    pub fn start_with_observed_webhook_gateway() -> Self {
         Self {
-            inner: Self::build_inner(1, WebhookSinkMode::ExternalChaosGateway),
+            inner: Self::build_inner(1, WebhookSinkMode::ObservableChaosGateway),
         }
     }
 
@@ -109,6 +109,15 @@ impl DefaultBootstrapHarness {
         );
     }
 
+    pub fn assert_destination_customers_snapshot(&self, expected: &str) {
+        let actual = self.inner.query_destination(DEFAULT_CUSTOMERS_SNAPSHOT_SQL);
+        assert_eq!(
+            actual.trim(),
+            expected,
+            "destination customers snapshot did not match"
+        );
+    }
+
     pub fn assert_helper_shadow_customers_stable(&self, expected: &str, duration: Duration) {
         self.inner.assert_destination_query_stable(
             HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL,
@@ -134,13 +143,12 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn arm_single_external_http_500_for_customer_email(&self, email: &str) {
-        self.inner
-            .arm_single_external_sink_fault_for_request_body(
-                email,
-                ExternalSinkFault::HttpStatus {
-                    status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                },
-            );
+        self.inner.arm_single_external_sink_fault_for_request_body(
+            email,
+            ExternalSinkFault::HttpStatus {
+                status: axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            },
+        );
     }
 
     pub fn arm_single_external_transport_disconnect_for_customer_email(&self, email: &str) {
@@ -165,10 +173,22 @@ impl DefaultBootstrapHarness {
     }
 
     pub fn wait_for_gateway_transport_abort_then_success_for_customer_email(&self, email: &str) {
-        self.inner.wait_for_gateway_fault_then_success_for_request_body(
-            email,
-            ExternalSinkFault::AbortConnectionBeforeForward,
-        );
+        self.inner
+            .wait_for_gateway_fault_then_success_for_request_body(
+                email,
+                ExternalSinkFault::AbortConnectionBeforeForward,
+            );
+    }
+
+    pub fn wait_for_gateway_downstream_500_then_200_for_customer_email(&self, email: &str) {
+        self.inner
+            .wait_for_gateway_forwarded_status_sequence_for_request_body(
+                email,
+                &[
+                    reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+                    reqwest::StatusCode::OK,
+                ],
+            );
     }
 
     pub fn verify_default_migration(&self) {
@@ -185,6 +205,10 @@ impl DefaultBootstrapHarness {
 
     pub fn restart_runner(&self) {
         self.inner.restart_runner();
+    }
+
+    pub fn wait_for_runner_failed_exit(&self) -> String {
+        self.inner.wait_for_runner_failed_exit()
     }
 
     pub fn customer_tracking_progress(&self) -> MappingTrackingProgress {
@@ -210,6 +234,39 @@ impl DefaultBootstrapHarness {
     pub fn wait_for_customer_reconcile_block(&self) {
         self.inner
             .wait_for_reconcile_block_on_destination_table("public.customers");
+    }
+
+    pub fn fail_helper_shadow_customer_email_write(
+        &self,
+        customer_id: i64,
+        email: &str,
+    ) -> DestinationWriteFailure {
+        let helper_table = self.inner.helper_table_name_for("public.customers");
+        self.inner.install_destination_write_failure(
+            "_cockroach_migration_tool",
+            &helper_table,
+            &format!(
+                "NEW.id = {customer_id} AND NEW.email = '{email}'",
+                email = email.replace('\'', "''"),
+            ),
+            "forced helper shadow write failure",
+        )
+    }
+
+    pub fn fail_destination_customer_email_write(
+        &self,
+        customer_id: i64,
+        email: &str,
+    ) -> DestinationWriteFailure {
+        self.inner.install_destination_write_failure(
+            "public",
+            "customers",
+            &format!(
+                "NEW.id = {customer_id} AND NEW.email = '{email}'",
+                email = email.replace('\'', "''"),
+            ),
+            "forced destination write failure",
+        )
     }
 
     fn build_inner(

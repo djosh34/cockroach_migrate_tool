@@ -89,7 +89,7 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converges() {
-    let harness = DefaultBootstrapHarness::start_with_external_sink_faults();
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
 
     harness.bootstrap_default_migration();
     harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
@@ -113,11 +113,12 @@ fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converg
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
-    let harness = DefaultBootstrapHarness::start_with_external_sink_faults();
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
 
     harness.bootstrap_default_migration();
     harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
-    harness.arm_single_external_transport_disconnect_for_customer_email("alice+network@example.com");
+    harness
+        .arm_single_external_transport_disconnect_for_customer_email("alice+network@example.com");
     harness.update_source_customer_email(1, "alice+network@example.com");
     harness.wait_for_gateway_transport_abort_then_success_for_customer_email(
         "alice+network@example.com",
@@ -137,9 +138,8 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
     harness.wait_for_helper_shadow_customers(
         "1:alice+network@example.com,2:bob+recovered@example.com",
     );
-    harness.wait_for_destination_customers(
-        "1:alice+network@example.com,2:bob+recovered@example.com",
-    );
+    harness
+        .wait_for_destination_customers("1:alice+network@example.com,2:bob+recovered@example.com");
     harness.assert_helper_shadow_customers_stable(
         "1:alice+network@example.com,2:bob+recovered@example.com",
         Duration::from_secs(3),
@@ -157,8 +157,108 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
 
 #[test]
 #[ignore = "long lane"]
-fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_before_reconcile()
-{
+fn ignored_long_lane_recovers_after_helper_persistence_transaction_failure() {
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    let helper_failure =
+        harness.fail_helper_shadow_customer_email_write(1, "alice+helper-failure@example.com");
+    harness.update_source_customer_email(1, "alice+helper-failure@example.com");
+    harness.wait_for_duplicate_customer_delivery("alice+helper-failure@example.com");
+    harness.assert_helper_shadow_customers_stable(
+        "1:alice@example.com,2:bob@example.com",
+        Duration::from_secs(3),
+    );
+    harness.assert_destination_customers_stable(
+        "1:alice@example.com,2:bob@example.com",
+        Duration::from_secs(3),
+    );
+    drop(helper_failure);
+    harness.wait_for_gateway_downstream_500_then_200_for_customer_email(
+        "alice+helper-failure@example.com",
+    );
+    harness
+        .wait_for_helper_shadow_customers("1:alice+helper-failure@example.com,2:bob@example.com");
+    harness.wait_for_destination_customers("1:alice+helper-failure@example.com,2:bob@example.com");
+    let verify_output = harness.verify_default_migration_output();
+    assert!(
+        !verify_output.contains("_cockroach_migration_tool"),
+        "verify output should mention only the real migrated table: {verify_output}"
+    );
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
+    let harness = DefaultBootstrapHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness.wait_for_destination_customers("1:alice@example.com,2:bob@example.com");
+    let baseline = harness.customer_tracking_progress();
+    let destination_failure =
+        harness.fail_destination_customer_email_write(1, "alice+reconcile-failure@example.com");
+    harness.update_source_customer_email(1, "alice+reconcile-failure@example.com");
+    harness.wait_for_helper_shadow_customers(
+        "1:alice+reconcile-failure@example.com,2:bob@example.com",
+    );
+    let stderr = harness.wait_for_runner_failed_exit();
+    assert!(
+        stderr.contains("failed to apply reconcile upsert"),
+        "runner stderr did not include reconcile failure context:\n{stderr}"
+    );
+    harness.assert_destination_customers_snapshot("1:alice@example.com,2:bob@example.com");
+    let failed = harness.customer_tracking_progress();
+    assert_eq!(
+        failed.stream.latest_reconciled_resolved_watermark,
+        baseline.stream.latest_reconciled_resolved_watermark,
+        "reconciled watermark should stay at the last good checkpoint during failure",
+    );
+    assert_eq!(
+        failed.table.last_successful_sync_watermark, baseline.table.last_successful_sync_watermark,
+        "table sync watermark should stay at the last good checkpoint during failure",
+    );
+    let last_error = failed
+        .table
+        .last_error
+        .as_deref()
+        .expect("failed reconcile should persist last_error");
+    assert!(
+        last_error.contains("reconcile upsert failed for public.customers"),
+        "table sync error should persist the reconcile failure context: {last_error}",
+    );
+    drop(destination_failure);
+    harness.restart_runner();
+    harness
+        .wait_for_destination_customers("1:alice+reconcile-failure@example.com,2:bob@example.com");
+    let expected_reconciled_watermark = failed
+        .stream
+        .latest_received_resolved_watermark
+        .clone()
+        .expect("failed reconcile should persist a received watermark");
+    let recovered = harness.wait_for_customer_tracking_progress(
+        "restarted runner should reconcile the failed watermark and clear the stored error",
+        |progress| {
+            progress.has_reconciled_through(expected_reconciled_watermark.as_str())
+                && progress.table.last_error.is_none()
+        },
+    );
+    assert!(
+        recovered
+            .stream
+            .has_received_through(expected_reconciled_watermark.as_str()),
+        "received watermark should remain monotonic after recovery",
+    );
+    let verify_output = harness.verify_default_migration_output();
+    assert!(
+        !verify_output.contains("_cockroach_migration_tool"),
+        "verify output should mention only the real migrated table: {verify_output}"
+    );
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_before_reconcile() {
     let harness = DefaultBootstrapHarness::start_with_reconcile_interval(30);
 
     harness.bootstrap_default_migration();
@@ -187,7 +287,9 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
     let pre_crash = harness.wait_for_customer_tracking_progress(
         "customer update should be durably received before reconcile catches up",
         |progress| {
-            progress.stream.received_has_advanced_since(&baseline.stream)
+            progress
+                .stream
+                .received_has_advanced_since(&baseline.stream)
                 && progress.stream.latest_reconciled_resolved_watermark
                     == baseline.stream.latest_reconciled_resolved_watermark
                 && progress.table.last_successful_sync_watermark
@@ -242,7 +344,9 @@ fn ignored_long_lane_recovers_after_runner_crash_during_a_blocked_reconcile_pass
     let pre_crash = harness.wait_for_customer_tracking_progress(
         "blocked reconcile should leave the new watermark received but not reconciled",
         |progress| {
-            progress.stream.received_has_advanced_since(&baseline.stream)
+            progress
+                .stream
+                .received_has_advanced_since(&baseline.stream)
                 && progress.stream.latest_reconciled_resolved_watermark
                     == baseline.stream.latest_reconciled_resolved_watermark
                 && progress.table.last_successful_sync_watermark
