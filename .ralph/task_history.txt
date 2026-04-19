@@ -83,3 +83,4 @@
 .ralph/tasks/story-15-ci-build-test-image-pipeline/03-task-add-free-vulnerability-scan-to-image-publish-workflow.md
 .ralph/tasks/story-14-reports/01-task-report-novice-user-manual-experience.md
 .ralph/tasks/story-14-reports/02-task-report-code-complexity-and-kiss-assessment.md
+.ralph/tasks/story-16-runtime-split-removals/01-task-remove-runner-source-cockroach-access-and-config.md

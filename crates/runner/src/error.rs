@@ -3,16 +3,12 @@ use std::{io, net::AddrParseError, path::PathBuf};
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::schema_compare::SchemaCompareError;
-
 #[derive(Debug, Error)]
 pub enum RunnerError {
     #[error("config: {0}")]
     Config(#[from] RunnerConfigError),
     #[error("postgres setup artifacts: {0}")]
     PostgresSetupArtifacts(#[from] RunnerArtifactError),
-    #[error("helper plan: {0}")]
-    HelperPlan(#[from] RunnerHelperPlanError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
     #[error("runtime plan: {0}")]
@@ -23,19 +19,13 @@ pub enum RunnerError {
     WebhookRuntime(#[from] RunnerWebhookRuntimeError),
     #[error("webhook request: {0}")]
     WebhookRequest(#[from] RunnerIngressRequestError),
-    #[error(transparent)]
-    SchemaCompare(#[from] SchemaCompareError),
-    #[error("verify: {0}")]
-    Verify(#[from] RunnerVerifyError),
-    #[error("cutover readiness: {0}")]
-    CutoverReadiness(#[from] RunnerCutoverReadinessError),
 }
 
 #[derive(Debug, Error)]
 pub enum RunnerConfigError {
     #[error("failed to read config file `{path}`")]
     ReadFile { path: PathBuf, source: io::Error },
-    #[error("failed to parse config file `{path}`")]
+    #[error("failed to parse config file `{path}`: {source}")]
     ParseFile {
         path: PathBuf,
         source: serde_yaml::Error,
@@ -64,89 +54,10 @@ pub enum RunnerArtifactError {
 
 #[derive(Debug, Error)]
 pub enum RunnerHelperPlanError {
-    #[error(transparent)]
-    SchemaCompare(#[from] SchemaCompareError),
-    #[error(transparent)]
-    Artifact(#[from] RunnerArtifactError),
     #[error("validated schema is missing selected table `{table}` for mapping `{mapping_id}`")]
     MissingValidatedTable { mapping_id: String, table: String },
     #[error("dependency cycle detected for mapping `{mapping_id}` across tables: {tables}")]
     DependencyCycle { mapping_id: String, tables: String },
-}
-
-#[derive(Debug, Error)]
-pub enum RunnerVerifyError {
-    #[error(transparent)]
-    Artifact(#[from] RunnerArtifactError),
-    #[error("mapping `{mapping_id}` is not defined in `{config_path}`")]
-    UnknownMapping {
-        mapping_id: String,
-        config_path: PathBuf,
-    },
-    #[error("mapping `{mapping_id}` includes invalid table `{table}`; expected schema.table")]
-    InvalidMappedTable { mapping_id: String, table: String },
-    #[error("failed to start molt verify command `{command}`")]
-    SpawnCommand { command: String, source: io::Error },
-    #[error("molt verify command `{command}` exited with status `{status}`")]
-    CommandFailed { command: String, status: i32 },
-    #[error("molt verify for mapping `{mapping_id}` did not emit any summary records")]
-    MissingSummary { mapping_id: String },
-    #[error("molt verify for mapping `{mapping_id}` did not emit a completion record")]
-    MissingCompletion { mapping_id: String },
-    #[error("data mismatches detected for mapping `{mapping_id}`: {details}")]
-    DataMismatch { mapping_id: String, details: String },
-}
-
-#[derive(Debug, Error)]
-pub enum RunnerCutoverReadinessError {
-    #[error("mapping `{mapping_id}` is not defined in `{config_path}`")]
-    UnknownMapping {
-        mapping_id: String,
-        config_path: PathBuf,
-    },
-    #[error(
-        "failed to connect mapping `{mapping_id}` to `{endpoint}` for cutover readiness: {source}"
-    )]
-    Connect {
-        mapping_id: String,
-        endpoint: String,
-        source: sqlx::Error,
-    },
-    #[error(
-        "failed to read stream readiness state for mapping `{mapping_id}` in `{database}`: {source}"
-    )]
-    ReadStreamState {
-        mapping_id: String,
-        database: String,
-        source: sqlx::Error,
-    },
-    #[error(
-        "failed to read table readiness state for mapping `{mapping_id}` in `{database}`: {source}"
-    )]
-    ReadTableSyncState {
-        mapping_id: String,
-        database: String,
-        source: sqlx::Error,
-    },
-    #[error(
-        "helper bootstrap is incomplete: missing stream readiness state for mapping `{mapping_id}` in `{database}`"
-    )]
-    MissingTrackingState {
-        mapping_id: String,
-        database: String,
-    },
-    #[error(
-        "helper bootstrap is incomplete: missing table readiness state for mapping `{mapping_id}` in `{database}` table `{table}`"
-    )]
-    MissingTableTrackingState {
-        mapping_id: String,
-        database: String,
-        table: String,
-    },
-    #[error("invalid cutover readiness state for mapping `{mapping_id}`: {message}")]
-    InvalidState { mapping_id: String, message: String },
-    #[error(transparent)]
-    Verify(#[from] RunnerVerifyError),
 }
 
 #[derive(Debug, Error)]

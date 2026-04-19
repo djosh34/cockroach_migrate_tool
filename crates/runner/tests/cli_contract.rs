@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use predicates::prelude::predicate;
+use predicates::prelude::{PredicateBooleanExt, predicate};
 
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract_support;
@@ -7,35 +7,35 @@ mod runner_docker_contract_support;
 use runner_docker_contract_support::RunnerDockerContract;
 
 #[test]
-fn runner_help_lists_the_core_subcommands() {
+fn runner_help_lists_only_destination_runtime_subcommands() {
     let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
 
     command
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains("compare-schema"))
-        .stdout(predicate::str::contains("render-helper-plan"))
         .stdout(predicate::str::contains("render-postgres-setup"))
         .stdout(predicate::str::contains("validate-config"))
-        .stdout(predicate::str::contains("verify"))
-        .stdout(predicate::str::contains("cutover-readiness"))
-        .stdout(predicate::str::contains("run"));
+        .stdout(predicate::str::contains("run"))
+        .stdout(predicate::str::contains("compare-schema").not())
+        .stdout(predicate::str::contains("render-helper-plan").not())
+        .stdout(predicate::str::contains("verify").not())
+        .stdout(predicate::str::contains("cutover-readiness").not())
+        .stdout(predicate::str::contains("--source-url").not())
+        .stdout(predicate::str::contains("--cockroach-schema").not());
 }
 
 #[test]
-fn cutover_readiness_help_describes_the_operator_contract() {
+fn runner_help_excludes_removed_source_only_flags() {
     let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
 
     command
-        .args(["cutover-readiness", "--help"])
+        .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Determine whether a mapping has drained to zero and is ready for final cutover",
-        ))
-        .stdout(predicate::str::contains("--source-url"))
-        .stdout(predicate::str::contains("--allow-tls-mode-disable"));
+        .stdout(predicate::str::contains("--source-url").not())
+        .stdout(predicate::str::contains("--cockroach-schema").not())
+        .stdout(predicate::str::contains("--allow-tls-mode-disable").not());
 }
 
 #[test]

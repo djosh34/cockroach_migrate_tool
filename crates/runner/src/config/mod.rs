@@ -14,7 +14,6 @@ use crate::error::RunnerConfigError;
 pub(crate) struct RunnerConfig {
     webhook: WebhookConfig,
     reconcile: ReconcileConfig,
-    verify: VerifyConfig,
     mappings: Vec<MappingConfig>,
 }
 
@@ -57,23 +56,10 @@ impl RunnerConfig {
         self.mappings.len()
     }
 
-    pub(crate) fn verify(&self) -> &VerifyConfig {
-        &self.verify
-    }
-
     pub(crate) fn mappings(&self) -> &[MappingConfig] {
         &self.mappings
     }
 
-    pub(crate) fn mapping(&self, mapping_id: &str) -> Option<&MappingConfig> {
-        self.mappings
-            .iter()
-            .find(|mapping| mapping.id() == mapping_id)
-    }
-
-    pub(crate) fn verify_label(&self) -> String {
-        self.verify.molt.label()
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -170,10 +156,6 @@ impl PostgresConnectionConfig {
     pub(crate) fn user(&self) -> &str {
         &self.user
     }
-
-    pub(crate) fn password(&self) -> &str {
-        &self.password
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -224,36 +206,5 @@ pub(crate) struct ReconcileConfig {
 impl ReconcileConfig {
     pub(crate) fn interval_secs(&self) -> u64 {
         self.interval_secs
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct VerifyConfig {
-    pub(super) molt: MoltVerifyConfig,
-}
-
-impl VerifyConfig {
-    pub(crate) fn molt(&self) -> &MoltVerifyConfig {
-        &self.molt
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct MoltVerifyConfig {
-    pub(super) command: String,
-    pub(super) report_dir: PathBuf,
-}
-
-impl MoltVerifyConfig {
-    pub(crate) fn command(&self) -> &str {
-        &self.command
-    }
-
-    pub(crate) fn report_dir(&self) -> &Path {
-        &self.report_dir
-    }
-
-    pub(crate) fn label(&self) -> String {
-        format!("{}@{}", self.command, self.report_dir.display())
     }
 }

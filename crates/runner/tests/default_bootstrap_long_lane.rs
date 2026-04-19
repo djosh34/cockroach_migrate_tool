@@ -102,7 +102,6 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
     harness
         .runtime_shape_audit()
         .assert_honest_default_runtime_shape();
-    harness.verify_default_migration();
 }
 
 #[test]
@@ -129,7 +128,6 @@ fn ignored_long_lane_proves_customer_live_update_flows_through_webhook_then_help
     harness
         .post_setup_source_audit()
         .assert_honest_workload_only(1);
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -149,7 +147,6 @@ fn ignored_long_lane_retries_customer_update_after_external_http_500_and_converg
         "1:alice+retry@example.com,2:bob@example.com",
         Duration::from_secs(3),
     );
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -190,7 +187,6 @@ fn ignored_long_lane_recovers_from_external_network_fault_and_converges() {
         "1:alice+network@example.com,2:bob+recovered@example.com",
         Duration::from_secs(3),
     );
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -219,7 +215,6 @@ fn ignored_long_lane_recovers_after_helper_persistence_transaction_failure() {
     harness
         .wait_for_helper_shadow_customers("1:alice+helper-failure@example.com,2:bob@example.com");
     harness.wait_for_destination_customers("1:alice+helper-failure@example.com,2:bob@example.com");
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -283,7 +278,6 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should remain monotonic after recovery",
     );
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -352,7 +346,6 @@ fn ignored_long_lane_recovers_after_runner_crash_once_helper_state_is_persisted_
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should stay monotonic across restart",
     );
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -406,7 +399,6 @@ fn ignored_long_lane_recovers_after_runner_crash_during_a_blocked_reconcile_pass
             .has_received_through(expected_reconciled_watermark.as_str()),
         "received watermark should remain monotonic after the blocked reconcile restart",
     );
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -460,8 +452,6 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         converged_snapshot.trim(),
         "stable FK-heavy snapshot after repeated reconcile",
     );
-
-    harness.verify_migration();
 }
 
 #[test]
@@ -477,7 +467,6 @@ fn ignored_long_lane_propagates_customer_deletes_from_shadow_tables_into_real_po
     harness.wait_for_destination_customers("2:bob@example.com");
     harness.assert_helper_shadow_customers_stable("2:bob@example.com", Duration::from_secs(11));
     harness.assert_destination_customers_stable("2:bob@example.com", Duration::from_secs(11));
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -528,7 +517,6 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
         Duration::from_secs(3),
     );
     harness.assert_runner_alive();
-    harness.verify_default_migration_audit();
 }
 
 #[test]
@@ -542,7 +530,6 @@ fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_ta
     harness.apply_live_source_changes();
     harness.wait_for_live_catchup();
     harness.assert_included_tables_stable(Duration::from_secs(3));
-    harness.verify_migration();
 }
 
 #[test]
@@ -558,5 +545,4 @@ fn ignored_long_lane_runs_multiple_large_multi_database_migrations_under_one_des
     harness.apply_live_source_changes();
     harness.wait_for_live_catchup();
     harness.assert_mapping_state_stable(Duration::from_secs(3));
-    harness.verify_migrations();
 }

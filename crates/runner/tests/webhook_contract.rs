@@ -187,10 +187,6 @@ impl TestPostgres {
     key_path: {key_path}
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:
@@ -225,10 +221,6 @@ mappings:
     key_path: {key_path}
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:
@@ -275,10 +267,6 @@ mappings:
     key_path: {key_path}
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:

@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sun Apr 19 10:59:16 AM CEST 2026
+Generated: Sun Apr 19 14:49:28 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-webhook-row-batch-persistence-regression.md`
 
@@ -435,6 +435,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add a free vulnerability scan to the image publish workflow so unsafe images fail before release <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-16-runtime-split-removals/01-task-remove-runner-source-cockroach-access-and-config.md`
+
+```
+## Task: Remove all runner access to the source CockroachDB and delete the related config surface <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

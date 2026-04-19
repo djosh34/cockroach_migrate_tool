@@ -15,9 +15,9 @@ use crate::e2e_harness::{
     DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
     investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, prepend_path,
     read_file, run_audited_cockroach_sql, run_command_capture, wait_for_runner_health,
-    write_cockroach_wrapper_script, write_molt_wrapper_script,
+    write_cockroach_wrapper_script,
 };
-use crate::e2e_integrity::{SourceCommandAudit, VerifyAudit};
+use crate::e2e_integrity::SourceCommandAudit;
 
 const APP_A_SOURCE_SETUP_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -216,9 +216,7 @@ pub struct MultiMappingHarness {
     source_bootstrap_config_path: PathBuf,
     source_bootstrap_script_path: PathBuf,
     wrapper_bin_dir: PathBuf,
-    report_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
-    molt_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     runner_process: RefCell<Option<Child>>,
@@ -246,9 +244,7 @@ impl MultiMappingHarness {
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let runner_port = pick_unused_port();
         let wrapper_bin_dir = temp_dir.path().join("bin");
-        let report_dir = temp_dir.path().join("reports");
         fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
-        fs::create_dir_all(&report_dir).expect("report dir should be created");
 
         let mut harness = Self {
             _docker_test_guard: docker_test_guard,
@@ -259,9 +255,7 @@ impl MultiMappingHarness {
             source_bootstrap_config_path: PathBuf::new(),
             source_bootstrap_script_path: PathBuf::new(),
             wrapper_bin_dir,
-            report_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
-            molt_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             runner_process: RefCell::new(None),
@@ -496,31 +490,17 @@ VALUES (5003, 1, 'expansion-pack', 2);
         );
     }
 
-    pub fn verify_migrations(&self) {
-        let app_a_audit = self.verify_mapping(APP_A);
-        app_a_audit.assert_excludes_tables(APP_B.selected_tables);
-
-        let app_b_audit = self.verify_mapping(APP_B);
-        app_b_audit.assert_excludes_tables(APP_A.selected_tables);
-    }
-
     fn materialize(&mut self) {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
         self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
-        self.molt_wrapper_log_path = self.temp_dir.path().join("molt-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
 
         write_cockroach_wrapper_script(
             &self.wrapper_bin_dir.join("cockroach"),
             &self.cockroach_wrapper_log_path,
-            &self.docker.cockroach_container,
-        );
-        write_molt_wrapper_script(
-            &self.wrapper_bin_dir.join("molt"),
-            &self.molt_wrapper_log_path,
             &self.docker.cockroach_container,
         );
         self.write_runner_config();
@@ -624,17 +604,11 @@ VALUES (5003, 1, 'expansion-pack', 2);
     key_path: {key_path}
 reconcile:
   interval_secs: 1
-verify:
-  molt:
-    command: {molt_command}
-    report_dir: {report_dir}
 mappings:
 {mappings_yaml}"#,
                 runner_port = self.runner_port,
                 cert_path = investigation_server_cert_path().display(),
                 key_path = investigation_server_key_path().display(),
-                molt_command = self.wrapper_bin_dir.join("molt").display(),
-                report_dir = self.report_dir.display(),
                 mappings_yaml = mappings_yaml,
             ),
         )
@@ -683,25 +657,6 @@ mappings:
             ),
         )
         .expect("source-bootstrap config should be written");
-    }
-
-    fn verify_mapping(&self, mapping: MappingSpec) -> VerifyAudit {
-        self.assert_runner_alive();
-        let output = run_command_capture(
-            Command::new(env!("CARGO_BIN_EXE_runner"))
-                .args(["verify", "--config"])
-                .arg(&self.runner_config_path)
-                .args(["--mapping", mapping.id, "--source-url"])
-                .arg(self.source_url(mapping.source_database))
-                .arg("--allow-tls-mode-disable"),
-            "runner verify",
-        );
-        VerifyAudit::from_runner_verify(
-            output,
-            &self.molt_wrapper_log_path,
-            mapping.destination_database,
-            mapping.selected_tables,
-        )
     }
 
     fn wait_for_destination_query(
@@ -782,9 +737,6 @@ mappings:
         )
     }
 
-    fn source_url(&self, database: &str) -> String {
-        format!("postgresql://root@127.0.0.1:26257/{database}?sslmode=disable")
-    }
 }
 
 impl Drop for MultiMappingHarness {

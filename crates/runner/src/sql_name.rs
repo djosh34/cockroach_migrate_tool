@@ -42,16 +42,6 @@ impl QualifiedTableName {
         Self::new(SqlIdentifier::new(schema), SqlIdentifier::new(table))
     }
 
-    pub(crate) fn from_sql(value: &str) -> Self {
-        let value = value.trim();
-        let value = value.strip_prefix("ONLY ").unwrap_or(value);
-        let (schema, table) = value
-            .split_once('.')
-            .expect("schema DDL should use schema-qualified table names");
-
-        Self::new(SqlIdentifier::new(schema), SqlIdentifier::new(table))
-    }
-
     pub(crate) fn schema(&self) -> &SqlIdentifier {
         &self.schema
     }

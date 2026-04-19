@@ -6,7 +6,6 @@ use crate::e2e_harness::{
 };
 use crate::e2e_integrity::{
     CustomerLiveUpdateAudit, DestinationRuntimeMode, PostSetupSourceAudit, RuntimeShapeAudit,
-    VerifyAudit,
 };
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
@@ -326,14 +325,6 @@ impl DefaultBootstrapHarness {
             );
     }
 
-    pub fn verify_default_migration(&self) {
-        let _ = self.verify_default_migration_audit();
-    }
-
-    pub fn verify_default_migration_audit(&self) -> VerifyAudit {
-        self.inner.verify_migration()
-    }
-
     pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
         self.inner.runtime_shape_audit()
     }
@@ -429,7 +420,7 @@ impl DefaultBootstrapHarness {
                 destination_setup_sql: DEFAULT_DESTINATION_SETUP_SQL,
             },
             webhook_sink_mode,
-            DestinationRuntimeMode::SingleContainer,
+            DestinationRuntimeMode::HostProcess,
         )
     }
 }

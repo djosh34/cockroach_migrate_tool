@@ -21,13 +21,7 @@ impl RunnerDockerContract {
     }
 
     pub fn documented_subcommands() -> &'static [&'static str] {
-        &[
-            "validate-config",
-            "compare-schema",
-            "render-postgres-setup",
-            "render-helper-plan",
-            "run",
-        ]
+        &["validate-config", "render-postgres-setup", "run"]
     }
 
     pub fn assert_readme_documents_direct_build_and_run(docker_quick_start: &str) {

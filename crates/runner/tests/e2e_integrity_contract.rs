@@ -33,7 +33,7 @@ fn collect_test_files(dir: &std::path::Path, files: &mut Vec<PathBuf>) {
     }
 }
 
-fn scoped_integrity_files() -> [(&'static str, String); 10] {
+fn scoped_integrity_files() -> [(&'static str, String); 9] {
     [
         (
             "tests/default_bootstrap_long_lane.rs",
@@ -71,46 +71,41 @@ fn scoped_integrity_files() -> [(&'static str, String); 10] {
             "src/reconcile_runtime/upsert.rs",
             read_runner_test_file("src/reconcile_runtime/upsert.rs"),
         ),
-        (
-            "src/molt_verify/mod.rs",
-            read_runner_test_file("src/molt_verify/mod.rs"),
-        ),
     ]
 }
 
 #[test]
-fn e2e_suite_routes_verify_assertions_through_a_typed_integrity_boundary() {
+fn e2e_suite_no_longer_routes_integrity_through_runner_verify() {
     let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
     let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
     let composite_harness =
         read_runner_test_file("tests/support/composite_pk_exclusion_harness.rs");
     let multi_mapping_harness = read_runner_test_file("tests/support/multi_mapping_harness.rs");
+    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
 
     assert!(
-        repo_root()
-            .join("crates/runner/tests/support/e2e_integrity.rs")
-            .is_file(),
-        "E2E integrity evidence should live behind a dedicated typed support boundary",
+        !default_harness.contains("verify_default_migration"),
+        "default bootstrap harness should not expose removed runner verify helpers",
     );
     assert!(
-        !default_harness.contains("verify_default_migration_output"),
-        "default bootstrap harness should not expose raw verify output as a public test API",
+        !long_lane.contains("verify_migration"),
+        "long-lane scenarios should not call removed runner verify helpers",
     );
     assert!(
-        !long_lane.contains("verify_output.contains("),
-        "long-lane scenarios should assert verify behavior through typed integrity evidence, not raw substring checks",
+        !composite_harness.contains("verify_migration"),
+        "composite-key harness should not expose removed runner verify helpers",
     );
     assert!(
-        !composite_harness.contains("let output = self.inner.verify_migration();"),
-        "composite-key harness should assert verify behavior through typed integrity evidence",
+        !multi_mapping_harness.contains("verify_migration"),
+        "multi-mapping harness should not expose removed runner verify helpers",
     );
     assert!(
-        !multi_mapping_harness.contains("app_a_output.contains("),
-        "multi-mapping harness should not inspect verify output through raw substring checks",
+        !e2e_harness.contains("runner verify"),
+        "shared E2E harness should not shell out to the removed runner verify command",
     );
     assert!(
-        !multi_mapping_harness.contains("app_b_output.contains("),
-        "multi-mapping harness should not inspect verify output through raw substring checks",
+        !e2e_harness.contains("--source-url"),
+        "shared E2E harness should not depend on removed source-url flags",
     );
 }
 

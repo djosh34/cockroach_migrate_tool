@@ -228,11 +228,6 @@ VALUES (2, 'live-write', 'should stay excluded');
         );
     }
 
-    pub fn verify_migration(&self) {
-        let audit = self.inner.verify_migration();
-        audit.assert_excludes_tables(&["public.audit_events"]);
-    }
-
     fn wait_for_included_state(
         &self,
         expected_customers: &str,

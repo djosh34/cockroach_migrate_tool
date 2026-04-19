@@ -117,20 +117,12 @@ fn shared_runner_image_tag() -> &'static str {
 
     RUNNER_IMAGE_TAG.get_or_init(|| {
         let image_tag = "cockroach-migrate-runner-e2e-local".to_owned();
-        let image_exists = std::process::Command::new("docker")
-            .args(["image", "inspect", &image_tag])
-            .output()
-            .unwrap_or_else(|error| panic!("docker image inspect should start: {error}"))
-            .status
-            .success();
-        if !image_exists {
-            run_command_capture(
-                std::process::Command::new("docker")
-                    .args(RunnerDockerContract::docker_build_image_args(&image_tag))
-                    .arg(repo_root()),
-                "docker build runner image",
-            );
-        }
+        run_command_capture(
+            std::process::Command::new("docker")
+                .args(RunnerDockerContract::docker_build_image_args(&image_tag))
+                .arg(repo_root()),
+            "docker build runner image",
+        );
         image_tag
     })
 }

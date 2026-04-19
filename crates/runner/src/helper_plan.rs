@@ -1,74 +1,15 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::{self, Display, Formatter},
-    fs,
-    path::{Path, PathBuf},
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    config::LoadedRunnerConfig,
-    error::{RunnerArtifactError, RunnerHelperPlanError},
-    schema_compare::validate_mapping_exports,
+    error::RunnerHelperPlanError,
     sql_name::{QualifiedTableName, SqlIdentifier},
     validated_schema::{ColumnSchema, ValidatedSchema},
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 
-pub(crate) fn render_helper_plan(
-    loaded_config: &LoadedRunnerConfig,
-    mapping_id: &str,
-    cockroach_schema_path: &Path,
-    postgres_schema_path: &Path,
-    output_dir: &Path,
-) -> Result<HelperPlanArtifacts, RunnerHelperPlanError> {
-    let validated_mapping = validate_mapping_exports(
-        loaded_config,
-        mapping_id,
-        cockroach_schema_path,
-        postgres_schema_path,
-    )?;
-    let plan = MappingHelperPlan::from_validated_schema(
-        &validated_mapping.mapping_id,
-        &validated_mapping.selected_tables,
-        &validated_mapping.postgres_schema,
-    )?;
-    plan.write_to(output_dir)?;
-
-    Ok(HelperPlanArtifacts {
-        mapping_id: validated_mapping.mapping_id,
-        output_dir: output_dir.join(plan.mapping_id()),
-        helper_tables: plan.helper_tables.len(),
-        upsert_order: plan.reconcile_order.upsert_order.len(),
-        delete_order: plan.reconcile_order.delete_order.len(),
-    })
-}
-
-pub struct HelperPlanArtifacts {
-    mapping_id: String,
-    output_dir: PathBuf,
-    helper_tables: usize,
-    upsert_order: usize,
-    delete_order: usize,
-}
-
-impl Display for HelperPlanArtifacts {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "helper plan written: mapping={} output={} helper_tables={} upsert_order={} delete_order={}",
-            self.mapping_id,
-            self.output_dir.display(),
-            self.helper_tables,
-            self.upsert_order,
-            self.delete_order
-        )
-    }
-}
-
 #[derive(Clone)]
 pub(crate) struct MappingHelperPlan {
-    mapping_id: String,
     helper_tables: Vec<HelperShadowTablePlan>,
     reconcile_order: ReconcileOrder,
 }
@@ -101,14 +42,9 @@ impl MappingHelperPlan {
             .collect::<Result<Vec<_>, RunnerHelperPlanError>>()?;
 
         Ok(Self {
-            mapping_id: mapping_id.to_owned(),
             helper_tables,
             reconcile_order: ReconcileOrder::from_schema(mapping_id, selected_tables, schema)?,
         })
-    }
-
-    pub(crate) fn mapping_id(&self) -> &str {
-        &self.mapping_id
     }
 
     pub(crate) fn helper_tables(&self) -> &[HelperShadowTablePlan] {
@@ -121,24 +57,6 @@ impl MappingHelperPlan {
 
     pub(crate) fn reconcile_delete_order(&self) -> &[QualifiedTableName] {
         &self.reconcile_order.delete_order
-    }
-
-    fn write_to(&self, output_dir: &Path) -> Result<(), RunnerArtifactError> {
-        let mapping_dir = output_dir.join(&self.mapping_id);
-        fs::create_dir_all(&mapping_dir).map_err(|source| {
-            RunnerArtifactError::CreateMappingDirectory {
-                path: mapping_dir.clone(),
-                source,
-            }
-        })?;
-
-        write_artifact(mapping_dir.join("README.md"), MappingReadme(self))?;
-        write_artifact(mapping_dir.join("helper_tables.sql"), HelperTablesSql(self))?;
-        write_artifact(
-            mapping_dir.join("reconcile_order.txt"),
-            ReconcileOrderText(&self.reconcile_order),
-        )?;
-        Ok(())
     }
 }
 
@@ -343,59 +261,4 @@ impl ReconcileOrder {
             upsert_order,
         })
     }
-}
-
-struct MappingReadme<'a>(&'a MappingHelperPlan);
-
-impl Display for MappingReadme<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "# Helper Plan For `{}`", self.0.mapping_id)?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "This directory contains the rendered helper shadow-table DDL and reconcile ordering for the selected mapping."
-        )?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "- `helper_tables.sql`: helper shadow tables in `{HELPER_SCHEMA}`"
-        )?;
-        writeln!(
-            f,
-            "- `reconcile_order.txt`: current upsert and delete order"
-        )?;
-        Ok(())
-    }
-}
-
-struct HelperTablesSql<'a>(&'a MappingHelperPlan);
-
-impl Display for HelperTablesSql<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        for helper_table in &self.0.helper_tables {
-            write!(f, "{}", helper_table.create_shadow_table_sql())?;
-        }
-        Ok(())
-    }
-}
-
-struct ReconcileOrderText<'a>(&'a ReconcileOrder);
-
-impl Display for ReconcileOrderText<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        writeln!(f, "upsert:")?;
-        for table in &self.0.upsert_order {
-            writeln!(f, "{}", table.label())?;
-        }
-        writeln!(f, "delete:")?;
-        for table in &self.0.delete_order {
-            writeln!(f, "{}", table.label())?;
-        }
-        Ok(())
-    }
-}
-
-fn write_artifact(path: PathBuf, content: impl Display) -> Result<(), RunnerArtifactError> {
-    fs::write(&path, content.to_string())
-        .map_err(|source| RunnerArtifactError::WriteFile { path, source })
 }

@@ -16,7 +16,6 @@ fn ignored_long_lane_builds_and_runs_the_single_binary_runner_image_against_real
     let validate_stdout = harness.validate_mounted_config();
     assert!(validate_stdout.contains("config=/config/container-runner-config.yml"));
     assert!(validate_stdout.contains("mappings=2"));
-    assert!(validate_stdout.contains("verify=molt@/work/molt"));
     assert!(validate_stdout.contains("tls=/config/certs/server.crt+/config/certs/server.key"));
 
     harness.start_runner_container();

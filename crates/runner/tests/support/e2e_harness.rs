@@ -33,15 +33,12 @@ use runner_process::RunnerProcess;
 
 use crate::e2e_integrity::{
     CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
-    PostSetupSourceAudit, RuntimeShapeAudit, SourceBootstrapAudit, SourceCommandAudit, VerifyAudit,
+    PostSetupSourceAudit, RuntimeShapeAudit, SourceBootstrapAudit, SourceCommandAudit,
 };
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
-const MOLT_IMAGE: &str =
-    "cockroachdb/molt@sha256:abe3c90bc42556ad6713cba207b971e6d55dbd54211b53cfcf27cdc14d49e358";
-
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
     DirectRunner,
@@ -167,9 +164,7 @@ pub struct CdcE2eHarness {
     source_bootstrap_config_path: PathBuf,
     source_bootstrap_script_path: PathBuf,
     wrapper_bin_dir: PathBuf,
-    report_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
-    molt_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     bootstrap_source_command_count: RefCell<Option<usize>>,
@@ -216,9 +211,7 @@ impl CdcE2eHarness {
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let runner_port = pick_unused_port();
         let wrapper_bin_dir = temp_dir.path().join("bin");
-        let report_dir = temp_dir.path().join("reports");
         fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
-        fs::create_dir_all(&report_dir).expect("report dir should be created");
 
         let harness = Self {
             _docker_test_guard: docker_test_guard,
@@ -233,9 +226,7 @@ impl CdcE2eHarness {
             source_bootstrap_config_path: PathBuf::new(),
             source_bootstrap_script_path: PathBuf::new(),
             wrapper_bin_dir,
-            report_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
-            molt_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             bootstrap_source_command_count: RefCell::new(None),
@@ -376,31 +367,6 @@ impl CdcE2eHarness {
             .collect::<Vec<_>>();
         self.source_command_audit()
             .assert_explicit_bootstrap_commands(&expected_tables);
-    }
-
-    pub fn verify_migration(&self) -> VerifyAudit {
-        self.assert_runner_process_alive();
-        let output = run_command_capture(
-            Command::new(env!("CARGO_BIN_EXE_runner"))
-                .args(["verify", "--config"])
-                .arg(&self.runner_config_path)
-                .args(["--mapping", &self.config.mapping_id, "--source-url"])
-                .arg(self.source_url())
-                .arg("--allow-tls-mode-disable"),
-            "runner verify",
-        );
-        let expected_tables = self
-            .config
-            .selected_tables
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        VerifyAudit::from_runner_verify(
-            output,
-            &self.molt_wrapper_log_path,
-            &self.config.destination_database,
-            &expected_tables,
-        )
     }
 
     pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
@@ -803,18 +769,12 @@ impl CdcE2eHarness {
         self.source_bootstrap_config_path = self.temp_dir.path().join("source-bootstrap.yml");
         self.source_bootstrap_script_path = self.temp_dir.path().join("bootstrap.sh");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
-        self.molt_wrapper_log_path = self.temp_dir.path().join("molt-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
 
         write_cockroach_wrapper_script(
             &self.wrapper_bin_dir.join("cockroach"),
             &self.cockroach_wrapper_log_path,
-            &self.docker.cockroach_container,
-        );
-        write_molt_wrapper_script(
-            &self.wrapper_bin_dir.join("molt"),
-            &self.molt_wrapper_log_path,
             &self.docker.cockroach_container,
         );
         match webhook_sink_mode {
@@ -898,10 +858,6 @@ impl CdcE2eHarness {
     key_path: {key_path}
 reconcile:
   interval_secs: {reconcile_interval_secs}
-verify:
-  molt:
-    command: {molt_command}
-    report_dir: {report_dir}
 mappings:
   - id: {mapping_id}
     source:
@@ -919,8 +875,6 @@ mappings:
                 runner_bind_port = self.destination_runtime_bind_port(),
                 cert_path = investigation_server_cert_path().display(),
                 key_path = investigation_server_key_path().display(),
-                molt_command = self.wrapper_bin_dir.join("molt").display(),
-                report_dir = self.report_dir.display(),
                 mapping_id = self.config.mapping_id,
                 source_database = self.config.source_database,
                 selected_tables = selected_tables,
@@ -1016,13 +970,6 @@ mappings:
             DestinationRuntimeMode::HostProcess => self.runner_port,
             DestinationRuntimeMode::SingleContainer => 8443,
         }
-    }
-
-    fn source_url(&self) -> String {
-        format!(
-            "postgresql://root@127.0.0.1:26257/{}?sslmode=disable",
-            self.config.source_database
-        )
     }
 
     fn helper_table_name(&self, mapped_table: &str) -> String {
@@ -1351,20 +1298,6 @@ pub(crate) fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, conta
             "#!/usr/bin/env bash\nset -euo pipefail\nfor arg in \"$@\"; do\n  escaped_arg=${{arg//\\\\/\\\\\\\\}}\n  escaped_arg=${{escaped_arg//$'\\n'/\\\\n}}\n  escaped_arg=${{escaped_arg//$'\\t'/\\\\t}}\n  printf 'ARG_ESC\\t%s\\n' \"$escaped_arg\" >> {log_path}\ndone\nprintf 'END\\n' >> {log_path}\nexec docker exec {container_name} cockroach \"$@\"\n",
             log_path = shell_quote(log_path),
             container_name = shell_quote_text(container_name),
-        ),
-    )
-    .expect("wrapper script should be written");
-    make_executable(path);
-}
-
-pub(crate) fn write_molt_wrapper_script(path: &Path, log_path: &Path, cockroach_container: &str) {
-    fs::write(
-        path,
-        format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nfor arg in \"$@\"; do\n  printf 'ARG\\t%s\\n' \"$arg\" >> {log_path}\ndone\nprintf 'END\\n' >> {log_path}\nargs=()\nrewrite_target=0\nfor arg in \"$@\"; do\n  if [[ \"$rewrite_target\" == 1 ]]; then\n    if [[ \"$arg\" != postgresql://*@*/* ]]; then\n      printf 'unexpected --target url for molt wrapper: %s\\n' \"$arg\" >&2\n      exit 1\n    fi\n    target_prefix=\"${{arg%@*}}\"\n    target_database=\"${{arg##*/}}\"\n    args+=(\"${{target_prefix}}@postgres:5432/${{target_database}}\")\n    rewrite_target=0\n    continue\n  fi\n  args+=(\"$arg\")\n  if [[ \"$arg\" == \"--target\" ]]; then\n    rewrite_target=1\n  fi\ndone\nif [[ \"$rewrite_target\" == 1 ]]; then\n  printf 'molt wrapper expected a value after --target\\n' >&2\n  exit 1\nfi\nexec docker run --rm --network container:{cockroach_container} {image} \"${{args[@]}}\"\n",
-            log_path = shell_quote(log_path),
-            cockroach_container = shell_quote_text(cockroach_container),
-            image = shell_quote_text(MOLT_IMAGE),
         ),
     )
     .expect("wrapper script should be written");

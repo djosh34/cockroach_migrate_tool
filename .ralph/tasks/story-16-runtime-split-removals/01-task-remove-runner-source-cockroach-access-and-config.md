@@ -1,4 +1,4 @@
-## Task: Remove all runner access to the source CockroachDB and delete the related config surface <status>not_started</status> <passes>false</passes>
+## Task: Remove all runner access to the source CockroachDB and delete the related config surface <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,11 +25,13 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers removal of runner source-database access and config
-- [ ] The runner binary and config contract contain no CockroachDB/source connection settings
-- [ ] Automated checks prove the runner cannot read or verify against the source database anymore
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers removal of runner source-database access and config
+- [x] The runner binary and config contract contain no CockroachDB/source connection settings
+- [x] Automated checks prove the runner cannot read or verify against the source database anymore
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-16-runtime-split-removals/01-task-remove-runner-source-cockroach-access-and-config_plans/2026-04-19-runner-source-access-removal-plan.md</plan>

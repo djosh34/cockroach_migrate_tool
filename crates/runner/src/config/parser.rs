@@ -7,8 +7,8 @@ use serde::Deserialize;
 
 use crate::{
     config::{
-        DestinationConfig, MappingConfig, MoltVerifyConfig, PostgresConnectionConfig,
-        ReconcileConfig, RunnerConfig, SourceConfig, TlsConfig, VerifyConfig, WebhookConfig,
+        DestinationConfig, MappingConfig, PostgresConnectionConfig, ReconcileConfig,
+        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig,
     },
     error::RunnerConfigError,
 };
@@ -31,7 +31,6 @@ pub(super) fn parse_runner_config(
 struct RawRunnerConfig {
     webhook: RawWebhookConfig,
     reconcile: RawReconcileConfig,
-    verify: RawVerifyConfig,
     mappings: Vec<RawMappingConfig>,
 }
 
@@ -42,7 +41,6 @@ impl RawRunnerConfig {
         Ok(RunnerConfig {
             webhook: self.webhook.validate()?,
             reconcile: self.reconcile.validate()?,
-            verify: self.verify.validate()?,
             mappings,
         })
     }
@@ -105,36 +103,6 @@ impl RawReconcileConfig {
 
         Ok(ReconcileConfig {
             interval_secs: self.interval_secs,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawVerifyConfig {
-    molt: RawMoltVerifyConfig,
-}
-
-impl RawVerifyConfig {
-    fn validate(self) -> Result<VerifyConfig, RunnerConfigError> {
-        Ok(VerifyConfig {
-            molt: self.molt.validate()?,
-        })
-    }
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawMoltVerifyConfig {
-    command: String,
-    report_dir: PathBuf,
-}
-
-impl RawMoltVerifyConfig {
-    fn validate(self) -> Result<MoltVerifyConfig, RunnerConfigError> {
-        Ok(MoltVerifyConfig {
-            command: validate_text(self.command, "verify.molt.command")?,
-            report_dir: validate_path(self.report_dir, "verify.molt.report_dir")?,
         })
     }
 }

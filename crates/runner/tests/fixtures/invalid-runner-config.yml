@@ -5,10 +5,6 @@ webhook:
     key_path: certs/server.key
 reconcile:
   interval_secs: 0
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:

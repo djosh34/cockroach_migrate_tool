@@ -16,22 +16,6 @@ impl RepositoryReadme {
         }
     }
 
-    pub fn assert_contains(&self, needle: &str, message: &str) {
-        assert!(self.text.contains(needle), "{message}");
-    }
-
-    pub fn assert_in_order(&self, phrases: &[&str], message: &str) {
-        let mut offsets = phrases.iter().map(|phrase| self.offset_of(phrase));
-        let Some(mut previous_offset) = offsets.next() else {
-            panic!("phrase order assertions require at least one phrase");
-        };
-
-        for offset in offsets {
-            assert!(previous_offset < offset, "{message}");
-            previous_offset = offset;
-        }
-    }
-
     pub fn docker_quick_start(&self) -> ReadmeSection<'_> {
         ReadmeSection {
             text: self.section("## Docker Quick Start"),

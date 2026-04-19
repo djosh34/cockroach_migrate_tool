@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use assert_cmd::Command;
-use predicates::prelude::predicate;
+use predicates::prelude::{PredicateBooleanExt, predicate};
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -21,7 +21,8 @@ fn validate_config_accepts_a_minimal_valid_yaml_file() {
         .success()
         .stdout(predicate::str::contains("config valid"))
         .stdout(predicate::str::contains("mappings=2"))
-        .stdout(predicate::str::contains("verify=molt@/tmp/molt"));
+        .stdout(predicate::str::contains("webhook=127.0.0.1:8443"))
+        .stdout(predicate::str::contains("verify=").not());
 }
 
 #[test]
@@ -51,10 +52,6 @@ fn validate_config_rejects_duplicate_mapping_ids() {
     key_path: certs/server.key
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:
@@ -109,10 +106,6 @@ fn validate_config_rejects_duplicate_source_tables_within_a_mapping() {
     key_path: certs/server.key
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:
@@ -156,10 +149,6 @@ fn validate_config_rejects_unqualified_source_tables() {
     key_path: certs/server.key
 reconcile:
   interval_secs: 30
-verify:
-  molt:
-    command: molt
-    report_dir: /tmp/molt
 mappings:
   - id: app-a
     source:
@@ -210,9 +199,56 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
             "config={config_path_label}"
         )))
         .stdout(predicate::str::contains("mappings=2"))
-        .stdout(predicate::str::contains("verify=molt@/work/molt"))
+        .stdout(predicate::str::contains("webhook=0.0.0.0:8443"))
+        .stdout(predicate::str::contains("verify=").not())
         .stdout(predicate::str::contains(
             "tls=/config/certs/server.crt+/config/certs/server.key",
+        ));
+}
+
+#[test]
+fn validate_config_rejects_legacy_verify_sections() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+verify:
+  molt:
+    command: molt
+    report_dir: /tmp/molt
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      connection:
+        host: pg-a.example.internal
+        port: 5432
+        database: app_a
+        user: migration_user_a
+        password: runner-secret-a
+"#,
+    )
+    .expect("legacy config fixture should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "unknown field `verify`, expected one of `webhook`, `reconcile`, `mappings`",
         ));
 }
 
