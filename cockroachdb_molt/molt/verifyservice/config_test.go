@@ -22,6 +22,7 @@ func TestLoadConfigRequiresExplicitVerifyModes(t *testing.T) {
 func TestLoadConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 	cfg, err := LoadConfig(filepath.Join("testdata", "valid-passwordless-client-cert.yml"))
 	require.NoError(t, err)
+	require.False(t, cfg.Verify.RawTableOutput.Enabled)
 
 	sourceConnStr, err := cfg.Verify.Source.ConnectionString()
 	require.NoError(t, err)
@@ -42,6 +43,12 @@ func TestLoadConfigRejectsUnpairedClientCertificateMaterial(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-destination-client-key-without-cert.yml"))
 		require.ErrorContains(t, err, "verify.destination.tls.client_cert_path and verify.destination.tls.client_key_path must both be set")
 	})
+}
+
+func TestConfigValidateDefaultsRawTableOutputToDisabled(t *testing.T) {
+	cfg, err := LoadConfig(filepath.Join("testdata", "valid-passwordless-client-cert.yml"))
+	require.NoError(t, err)
+	require.False(t, cfg.Verify.RawTableOutput.Enabled)
 }
 
 func TestLoadConfigRejectsNonPostgresDatabaseSchemes(t *testing.T) {

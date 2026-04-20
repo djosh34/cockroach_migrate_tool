@@ -1,7 +1,6 @@
 use std::{collections::BTreeSet, fs, path::Path};
 
 use serde::Deserialize;
-use serde_json::Value;
 
 const EXPECTED_COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 
@@ -20,14 +19,15 @@ pub struct VerifyCorrectnessAudit {
 }
 
 impl VerifyCorrectnessAudit {
-    pub fn new(expected_tables: Vec<String>, response: VerifyJobResponse, logs: String) -> Self {
-        let log_audit = VerifyLogAudit::from_logs(&logs);
+    pub fn new(expected_tables: Vec<String>, response: VerifyJobResponse) -> Self {
+        let result = response.result.unwrap_or_default();
+        let mismatched_tables = result.mismatched_tables();
         Self {
             expected_tables,
             job_id: response.job_id,
             status: response.status,
-            table_summaries: log_audit.table_summaries,
-            mismatched_tables: log_audit.mismatched_tables,
+            table_summaries: result.table_summaries,
+            mismatched_tables,
         }
     }
 
@@ -69,7 +69,7 @@ impl VerifyCorrectnessAudit {
                 let table_summaries = self
                     .table_summaries
                     .iter()
-                    .filter(|summary| summary.table_name == *expected_table)
+                    .filter(|summary| summary.table_name() == *expected_table)
                     .collect::<Vec<_>>();
                 !table_summaries.is_empty()
                     && table_summaries
@@ -86,7 +86,7 @@ impl VerifyCorrectnessAudit {
         self.finished_successfully()
             && self.covers_expected_tables()
             && (self.table_summaries.iter().any(|summary| {
-                self.expected_tables.contains(&summary.table_name) && summary.num_mismatch > 0
+                self.expected_tables.contains(&summary.table_name()) && summary.num_mismatch > 0
             }) || self
                 .expected_tables
                 .iter()
@@ -102,7 +102,7 @@ impl VerifyCorrectnessAudit {
         let summarized_tables = self
             .table_summaries
             .iter()
-            .map(|summary| summary.table_name.clone())
+            .map(VerifyTableSummary::table_name)
             .collect::<BTreeSet<_>>();
 
         summarized_tables == expected_tables
@@ -113,6 +113,8 @@ impl VerifyCorrectnessAudit {
 pub struct VerifyJobResponse {
     job_id: String,
     status: String,
+    #[serde(default)]
+    result: Option<VerifyJobResult>,
 }
 
 impl VerifyJobResponse {
@@ -121,77 +123,67 @@ impl VerifyJobResponse {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 struct VerifyTableSummary {
-    table_name: String,
+    schema: String,
+    table: String,
     num_verified: usize,
     num_mismatch: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct VerifyLogAudit {
+impl VerifyTableSummary {
+    fn table_name(&self) -> String {
+        format!("{}.{}", self.schema, self.table)
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+struct VerifyJobResult {
+    #[serde(default)]
     table_summaries: Vec<VerifyTableSummary>,
-    mismatched_tables: BTreeSet<String>,
+    #[serde(default)]
+    mismatch_tables: Vec<VerifyTableRef>,
+    #[serde(default)]
+    table_definition_mismatches: Vec<VerifyTableDefinitionMismatch>,
 }
 
-impl VerifyLogAudit {
-    fn from_logs(logs: &str) -> Self {
-        let mut table_summaries = Vec::new();
-        let mut mismatched_tables = BTreeSet::new();
-
-        for line in logs.lines() {
-            let Ok(entry) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-            let Some(table_name) = log_table_name(&entry) else {
-                continue;
-            };
-
-            if let Some(summary) = summary_from_log_entry(&entry, &table_name) {
-                table_summaries.push(summary);
-            }
-            if log_entry_marks_mismatch(&entry) {
-                mismatched_tables.insert(table_name);
-            }
-        }
-
-        Self {
-            table_summaries,
-            mismatched_tables,
-        }
+impl VerifyJobResult {
+    fn mismatched_tables(&self) -> BTreeSet<String> {
+        self.mismatch_tables
+            .iter()
+            .map(VerifyTableRef::table_name)
+            .chain(
+                self.table_definition_mismatches
+                    .iter()
+                    .map(VerifyTableDefinitionMismatch::table_name),
+            )
+            .collect()
     }
 }
 
-fn log_table_name(entry: &Value) -> Option<String> {
-    let schema = entry.get("table_schema")?.as_str()?;
-    let table = entry.get("table_name")?.as_str()?;
-    Some(format!("{schema}.{table}"))
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyTableRef {
+    schema: String,
+    table: String,
 }
 
-fn summary_from_log_entry(entry: &Value, table_name: &str) -> Option<VerifyTableSummary> {
-    let num_verified = entry.get("num_truth_rows")?.as_u64()? as usize;
-    let num_mismatch = entry
-        .get("num_mismatch")
-        .and_then(Value::as_u64)
-        .unwrap_or(0) as usize;
-
-    Some(VerifyTableSummary {
-        table_name: table_name.to_string(),
-        num_verified,
-        num_mismatch,
-    })
-}
-
-fn log_entry_marks_mismatch(entry: &Value) -> bool {
-    if !matches!(entry.get("level").and_then(Value::as_str), Some("warn")) {
-        return false;
+impl VerifyTableRef {
+    fn table_name(&self) -> String {
+        format!("{}.{}", self.schema, self.table)
     }
-    matches!(
-        entry.get("message").and_then(Value::as_str),
-        Some("mismatching table definition")
-            | Some("missing table detected")
-            | Some("extraneous table detected")
-    )
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyTableDefinitionMismatch {
+    schema: String,
+    table: String,
+    message: String,
+}
+
+impl VerifyTableDefinitionMismatch {
+    fn table_name(&self) -> String {
+        format!("{}.{}", self.schema, self.table)
+    }
 }
 
 impl CustomerLiveUpdateAudit {

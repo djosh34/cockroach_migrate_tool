@@ -99,7 +99,7 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	}, payload)
 }
 
-func TestGetJobReturnsOnlySafeStatusFieldsAfterCompletion(t *testing.T) {
+func TestGetJobReturnsStructuredResultsAfterCompletion(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
@@ -153,10 +153,122 @@ func TestGetJobReturnsOnlySafeStatusFieldsAfterCompletion(t *testing.T) {
 		require.Equal(t, map[string]any{
 			"job_id": "job-000001",
 			"status": "succeeded",
+			"result": map[string]any{
+				"table_summaries": []any{
+					map[string]any{
+						"schema":              "public",
+						"table":               "accounts",
+						"num_verified":        float64(7),
+						"num_success":         float64(0),
+						"num_missing":         float64(0),
+						"num_mismatch":        float64(1),
+						"num_column_mismatch": float64(0),
+						"num_extraneous":      float64(0),
+						"num_live_retry":      float64(0),
+					},
+				},
+				"mismatch_tables": []any{
+					map[string]any{
+						"schema": "public",
+						"table":  "accounts",
+					},
+				},
+				"table_definition_mismatches": []any{},
+			},
 		}, payload)
 		require.NotContains(t, string(body), "verification in progress")
-		require.NotContains(t, string(body), "accounts")
-		require.NotContains(t, string(body), "public")
+		return true
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
+func TestGetJobReturnsTableDefinitionMismatchDetailsAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary",
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 7,
+				NumSuccess:  7,
+			},
+		})
+		reporter.Report(inconsistency.MismatchingTableDefinition{
+			DBTable: dbtable.DBTable{
+				Name: dbtable.Name{
+					Schema: "public",
+					Table:  "orders",
+				},
+			},
+			Info: "primary key mismatch",
+		})
+		return nil
+	})
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		getResponse, err := http.Get(server.URL + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = getResponse.Body.Close()
+		}()
+		if getResponse.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
+		if payload["status"] != "succeeded" {
+			return false
+		}
+
+		require.Equal(t, map[string]any{
+			"job_id": "job-000001",
+			"status": "succeeded",
+			"result": map[string]any{
+				"table_summaries": []any{
+					map[string]any{
+						"schema":              "public",
+						"table":               "accounts",
+						"num_verified":        float64(7),
+						"num_success":         float64(7),
+						"num_missing":         float64(0),
+						"num_mismatch":        float64(0),
+						"num_column_mismatch": float64(0),
+						"num_extraneous":      float64(0),
+						"num_live_retry":      float64(0),
+					},
+				},
+				"mismatch_tables": []any{
+					map[string]any{
+						"schema": "public",
+						"table":  "orders",
+					},
+				},
+				"table_definition_mismatches": []any{
+					map[string]any{
+						"schema":  "public",
+						"table":   "orders",
+						"message": "primary key mismatch",
+					},
+				},
+			},
+		}, payload)
 		return true
 	}, 2*time.Second, 20*time.Millisecond)
 }
@@ -505,6 +617,192 @@ func TestPostJobsRejectsConcurrentStartAttempts(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(secondResponse.Body).Decode(&payload))
 	require.Equal(t, "a verify job is already running", payload.Error)
+}
+
+func TestPostTablesRawFailsClosedWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner: reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"database":"source","schema":"public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusForbidden, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, "raw table output is disabled", payload.Error)
+}
+
+func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeRawTableReader{
+		response: verifyservice.RawTableResponse{
+			Database: "source",
+			Schema:   "public",
+			Table:    "accounts",
+			Columns:  []string{"id", "email"},
+			Rows: []map[string]any{
+				{
+					"id":    float64(1),
+					"email": "first@example.com",
+				},
+			},
+		},
+	}
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			RawTableOutput: verifyservice.RawTableOutputConfig{
+				Enabled: true,
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		RawTableReader: reader,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"database":"source","schema":"public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, map[string]any{
+		"database": "source",
+		"schema":   "public",
+		"table":    "accounts",
+		"columns":  []any{"id", "email"},
+		"rows": []any{
+			map[string]any{
+				"id":    float64(1),
+				"email": "first@example.com",
+			},
+		},
+	}, payload)
+	require.Equal(t, verifyservice.RawTableRequest{
+		Database: "source",
+		Schema:   "public",
+		Table:    "accounts",
+	}, reader.lastRequest)
+}
+
+func TestPostTablesRawReturnsDestinationRowsWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	reader := &fakeRawTableReader{
+		response: verifyservice.RawTableResponse{
+			Database: "destination",
+			Schema:   "public",
+			Table:    "accounts",
+			Columns:  []string{"id", "email"},
+			Rows: []map[string]any{
+				{
+					"id":    float64(9),
+					"email": "target@example.com",
+				},
+			},
+		},
+	}
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			RawTableOutput: verifyservice.RawTableOutputConfig{
+				Enabled: true,
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		RawTableReader: reader,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"database":"destination","schema":"public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusOK, response.StatusCode)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, "destination", payload["database"])
+	require.Equal(t, verifyservice.RawTableRequest{
+		Database: "destination",
+		Schema:   "public",
+		Table:    "accounts",
+	}, reader.lastRequest)
+}
+
+func TestPostTablesRawRejectsInvalidIdentifiers(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			RawTableOutput: verifyservice.RawTableOutputConfig{
+				Enabled: true,
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		RawTableReader: &fakeRawTableReader{},
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"database":"source","schema":"public;drop schema public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, "schema must be a simple SQL identifier", payload.Error)
 }
 
 func TestPostStopWithoutJobIDStopsTheActiveJob(t *testing.T) {
@@ -988,6 +1286,17 @@ func sequentialIDGenerator(ids ...string) func() string {
 		ids = ids[1:]
 		return next
 	}
+}
+
+type fakeRawTableReader struct {
+	lastRequest verifyservice.RawTableRequest
+	response    verifyservice.RawTableResponse
+	err         error
+}
+
+func (r *fakeRawTableReader) ReadRawTable(_ context.Context, request verifyservice.RawTableRequest) (verifyservice.RawTableResponse, error) {
+	r.lastRequest = request
+	return r.response, r.err
 }
 
 func metricLabelNames(t *testing.T, family *dto.MetricFamily) []string {

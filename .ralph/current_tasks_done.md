@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 08:34:51 AM CEST 2026
+Generated: Mon Apr 20 09:05:02 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -662,6 +662,17 @@ Must use tdd skill to complete
 
 ==============
 
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-18-verify-http-image/11-task-add-config-gated-raw-source-and-destination-table-json-output-to-verify-http.md`
+
+```
+## Task: Complete the verify HTTP JSON read surface with structured job results and config-gated raw table output <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-19-source-sql-emitter-image/01-task-build-a-one-time-sql-emitter-image-that-prints-required-sql-to-logs.md`
 
 ```
@@ -729,6 +740,17 @@ Must use tdd skill to complete
 
 ==============
 
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
+
+```
+## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md`
 
 ```
@@ -737,17 +759,6 @@ Must use tdd skill to complete
 <priority>ultra_high</priority>
 
 <description>
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
-
-```
-## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
-
-<description>
-Must use tdd skill to complete
 ```
 
 ==============

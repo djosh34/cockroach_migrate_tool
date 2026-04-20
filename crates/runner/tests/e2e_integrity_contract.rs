@@ -86,6 +86,7 @@ fn e2e_suite_routes_default_correctness_through_the_verify_image_boundary() {
     let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
     let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
     let integrity = read_runner_test_file("tests/support/e2e_integrity.rs");
+    let verify_image_harness = read_runner_test_file("tests/support/verify_image_harness.rs");
 
     assert!(
         integrity.contains("pub struct VerifyCorrectnessAudit"),
@@ -102,6 +103,14 @@ fn e2e_suite_routes_default_correctness_through_the_verify_image_boundary() {
     assert!(
         e2e_harness.contains("pub fn wait_for_selected_tables_to_match_via_image"),
         "shared E2E harness should own the verify-image correctness polling boundary",
+    );
+    assert!(
+        !integrity.contains("VerifyLogAudit"),
+        "typed verify correctness support should not rebuild correctness from verify container logs",
+    );
+    assert!(
+        !verify_image_harness.contains("runtime.logs()"),
+        "verify image harness should pass typed job JSON into correctness audits instead of container logs",
     );
     assert!(
         long_lane.contains("wait_for_selected_tables_to_match_via_verify_image"),

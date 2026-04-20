@@ -54,13 +54,18 @@ type ListenerClientAuthConfig struct {
 }
 
 type VerifyConfig struct {
-	Source      DatabaseConfig `yaml:"source"`
-	Destination DatabaseConfig `yaml:"destination"`
+	Source         DatabaseConfig       `yaml:"source"`
+	Destination    DatabaseConfig       `yaml:"destination"`
+	RawTableOutput RawTableOutputConfig `yaml:"raw_table_output"`
 }
 
 type DatabaseConfig struct {
 	URL string            `yaml:"url"`
 	TLS DatabaseTLSConfig `yaml:"tls"`
+}
+
+type RawTableOutputConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type DatabaseTLSConfig struct {

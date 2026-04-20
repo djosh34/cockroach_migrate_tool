@@ -29,27 +29,19 @@ type Runner interface {
 }
 
 type Dependencies struct {
-	Runner      Runner
-	IDGenerator func() string
+	Runner         Runner
+	IDGenerator    func() string
+	RawTableReader RawTableReader
 }
 
 type Service struct {
 	mu               sync.Mutex
 	runner           Runner
 	idGenerator      func() string
+	rawTableEnabled  bool
+	rawTableReader   RawTableReader
 	activeJob        *job
 	lastCompletedJob *job
-}
-
-type job struct {
-	id     string
-	status JobStatus
-	cancel context.CancelFunc
-}
-
-type jobStatusView struct {
-	JobID  string    `json:"job_id"`
-	Status JobStatus `json:"status"`
 }
 
 func NewService(cfg Config, deps Dependencies) *Service {
@@ -59,9 +51,14 @@ func NewService(cfg Config, deps Dependencies) *Service {
 	if deps.IDGenerator == nil {
 		deps.IDGenerator = newSequentialJobIDGenerator()
 	}
+	if deps.RawTableReader == nil {
+		deps.RawTableReader = newConfigBackedRawTableReader(cfg)
+	}
 	return &Service{
-		runner:      deps.Runner,
-		idGenerator: deps.IDGenerator,
+		runner:          deps.Runner,
+		idGenerator:     deps.IDGenerator,
+		rawTableEnabled: cfg.Verify.RawTableOutput.Enabled,
+		rawTableReader:  deps.RawTableReader,
 	}
 }
 
@@ -69,6 +66,7 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /jobs", s.handlePostJobs)
 	mux.HandleFunc("GET /jobs/{job_id}", s.handleGetJob)
+	mux.HandleFunc("POST /tables/raw", s.handlePostTablesRaw)
 	mux.HandleFunc("POST /stop", s.handlePostStop)
 	mux.Handle("GET /metrics", newMetricsHandler(s))
 	return mux
@@ -125,11 +123,7 @@ func (s *Service) startJob(request RunRequest) (*job, error) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	job := &job{
-		id:     s.idGenerator(),
-		status: JobStatusRunning,
-		cancel: cancel,
-	}
+	job := newJob(s.idGenerator(), cancel)
 	s.activeJob = job
 
 	go func() {
@@ -204,6 +198,33 @@ func (s *Service) handlePostStop(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Service) handlePostTablesRaw(w http.ResponseWriter, r *http.Request) {
+	if !s.rawTableEnabled {
+		writeJSONError(w, http.StatusForbidden, "raw table output is disabled")
+		return
+	}
+	var request RawTableRequest
+	if err := decodeJSONBody(w, r, &request); err != nil {
+		writeDecodeJSONError(w, err)
+		return
+	}
+	if err := request.Validate(); err != nil {
+		writeJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	response, err := s.rawTableReader.ReadRawTable(r.Context(), request)
+	if err != nil {
+		var requestErr rawTableRequestError
+		if errors.As(err, &requestErr) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (s *Service) getJobResponse(jobID string) (any, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -247,13 +268,6 @@ func (s *Service) stopJob(jobID string) ([]string, error) {
 	}
 	s.activeJob.cancel()
 	return []string{jobID}, nil
-}
-
-func (j job) response() any {
-	return jobStatusView{
-		JobID:  j.id,
-		Status: j.status,
-	}
 }
 
 func (s *Service) activeCancelLocked() context.CancelFunc {
@@ -345,6 +359,22 @@ func max(left int, right int) int {
 }
 
 func (s *Service) recordReport(jobID string, obj inconsistency.ReportableObject) {
-	_ = jobID
-	_ = obj
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job := s.jobLocked(jobID)
+	if job == nil {
+		return
+	}
+	job.recordReport(obj)
+}
+
+func (s *Service) jobLocked(jobID string) *job {
+	if s.activeJob != nil && s.activeJob.id == jobID {
+		return s.activeJob
+	}
+	if s.lastCompletedJob != nil && s.lastCompletedJob.id == jobID {
+		return s.lastCompletedJob
+	}
+	return nil
 }

@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::{Certificate, Identity, blocking::Client};
+use reqwest::{blocking::Client, Certificate, Identity};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
@@ -50,7 +50,7 @@ impl VerifyImageHarness {
         runtime.wait_until_ready();
         let job_id = runtime.start_job(run);
         let response = runtime.wait_for_job(&job_id);
-        VerifyCorrectnessAudit::new(run.expected_tables.clone(), response, runtime.logs())
+        VerifyCorrectnessAudit::new(run.expected_tables.clone(), response)
     }
 
     fn build_verify_image(&self) {
@@ -301,10 +301,6 @@ impl RunningVerifyImage {
                 docker_logs(&self.container_name),
             );
         }
-    }
-
-    fn logs(&self) -> String {
-        docker_logs(&self.container_name)
     }
 }
 
