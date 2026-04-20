@@ -42,7 +42,7 @@ Decisions already made:
 <outcome>
 - Adopted `cargo-chef` plus BuildKit cache mounts for the two Rust workspace image Dockerfiles so dependency planning, dependency cooking, and final binary builds stay in separate cache boundaries.
 - Split the verify Go image Dockerfile into `go.mod`/`go.sum` dependency resolution and later source-copy/build steps with explicit Go module/build cache mounts.
-- Added host-side Cargo registry and target cache restore/save steps to the validation lane so `make check` and `make test` stop cold-starting on every main push.
+- Added host-side Cargo registry and target cache restore/save steps to the validation lane so `make check` and `make test` stop cold-starting on every master push.
 - Replaced the old single sequential publish bottleneck with a parallel `publish-image` matrix and a downstream `publish-manifest` aggregation job.
 - Explicitly rejected a native `arm64` runner path for now because no trusted native `arm64` runner label is configured in repo-owned workflow configuration; the workflow keeps the emulated Buildx/QEMU path explicit instead of pretending a native runner exists.
 - Added workflow and Dockerfile contract coverage for cache scopes, cache-friendly layer ordering, manifest aggregation, and the explicit `arm64` strategy decision so future edits fail loudly if they erode the speedup boundaries.

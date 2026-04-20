@@ -3,7 +3,7 @@ name: publish-images
 on:
   push:
     branches:
-      - main
+      - master
 
 concurrency:
   group: publish-images-${{ github.ref }}
@@ -133,7 +133,7 @@ jobs:
     needs:
       - validate-fast
       - validate-long
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
       matrix:
@@ -277,7 +277,7 @@ jobs:
 
   quay-security-gate:
     needs: publish-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     steps:
       - name: Install Quay scan dependencies
@@ -350,7 +350,7 @@ jobs:
 
   publish-manifest:
     needs: quay-security-gate
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     env:
       PUBLISHED_IMAGE_MANIFEST: ${{ github.workspace }}/published-images.json

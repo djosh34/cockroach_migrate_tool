@@ -85,7 +85,7 @@
 - One contract fails if `publish-manifest` is allowed to bypass the validation/publish ordering.
 - One contract fails if the README still describes publish as gated only by the shorter/default validation path.
 - Existing contracts for:
-  - trusted `push` to `main`
+  - trusted `push` to `master`
   - least-privilege permissions
   - canonical three-image set
   - native platform publish

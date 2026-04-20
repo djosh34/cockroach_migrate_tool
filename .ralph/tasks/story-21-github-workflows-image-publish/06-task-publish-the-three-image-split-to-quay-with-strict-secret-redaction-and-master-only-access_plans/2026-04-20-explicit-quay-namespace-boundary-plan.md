@@ -3,7 +3,7 @@
 ## References
 
 - Task:
-  - `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
+  - `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access.md`
 - Current workflow and workflow-contract boundary:
   - `.github/workflows/publish-images.yml`
   - `crates/runner/tests/ci_contract.rs`
@@ -46,7 +46,7 @@
   - Quay first
   - Quay vulnerability gate required
   - GHCR only after Quay passes
-  - secrets restricted to trusted `main` pushes
+  - secrets restricted to trusted `master` pushes
 - The next execution plan must use vertical-slice TDD.
   - one failing behavior contract at a time
   - one minimal implementation step at a time
@@ -79,7 +79,7 @@
   - connected GitHub code search for `QUAY_NAMESPACE` and `quay.io` in `determined_keldysh/cockroach_migrate_tool` is currently unusable because GitHub returned `408 This query timed out`; the checked-out workspace remains the authoritative source for absence
   - connected GitHub commit search for Quay namespace/config history returned no matches
   - connected GitHub issue and PR search for Quay namespace/config discussion returned no matches
-  - a fresh connected GitHub metadata read on 2026-04-20 still reports `default_branch=master`, while local branch listing still shows both `main` and `master`; any eventual hosted verification must target `refs/heads/main` explicitly instead of assuming the default branch is `main`
+  - a fresh connected GitHub metadata read on 2026-04-20 reports `default_branch=master`; any eventual hosted verification must target `refs/heads/master`
   - `gh` is not installed in this environment, so the repository-variable CLI path is unavailable here
   - an authenticated GitHub REST call to `GET /repos/determined_keldysh/cockroach_migrate_tool/actions/variables` returned `403 Resource not accessible by personal access token`, so this environment still cannot verify whether a repo variable such as `QUAY_NAMESPACE` exists
 
@@ -137,7 +137,7 @@
 - One contract fails if published runtime artifact identity still depends on registry host.
 - One contract fails if Quay publication does not happen only after `validate-fast` and `validate-long`.
 - One contract fails if GHCR publication can begin before the Quay security gate passes.
-- One contract fails if Quay secrets are reachable from validation jobs or any non-`main` push trigger.
+- One contract fails if Quay secrets are reachable from validation jobs or any non-`master` push trigger.
 - One contract fails if Quay login uses command-line password passing instead of stdin.
 - One contract fails if derived sensitive values are not masked before diagnostics.
 - One contract fails if hosted logs do not prove masking, Quay gating, and GHCR-after-Quay ordering.
@@ -175,7 +175,7 @@
 
 ### Slice 3: Quay-First Publish Topology
 
-- [ ] RED: add one failing contract that requires Quay publication to wait for `validate-fast` and `validate-long`, run only on trusted `main` pushes, and happen before any GHCR publication
+- [ ] RED: add one failing contract that requires Quay publication to wait for `validate-fast` and `validate-long`, run only on trusted `master` pushes, and happen before any GHCR publication
 - [ ] GREEN: implement the smallest truthful Quay-first native publish flow for the three images with full-SHA tags only
 - [ ] REFACTOR: keep build-target metadata in the existing target/image contracts instead of creating another registry-specific target registry
 
@@ -199,7 +199,7 @@
 
 ### Slice 7: Hosted Verification And Final Boundary Pass
 
-- [ ] RED: if a real hosted `publish-images` run on `main` does not prove masked Quay diagnostics, Quay security gating, and GHCR-after-Quay ordering, the task is not done
+- [ ] RED: if a real hosted `publish-images` run on `master` does not prove masked Quay diagnostics, Quay security gating, and GHCR-after-Quay ordering, the task is not done
 - [ ] GREEN: inspect the hosted run/logs with the existing authenticated workflow-debug path and record concrete evidence in the task file
 - [ ] REFACTOR: run one final `improve-code-boundaries` pass so publication coordinates, runtime artifact identity, and workflow security ownership stay clean
 
@@ -218,9 +218,9 @@
   - `QUAY_NAMESPACE=determined_keldysh`
 - Use the hosted `401 UNAUTHORIZED` push failure as the first concrete red signal.
   - preserve the explicit namespace boundary
-  - fix the workflow and contracts so the Quay-first publish path is authorized, gated, and then re-verified online on `main`
-- Keep final hosted verification targeted at `refs/heads/main` specifically, because connected repository metadata still reports `master` as the default branch on 2026-04-20.
+  - fix the workflow and contracts so the Quay-first publish path is authorized, gated, and then re-verified online on `master`
+- Keep final hosted verification targeted at `refs/heads/master`.
 
-Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access_plans/2026-04-20-explicit-quay-namespace-boundary-plan.md`
+Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access_plans/2026-04-20-explicit-quay-namespace-boundary-plan.md`
 
 NOW EXECUTE

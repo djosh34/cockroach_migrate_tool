@@ -24,10 +24,10 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access.md`
 
 ```
-## Task: Publish the three-image split to Quay with strict secret redaction and `main`-only secret access <status>not_started</status> <passes>false</passes>
+## Task: Publish the three-image split to Quay with strict secret redaction and `master`-only secret access <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
@@ -143,4 +143,3 @@ Must use tdd skill to complete
 <description>
 Must use tdd skill to complete
 ```
-

@@ -336,7 +336,7 @@ docker compose -f verify.compose.yml up verify
 
 Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.
 
-The `publish-image`, `quay-security-gate`, and `publish-manifest` jobs still carry explicit `if:` gates that require a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the protected release path.
+The `publish-image`, `quay-security-gate`, and `publish-manifest` jobs still carry explicit `if:` gates that require a `push` event on `refs/heads/master`, so widening workflow triggers later does not silently open the protected release path.
 
 Only the `publish-manifest` job gets `packages: write`, checkout disables credential persistence where source is fetched, Quay login uses `--password-stdin`, the Quay scan step uses a temporary netrc file instead of command-line passwords, and every canonical published image still resolves to `${{ github.sha }}` from the validated commit.
 

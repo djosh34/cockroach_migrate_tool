@@ -100,7 +100,7 @@
 - One fast contract fails if buildx installation remains pinned to `linux-amd64` instead of following the runner architecture.
 - One fast contract fails if the workflow stops using per-target remote BuildKit cache scopes for the publish path.
 - One fast contract fails if trust boundaries regress while optimizing speed:
-  - still `push` to `main` only
+  - still `push` to `master` only
   - still explicit publish gating
   - still least-privilege permissions
   - still no outsider-controlled triggers

@@ -12,7 +12,7 @@ In scope:
 - iterate on workflow/task fixes until the hosted image-build runs succeed for the three-image split
 - capture the real causes of failure found in hosted CI, including architecture-specific failures
 - inspect real hosted logs for secret-masking/redaction behavior as part of workflow verification
-- verify that trusted-secret usage is gated to the intended `main` push path only
+- verify that trusted-secret usage is gated to the intended `master` push path only
 
 Out of scope:
 - broad repository triage unrelated to image build and publish workflows

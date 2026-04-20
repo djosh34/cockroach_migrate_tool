@@ -101,7 +101,7 @@
 - One fast contract fails if each published image does not use both `--cache-from` and `--cache-to` through explicit `docker buildx build` flags.
 - One fast contract fails if the publish topology remains one long sequential bottleneck when the three image targets are independent.
 - One fast contract fails if the workflow loses the existing safety boundaries while being optimized:
-  - trusted `push` to `main` only
+  - trusted `push` to `master` only
   - validation before publish
   - explicit publish gating
   - least-privilege permissions

@@ -31,7 +31,7 @@
   - If hosted workflow evidence contradicts the local workflow-contract model, the hosted evidence wins.
 - The execution turn must use `/home/joshazimullah.linux/github-api-curl` for authenticated GitHub API access rather than reading or exposing any token.
 - The current local workflow/test boundary already encodes many desired invariants:
-  - `push` to `main` only
+  - `push` to `master` only
   - explicit validation before publish
   - native `amd64` and `arm64` publication lanes
   - manifest fan-in after per-platform publication
@@ -105,7 +105,7 @@
 
 ## Public Contract To Establish
 
-- One contract fails if the repo can no longer prove the trusted publish path is `push` to `main` only.
+- One contract fails if the repo can no longer prove the trusted publish path is `push` to `master` only.
 - One contract fails if the repo can no longer prove validation completes before publish starts.
 - One contract fails if the repo can no longer prove the native `linux/amd64` and `linux/arm64` publish lanes remain distinct.
 - One contract fails if the repo can no longer prove derived credentials are masked before diagnostic output.
@@ -177,7 +177,7 @@
 
 ### Slice 4: Secret Gating And Redaction Evidence
 
-- [x] RED: use hosted logs and run metadata to confirm whether trusted-secret use is restricted to the intended `main` push path and whether masked diagnostics remain redacted in real logs
+- [x] RED: use hosted logs and run metadata to confirm whether trusted-secret use is restricted to the intended `master` push path and whether masked diagnostics remain redacted in real logs
 - [x] GREEN: if hosted evidence shows secrets/redaction drift, fix the workflow and add the narrowest local contract that prevents recurrence
 - [x] REFACTOR: keep security assertions in the existing workflow-contract boundary and outcome summary, not in duplicated documentation prose
 

@@ -1,4 +1,4 @@
-# Plan: Three-Image Main-Only Publish Workflow
+# Plan: Three-Image Master-Only Publish Workflow
 
 ## References
 
@@ -39,9 +39,7 @@
   - setup-sql
   - verify
 - The verify image repository coordinate should be standardized as `cockroach-migrate-verify` to match the existing verify-image naming pattern already used in test harnesses.
-- The task explicitly requires trusted `main` pushes, but the current local and remote default branch is still `master`.
-  - Execution must migrate the workflow/tests/docs to `main`.
-  - If hosted verification cannot be exercised honestly against `main` without a separate repository-admin branch-default change that is outside the execution turn, execution must switch this plan back to `TO BE VERIFIED` instead of faking success.
+- The task explicitly requires trusted `master` pushes, and the current local and remote default branch is `master`.
 - Story-21 task 03 exists for deeper hosted-CI debugging, but task 01 still requires real authenticated run/log evidence before completion.
   - Execution for task 01 should therefore include at least one honest hosted verification slice using the authenticated GitHub API wrapper.
   - If hosted failures reveal a materially different workflow shape than planned here, switch back to `TO BE VERIFIED`.
@@ -107,9 +105,9 @@
 
 ## Public Contract To Establish
 
-- One fast contract fails if the workflow does not trigger only on `push` to `main`.
+- One fast contract fails if the workflow does not trigger only on `push` to `master`.
 - One fast contract fails if the workflow allows PRs, `pull_request_target`, tags, issues, `workflow_dispatch`, `workflow_call`, `workflow_run`, or scheduled runs into the publish path.
-- One fast contract fails if concurrency does not cancel an older in-progress trusted publish run when a newer `main` push lands.
+- One fast contract fails if concurrency does not cancel an older in-progress trusted publish run when a newer `master` push lands.
 - One fast contract fails if the workflow does not validate before any image publish work begins.
 - One fast contract fails if the workflow target set is not exactly:
   - runner
@@ -119,7 +117,7 @@
 - One fast contract fails if the publish path still depends on convenience publish actions instead of direct shell install/login/build usage where practical.
 - One fast contract fails if any image is tagged with anything other than the full pushed commit SHA.
 - One fast contract fails if `latest`, semver tags, branch tags, tag-derived refs, or release-derived refs are introduced into the automated publish path.
-- One fast contract fails if publish-capable permissions or credentials are available outside the trusted `main` push path.
+- One fast contract fails if publish-capable permissions or credentials are available outside the trusted `master` push path.
 - One fast contract fails if the workflow does not emit one honest downstream manifest/output boundary for the published image refs so later registry-only verification can consume published artifacts instead of local builds.
 - One fast contract fails if the README safety note or contract documentation still claims `master` or otherwise drifts from the enforced workflow behavior.
 
@@ -137,7 +135,7 @@
   - prefer matrix-driven YAML plus typed support accessors over repeated per-image YAML string checks
 - Smells to avoid:
   - adding a second workflow helper just for multi-arch or secret logic
-  - scattering `refs/heads/main`, `ghcr.io`, or repository names across unrelated files
+  - scattering `refs/heads/master`, `ghcr.io`, or repository names across unrelated files
   - keeping `master-image.yml` and adding a second workflow beside it
   - baking verify image coordinates into ad hoc test strings without lifting them into `PublishedImageContract`
 
@@ -145,16 +143,16 @@
 
 - [x] `.github/workflows/publish-images.yml`
   - new canonical three-image workflow
-  - trusted `push` to `main` only
+  - trusted `push` to `master` only
   - validation before publish
-  - concurrency cancel-on-newer-main-push
+  - concurrency cancel-on-newer-master-push
   - multi-arch publish for runner, setup-sql, verify
   - direct shell installation/login/build/publish where practical
   - downstream publish-manifest outputs for later registry-only consumers
 - [x] `.github/workflows/master-image.yml`
   - delete after the new workflow contract is in place so the repo has one honest publish path
 - [x] `crates/runner/tests/ci_contract.rs`
-  - replace `master`/two-image expectations with behavior-focused three-image `main`-only publish contracts
+  - replace branch-drifted/two-image expectations with behavior-focused three-image `master`-only publish contracts
 - [x] `crates/runner/tests/support/github_workflow_contract.rs`
   - rename loader and add typed helpers/assertions for:
     - trusted trigger set
@@ -164,14 +162,14 @@
     - multi-arch build rules
     - direct shell install/login/build steps
     - publish outputs / manifest boundary
-    - `main`-only trust gating
+    - `master`-only trust gating
     - secret containment and redaction-related invariants
 - [x] `crates/runner/tests/support/published_image_contract.rs`
   - expand into the canonical three-image coordinate owner
 - [x] `crates/runner/tests/support/readme_published_image_contract.rs`
   - update shared published-image assertions if README still documents workflow/publish safety or image coordinates through the old two-image boundary
 - [x] `README.md`
-  - update the CI publish-safety section from `master` to `main`
+  - keep the CI publish-safety section aligned to `master`
   - mention the three-image publish boundary only if needed for truthful public documentation
 - [x] No product runtime interfaces are expected to change
   - this task is workflow/test/doc contract work only
@@ -180,7 +178,7 @@
 
 ### Slice 1: Tracer Bullet For The New Workflow Identity
 
-- [x] RED: add one failing contract that requires the canonical workflow boundary to be `publish-images.yml` and to trigger only on trusted `push` events to `main`
+- [x] RED: add one failing contract that requires the canonical workflow boundary to be `publish-images.yml` and to trigger only on trusted `push` events to `master`
 - [x] GREEN: add the smallest new workflow file and support-loader change needed to satisfy that contract
 - [x] REFACTOR: delete the old `master-image` identity from support/test code instead of carrying both names forward
 
@@ -193,12 +191,12 @@
 ### Slice 3: Prove Trusted Trigger Scope, Permissions, And Concurrency
 
 - [x] RED: add failing workflow contracts for:
-  - `push` to `main` only
-  - explicit publish-job `if:` gate for trusted `main` pushes
+  - `push` to `master` only
+  - explicit publish-job `if:` gate for trusted `master` pushes
   - no outsider-controlled triggers
   - no tag/release path
   - least-privilege permissions
-  - cancel-in-progress concurrency for newer `main` pushes
+  - cancel-in-progress concurrency for newer `master` pushes
 - [x] GREEN: implement the minimum workflow guardrails to satisfy those contracts
 - [x] REFACTOR: keep trust, permission, and concurrency accessors inside `GithubWorkflowContract`
 
@@ -233,7 +231,7 @@
 ### Slice 7: Real Hosted Verification Through Authenticated Workflow API Access
 
 - [x] RED: after local contract and repo lanes are green, use the authenticated GitHub API curl wrapper to inspect the first hosted workflow run for this path and treat any hosted failure as real RED
-- [x] GREEN: iterate on workflow fixes until the hosted three-image publish run succeeds for the trusted `main` push path, with real confirmation of:
+- [x] GREEN: iterate on workflow fixes until the hosted three-image publish run succeeds for the trusted `master` push path, with real confirmation of:
   - runner image build/publish
   - setup-sql image build/publish
   - verify image build/publish
@@ -244,7 +242,7 @@
 
 ### Slice 8: Final Documentation And Repo Lanes
 
-- [x] RED: if README or contract docs still mention `master` or otherwise drift from the enforced workflow behavior, add the smallest failing doc expectation needed
+- [x] RED: if README or contract docs drift from the enforced workflow behavior, add the smallest failing doc expectation needed
 - [x] GREEN: make only the truthful documentation changes needed for the enforced workflow contract
 - [x] REFACTOR: run one final `improve-code-boundaries` pass so:
   - workflow behavior has one honest support owner
@@ -262,14 +260,14 @@
 - Do not publish before validation succeeds.
 - Do not publish `latest`.
 - Do not swallow workflow parse failures, hosted-run failures, missing-step failures, login failures, build failures, publish failures, or log-redaction failures.
-- If the required `main`-push hosted verification cannot be exercised honestly from the repo state reached during execution, switch back to `TO BE VERIFIED` immediately.
+- If the required `master`-push hosted verification cannot be exercised honestly from the repo state reached during execution, switch back to `TO BE VERIFIED` immediately.
 
 ## Boundary Review Checklist
 
 - [x] One honest workflow contract support boundary owns publish-workflow assertions
 - [x] One honest published-image boundary owns runner/setup-sql/verify coordinates
 - [x] The repo has one canonical three-image publish workflow, not an old `master-image` leftover plus a new one
-- [x] `main` replaces `master` consistently across workflow, tests, and documentation touched by this task
+- [x] `master` is used consistently across workflow, tests, and documentation touched by this task
 - [x] Multi-arch and three-image target rules are enforced through repo-owned tests
 - [x] Downstream registry-only consumers can use published refs surfaced by the workflow itself
 - [x] No error path is swallowed
@@ -283,6 +281,6 @@
 - [x] One final `improve-code-boundaries` pass after all required lanes are green
 - [x] Update the task file acceptance checkboxes and set `<passes>true</passes>` only after the required lanes and hosted verification both pass
 
-Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/01-task-fix-github-workflows-to-build-test-and-publish-the-three-image-split_plans/2026-04-19-three-image-main-publish-workflow-plan.md`
+Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/01-task-fix-github-workflows-to-build-test-and-publish-the-three-image-split_plans/2026-04-19-three-image-master-publish-workflow-plan.md`
 
 NOW EXECUTE

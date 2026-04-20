@@ -92,7 +92,7 @@
 - One contract fails if the publish workflow stops shipping the Compose artifacts alongside the image-publication flow.
 - One contract fails if README examples stop being copyable without a repository checkout.
 - Existing contracts for:
-  - trusted `push` to `main`
+  - trusted `push` to `master`
   - least-privilege publish permissions
   - canonical three-image publish
   - README published-image coordinates
@@ -127,7 +127,7 @@
     - parts of `crates/runner/tests/support/image_build_target_contract.rs`
 - [x] `.github/workflows/publish-images.yml`
   - publish the three Compose artifacts alongside the image manifest artifact
-  - keep least-privilege and trusted-main-push rules intact
+  - keep least-privilege and trusted-master-push rules intact
 - [x] `crates/runner/tests/support/github_workflow_contract.rs`
   - assert Compose artifact publication and artifact names
 - [x] `crates/runner/tests/ci_contract.rs`

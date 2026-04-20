@@ -3,7 +3,7 @@
 ## References
 
 - Task:
-  - `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
+  - `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access.md`
 - Current workflow and workflow-contract boundary:
   - `.github/workflows/publish-images.yml`
   - `crates/runner/tests/ci_contract.rs`
@@ -77,12 +77,12 @@
 - One contract fails if the workflow no longer publishes the canonical three-image set to Quay after `validate-fast` and `validate-long`.
 - One contract fails if Quay publish stops using exact full-commit-SHA tags for the automated path.
 - One contract fails if GHCR publication can start before the Quay security gate passes.
-- One contract fails if Quay secrets are visible to validation jobs, PR-like triggers, or any non-`main` push path.
+- One contract fails if Quay secrets are visible to validation jobs, PR-like triggers, or any non-`master` push path.
 - One contract fails if Quay credentials are passed on shell command lines instead of via stdin or supported environment mechanisms.
 - One contract fails if derived non-secret sensitive values are not explicitly masked with `::add-mask::` before diagnostic output.
 - One contract fails if the workflow no longer proves Quay-first ordering and GHCR-later fan-out in one honest topology.
 - One contract fails if the repo still treats registry host as part of the published runtime artifact identity instead of part of the workflow/publication boundary.
-- One contract fails if hosted main-push logs do not provide concrete evidence that:
+- One contract fails if hosted master-push logs do not provide concrete evidence that:
   - Quay secrets stayed redacted
   - Quay security scanning ran
   - GHCR publication happened only after the Quay gate passed
@@ -153,7 +153,7 @@
     - GHCR is downstream
     - security/redaction behavior is intentional
   - avoid unnecessary changes to the operator quick-start unless the public pull contract truly changes
-- [x] `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access.md`
+- [x] `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access.md`
   - add execution evidence and final acceptance status only after hosted verification succeeds
 - [x] No long-lived debug transcript or secret-derived config file is expected by default
   - only add durable files if the workflow contract cannot honestly express the needed boundary
@@ -168,7 +168,7 @@
 
 ### Slice 2: Quay-First Publish Topology
 
-- [x] RED: add one failing workflow contract that requires Quay publication to happen only after `validate-fast` and `validate-long`, only on pushes to `main`, and before any GHCR publication path
+- [x] RED: add one failing workflow contract that requires Quay publication to happen only after `validate-fast` and `validate-long`, only on pushes to `master`, and before any GHCR publication path
 - [x] GREEN: add the smallest honest Quay publish topology with native `amd64` and `arm64` lanes, explicit non-secret Quay coordinates, and full-SHA tags only
 - [x] REFACTOR: keep image/build metadata coming from existing build-target/public-artifact boundaries instead of inventing a separate Quay target registry
 
@@ -192,7 +192,7 @@
 
 ### Slice 6: Hosted Verification And Final Boundary Pass
 
-- [x] RED: if a real hosted `publish-images` run on `main` does not prove masked Quay diagnostics, Quay gate execution, and GHCR-after-Quay ordering, the task is not done
+- [x] RED: if a real hosted `publish-images` run on `master` does not prove masked Quay diagnostics, Quay gate execution, and GHCR-after-Quay ordering, the task is not done
 - [x] GREEN: inspect the hosted run/logs with the existing authenticated workflow-debug path from task 05, update the task outcome with concrete evidence, and keep the CI publish safety docs honest
 - [x] REFACTOR: run one final `improve-code-boundaries` pass so registry identity, artifact identity, and workflow security ownership are not muddied after the Quay work lands
 
@@ -221,13 +221,13 @@
 - [x] `make lint`
 - [x] `make test`
 - [x] Do not run `make test-long` unless execution changes ultra-long-lane selection or proves this task now touches that boundary
-- [x] Real hosted `publish-images` main-push verification that proves:
+- [x] Real hosted `publish-images` master-push verification that proves:
   - Quay login diagnostics stayed redacted
   - Quay vulnerability gating ran and passed
   - GHCR publication started only after the Quay gate passed
 - [x] One final `improve-code-boundaries` pass after local lanes are green
 - [x] Update the task file acceptance checkboxes, set `<passes>true</passes>`, run `.ralph/task_switch.sh`, commit, and push only after all required evidence exists
 
-Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access_plans/2026-04-20-quay-first-security-gate-plan.md`
+Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access_plans/2026-04-20-quay-first-security-gate-plan.md`
 
 TO BE VERIFIED

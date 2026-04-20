@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{path::PathBuf};
 
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
