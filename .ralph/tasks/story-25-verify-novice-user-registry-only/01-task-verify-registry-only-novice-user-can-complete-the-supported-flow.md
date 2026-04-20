@@ -1,4 +1,4 @@
-## Task: Verify a novice user can complete the supported flow from published images alone with zero repo access <status>not_started</status> <passes>false</passes>
+## Task: Verify a novice user can complete the supported flow from published images alone with zero repo access <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -33,17 +33,17 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers a registry-only novice-user journey from published images alone
-- [ ] The task fails if the user must clone the repo, install extra tooling, or read contributor-only guidance
-- [ ] The task fails if any supported novice-user step depends on a local image build instead of a published image
-- [ ] The task verifies the novice user can use the separate published Compose contracts where applicable without a repo checkout
-- [ ] The task verifies the novice user can follow the README examples directly without downloading the repository contents
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers a registry-only novice-user journey from published images alone
+- [x] The task fails if the user must clone the repo, install extra tooling, or read contributor-only guidance
+- [x] The task fails if any supported novice-user step depends on a local image build instead of a published image
+- [x] The task verifies the novice user can use the separate published Compose contracts where applicable without a repo checkout
+- [x] The task verifies the novice user can follow the README examples directly without downloading the repository contents
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-25-verify-novice-user-registry-only/01-task-verify-registry-only-novice-user-can-complete-the-supported-flow_plans/2026-04-20-registry-only-novice-flow-plan.md</plan>

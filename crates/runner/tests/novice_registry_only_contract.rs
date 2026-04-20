@@ -4,6 +4,8 @@ use serde_yaml::Value;
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
+#[path = "support/published_image_refs.rs"]
+mod published_image_refs_support;
 
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
 
@@ -45,6 +47,62 @@ fn copied_verify_compose_artifact_mounts_the_listener_client_ca_contract() {
 }
 
 #[test]
+fn novice_readme_and_compose_contracts_stay_registry_only() {
+    let readme_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
+    let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
+        panic!(
+            "README should be readable at `{}`: {error}",
+            readme_path.display(),
+        )
+    });
+    let novice_surface = readme_text
+        .split("## Setup SQL Quick Start")
+        .nth(1)
+        .and_then(|remainder| remainder.split("## CI Publish Safety").next())
+        .expect("README must keep the novice-user quick start surface grouped together");
+
+    for forbidden in [
+        "git clone",
+        "docker build",
+        "cargo ",
+        "cargo\n",
+        "make ",
+        "make\n",
+        "AGENTS.md",
+        "CONTRIBUTING.md",
+    ] {
+        assert!(
+            !novice_surface.contains(forbidden),
+            "novice README surface must stay registry-only and repo-free; found forbidden snippet `{forbidden}`",
+        );
+    }
+
+    for (artifact_name, env_var) in [
+        ("setup-sql.compose.yml", "${SETUP_SQL_IMAGE}"),
+        ("runner.compose.yml", "${RUNNER_IMAGE}"),
+        ("verify.compose.yml", "${VERIFY_IMAGE}"),
+    ] {
+        let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../artifacts/compose")
+            .join(artifact_name);
+        let artifact_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
+            panic!(
+                "compose artifact should be readable at `{}`: {error}",
+                artifact_path.display(),
+            )
+        });
+        assert!(
+            artifact_text.contains(env_var),
+            "compose artifact `{artifact_name}` must keep using the published image env var `{env_var}`",
+        );
+        assert!(
+            !artifact_text.contains("\nbuild:"),
+            "compose artifact `{artifact_name}` must not require a local docker build",
+        );
+    }
+}
+
+#[test]
 fn setup_sql_compose_emits_sql_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 
@@ -71,7 +129,9 @@ fn runner_readme_commands_work_from_a_repo_free_operator_workspace() {
         "runner validate-config json mode must keep stdout empty",
     );
     assert!(
-        validate_output.stderr.contains("\"event\":\"config.validated\""),
+        validate_output
+            .stderr
+            .contains("\"event\":\"config.validated\""),
         "runner validate-config json mode must emit the validation event",
     );
 
@@ -93,7 +153,9 @@ fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
 
     let runner_validate_output = harness.run_runner_compose_validate_config();
     assert!(
-        runner_validate_output.stderr.contains("\"event\":\"config.validated\""),
+        runner_validate_output
+            .stderr
+            .contains("\"event\":\"config.validated\""),
         "runner compose contract must validate config through the published image only",
     );
 

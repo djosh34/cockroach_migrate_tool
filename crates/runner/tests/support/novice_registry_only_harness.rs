@@ -2,16 +2,17 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::Command,
-    sync::{
-        OnceLock,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     thread,
     time::Duration,
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use tempfile::TempDir;
+
+use crate::published_image_refs_support::{
+    runner_image_ref, setup_sql_image_ref, verify_image_ref,
+};
 
 pub struct CommandOutput {
     pub stdout: String,
@@ -48,7 +49,7 @@ impl NoviceRegistryOnlyHarness {
     }
 
     pub fn run_setup_sql_compose_emit_cockroach_sql(&self) -> String {
-        let image_ref = shared_setup_sql_image_ref();
+        let image_ref = setup_sql_image_ref();
         let output = Command::new("docker")
             .current_dir(self.root_dir())
             .env("SETUP_SQL_IMAGE", image_ref)
@@ -83,7 +84,7 @@ impl NoviceRegistryOnlyHarness {
                 "--rm",
                 "-v",
                 &config_mount,
-                shared_runner_image_ref(),
+                runner_image_ref(),
                 "validate-config",
                 "--log-format",
                 "json",
@@ -96,7 +97,8 @@ impl NoviceRegistryOnlyHarness {
 
     pub fn start_runner_readme_runtime(&self) -> RunningRunner {
         let network_name = format!("cockroach-migrate-novice-net-{}", unique_suffix());
-        let postgres_container_name = format!("cockroach-migrate-novice-postgres-{}", unique_suffix());
+        let postgres_container_name =
+            format!("cockroach-migrate-novice-postgres-{}", unique_suffix());
         let runner_container_name = format!("cockroach-migrate-novice-runner-{}", unique_suffix());
         let host_port = pick_unused_port();
         let config_mount = format!("{}:/config:ro", self.root_dir().join("config").display());
@@ -141,7 +143,7 @@ impl NoviceRegistryOnlyHarness {
                 &format!("127.0.0.1:{host_port}:8443"),
                 "-v",
                 &config_mount,
-                shared_runner_image_ref(),
+                runner_image_ref(),
                 "run",
                 "--log-format",
                 "json",
@@ -163,7 +165,7 @@ impl NoviceRegistryOnlyHarness {
     pub fn run_setup_sql_compose_emit_postgres_grants(&self) -> String {
         let output = Command::new("docker")
             .current_dir(self.root_dir())
-            .env("SETUP_SQL_IMAGE", shared_setup_sql_image_ref())
+            .env("SETUP_SQL_IMAGE", setup_sql_image_ref())
             .args([
                 "compose",
                 "-f",
@@ -197,7 +199,7 @@ impl NoviceRegistryOnlyHarness {
         run_command_output(
             Command::new("docker")
                 .current_dir(self.root_dir())
-                .env("RUNNER_IMAGE", shared_runner_image_ref())
+                .env("RUNNER_IMAGE", runner_image_ref())
                 .args([
                     "compose",
                     "-f",
@@ -218,7 +220,7 @@ impl NoviceRegistryOnlyHarness {
     pub fn start_verify_compose_runtime(&self) -> RunningVerifyCompose {
         let project_name = format!("cockroach-migrate-novice-verify-{}", unique_suffix());
         let verify_https_port = pick_unused_port();
-        let verify_image = shared_verify_image_ref().to_owned();
+        let verify_image = verify_image_ref().to_owned();
         run_command_capture(
             Command::new("docker")
                 .current_dir(self.root_dir())
@@ -458,7 +460,12 @@ impl RunningVerifyCompose {
 
         panic!(
             "verify compose service did not stay running\n{}",
-            compose_logs(&self.root_dir, &self.project_name, "verify.compose.yml", "verify"),
+            compose_logs(
+                &self.root_dir,
+                &self.project_name,
+                "verify.compose.yml",
+                "verify"
+            ),
         );
     }
 }
@@ -482,89 +489,15 @@ impl Drop for RunningVerifyCompose {
     }
 }
 
-fn shared_setup_sql_image_ref() -> &'static str {
-    static SETUP_SQL_IMAGE_REF: OnceLock<String> = OnceLock::new();
-
-    SETUP_SQL_IMAGE_REF.get_or_init(|| {
-        let image_ref = format!("cockroach-migrate-setup-sql-novice-{}", unique_suffix());
-        let output = Command::new("docker")
-            .args([
-                "build",
-                "-t",
-                &image_ref,
-                "-f",
-                &repo_root()
-                    .join("crates/setup-sql/Dockerfile")
-                    .display()
-                    .to_string(),
-                &repo_root().display().to_string(),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("docker build setup-sql novice image should start: {error}"));
-        assert!(
-            output.status.success(),
-            "docker build setup-sql novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        image_ref
-    })
-}
-
-fn shared_runner_image_ref() -> &'static str {
-    static RUNNER_IMAGE_REF: OnceLock<String> = OnceLock::new();
-
-    RUNNER_IMAGE_REF.get_or_init(|| {
-        let image_ref = format!("cockroach-migrate-runner-novice-{}", unique_suffix());
-        let output = Command::new("docker")
-            .args(["build", "-t", &image_ref, &repo_root().display().to_string()])
-            .output()
-            .unwrap_or_else(|error| panic!("docker build runner novice image should start: {error}"));
-        assert!(
-            output.status.success(),
-            "docker build runner novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        image_ref
-    })
-}
-
-fn shared_verify_image_ref() -> &'static str {
-    static VERIFY_IMAGE_REF: OnceLock<String> = OnceLock::new();
-
-    VERIFY_IMAGE_REF.get_or_init(|| {
-        let image_ref = format!("cockroach-migrate-verify-novice-{}", unique_suffix());
-        let verify_root = repo_root().join("cockroachdb_molt/molt");
-        let output = Command::new("docker")
-            .args([
-                "build",
-                "-t",
-                &image_ref,
-                "-f",
-                &verify_root.join("Dockerfile").display().to_string(),
-                &verify_root.display().to_string(),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("docker build verify novice image should start: {error}"));
-        assert!(
-            output.status.success(),
-            "docker build verify novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        image_ref
-    })
-}
-
 fn copy_file(from: &Path, to: &Path) {
-    let contents =
-        fs::read(from).unwrap_or_else(|error| panic!("fixture `{}` should be readable: {error}", from.display()));
-    fs::write(to, contents)
-        .unwrap_or_else(|error| panic!("fixture copy `{}` should be writable: {error}", to.display()));
+    let contents = fs::read(from)
+        .unwrap_or_else(|error| panic!("fixture `{}` should be readable: {error}", from.display()));
+    fs::write(to, contents).unwrap_or_else(|error| {
+        panic!(
+            "fixture copy `{}` should be writable: {error}",
+            to.display()
+        )
+    });
 }
 
 fn repo_root() -> PathBuf {
@@ -690,12 +623,7 @@ fn exec_psql(container_name: &str, database: &str, sql: &str) {
 
 fn container_running(container_name: &str) -> bool {
     let output = Command::new("docker")
-        .args([
-            "inspect",
-            "--format",
-            "{{.State.Running}}",
-            container_name,
-        ])
+        .args(["inspect", "--format", "{{.State.Running}}", container_name])
         .output()
         .unwrap_or_else(|error| panic!("docker inspect `{container_name}` should start: {error}"));
     output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
@@ -716,7 +644,7 @@ fn docker_logs(container_name: &str) -> String {
 fn compose_logs(root_dir: &Path, project_name: &str, compose_file: &str, service: &str) -> String {
     let output = Command::new("docker")
         .current_dir(root_dir)
-        .env("VERIFY_IMAGE", shared_verify_image_ref())
+        .env("VERIFY_IMAGE", verify_image_ref())
         .args([
             "compose",
             "-p",
