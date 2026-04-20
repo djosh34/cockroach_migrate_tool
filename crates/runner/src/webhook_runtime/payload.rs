@@ -1,12 +1,22 @@
 use serde_json::{Map, Value};
 
 use crate::error::RunnerWebhookPayloadError;
+use crate::metrics::WebhookKind;
 use crate::sql_name::{QualifiedTableName, SqlIdentifier};
 
 #[derive(Clone, Debug)]
 pub(crate) enum WebhookRequest {
     RowBatch(RowBatchRequest),
     Resolved(ResolvedRequest),
+}
+
+impl WebhookRequest {
+    pub(crate) fn kind(&self) -> WebhookKind {
+        match self {
+            Self::RowBatch(_) => WebhookKind::RowBatch,
+            Self::Resolved(_) => WebhookKind::Resolved,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,7 @@
 mod config;
 mod error;
 mod helper_plan;
+mod metrics;
 mod postgres_bootstrap;
 mod reconcile_runtime;
 mod runtime_plan;

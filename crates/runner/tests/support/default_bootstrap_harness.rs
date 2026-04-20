@@ -206,6 +206,16 @@ impl DefaultBootstrapHarness {
         audit
     }
 
+    pub fn wait_for_selected_tables_to_mismatch_via_verify_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> VerifyCorrectnessAudit {
+        self.inner.wait_for_selected_tables_to_mismatch_via_image(
+            verify_image,
+            "default selected tables should expose divergence through the verify image",
+        )
+    }
+
     pub fn assert_selected_tables_match_via_verify_image_stable(
         &self,
         verify_image: &VerifyImageHarness,

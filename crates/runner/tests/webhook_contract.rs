@@ -430,6 +430,17 @@ fn https_client() -> Client {
         .expect("https client should build")
 }
 
+fn metrics_body(client: &Client, bind_port: u16) -> String {
+    let metrics_response = client
+        .get(format!("https://localhost:{bind_port}/metrics"))
+        .send()
+        .expect("metrics request should complete");
+    assert_eq!(metrics_response.status(), StatusCode::OK);
+    metrics_response
+        .text()
+        .expect("metrics response body should be readable")
+}
+
 #[test]
 fn run_serves_healthz_over_real_tls_after_bootstrap() {
     let postgres = TestPostgres::start();
@@ -452,6 +463,273 @@ fn run_serves_healthz_over_real_tls_after_bootstrap() {
     runner.assert_healthy(
         &format!("https://localhost:{bind_port}/healthz"),
         &https_client(),
+    );
+}
+
+#[test]
+fn run_serves_webhook_metrics_over_real_tls_after_successful_ingest() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let ingest_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(ingest_response.status(), StatusCode::OK);
+
+    let metrics_body = metrics_body(&client, bind_port);
+
+    assert!(
+        metrics_body.contains("# TYPE cockroach_migration_tool_webhook_requests_total counter"),
+        "metrics should expose webhook request totals:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_requests_total{destination_database=\"app_a\",kind=\"row_batch\",outcome=\"ok\"} 1"
+        ),
+        "metrics should expose bounded webhook request labels:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_webhook_last_request_unixtime_seconds gauge"
+        ),
+        "metrics should expose webhook last-request timestamps:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_last_request_unixtime_seconds{destination_database=\"app_a\"}"
+        ),
+        "metrics should expose bounded destination labels for last-request timestamps:\n{metrics_body}",
+    );
+}
+
+#[test]
+fn run_metrics_bound_webhook_outcomes_without_leaking_error_text_or_mapping_ids() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let bad_request_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_b", "customers"),
+    );
+    assert_eq!(bad_request_response.status(), StatusCode::BAD_REQUEST);
+
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body("1776526353000000000.0000000000"),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    let internal_error_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &partially_invalid_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(internal_error_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_requests_total{destination_database=\"app_a\",kind=\"row_batch\",outcome=\"bad_request\"} 1"
+        ),
+        "metrics should expose bounded bad-request webhook labels:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_requests_total{destination_database=\"app_a\",kind=\"resolved\",outcome=\"ok\"} 1"
+        ),
+        "metrics should expose bounded resolved webhook labels:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_requests_total{destination_database=\"app_a\",kind=\"row_batch\",outcome=\"internal_error\"} 1"
+        ),
+        "metrics should expose bounded internal-error webhook labels:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains("mapping_id="),
+        "metrics should not leak mapping identifiers into labels:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains("null value in column"),
+        "metrics should not leak raw destination error text into labels:\n{metrics_body}",
+    );
+}
+
+#[test]
+fn run_exposes_webhook_apply_duration_and_attempt_metrics() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let ingest_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(ingest_response.status(), StatusCode::OK);
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_webhook_apply_duration_seconds_total counter"
+        ),
+        "metrics should expose cumulative webhook apply duration:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_webhook_apply_requests_total counter"
+        ),
+        "metrics should expose webhook apply request totals:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_webhook_apply_last_duration_seconds gauge"
+        ),
+        "metrics should expose the latest webhook apply duration:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_apply_requests_total{destination_database=\"app_a\",destination_table=\"public.customers\"} 1"
+        ),
+        "metrics should expose schema-qualified destination table labels for webhook apply attempts:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_apply_duration_seconds_total{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "metrics should expose schema-qualified destination table labels for webhook apply duration:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_webhook_apply_last_duration_seconds{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "metrics should expose schema-qualified destination table labels for the latest webhook apply duration:\n{metrics_body}",
+    );
+}
+
+#[test]
+fn run_exposes_webhook_apply_failure_and_latest_outcome_metrics() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let success_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(success_response.status(), StatusCode::OK);
+
+    let internal_error_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &partially_invalid_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(internal_error_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
+        "metrics should expose cumulative apply failure counters:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"webhook_apply\"} 1"
+        ),
+        "metrics should expose bounded webhook apply failure labels:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"
+        ),
+        "metrics should expose latest apply outcome timestamps:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"webhook_apply\",outcome=\"success\"}"
+        ),
+        "metrics should expose the latest webhook success timestamp:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"webhook_apply\",outcome=\"error\"}"
+        ),
+        "metrics should expose the latest webhook error timestamp:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains("null value in column"),
+        "metrics should not leak raw destination error text:\n{metrics_body}",
     );
 }
 

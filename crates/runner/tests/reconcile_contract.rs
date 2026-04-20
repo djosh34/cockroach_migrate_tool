@@ -420,39 +420,6 @@ impl RunnerProcess {
             .expect("ingest request should complete")
     }
 
-    fn wait_for_failed_exit(&mut self) -> String {
-        for _ in 0..50 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner child status should be readable")
-            {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                self.child
-                    .stdout
-                    .as_mut()
-                    .expect("runner stdout pipe should exist")
-                    .read_to_string(&mut stdout)
-                    .expect("runner stdout should be readable");
-                self.child
-                    .stderr
-                    .as_mut()
-                    .expect("runner stderr pipe should exist")
-                    .read_to_string(&mut stderr)
-                    .expect("runner stderr should be readable");
-                assert!(
-                    !status.success(),
-                    "runner exited successfully but failure was expected\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-                return stderr;
-            }
-
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        panic!("runner did not exit with failure in time");
-    }
 }
 
 impl Drop for RunnerProcess {
@@ -472,6 +439,17 @@ fn https_client() -> Client {
         .add_root_certificate(certificate)
         .build()
         .expect("https client should build")
+}
+
+fn metrics_body(client: &Client, bind_port: u16) -> String {
+    let metrics_response = client
+        .get(format!("https://localhost:{bind_port}/metrics"))
+        .send()
+        .expect("metrics request should complete");
+    assert_eq!(metrics_response.status(), StatusCode::OK);
+    metrics_response
+        .text()
+        .expect("metrics response body should be readable")
 }
 
 fn row_batch_body(source_database: &str, table_name: &str, email: &str) -> String {
@@ -528,6 +506,45 @@ fn assert_eventually_query_equals(
     }
 
     assert_eq!(postgres.query(database, sql), expected);
+}
+
+fn assert_eventually_query_contains(
+    postgres: &TestPostgres,
+    database: &str,
+    sql: &str,
+    expected_fragment: &str,
+) -> String {
+    for _ in 0..40 {
+        let actual = postgres.query(database, sql);
+        if actual.contains(expected_fragment) {
+            return actual;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    let actual = postgres.query(database, sql);
+    assert!(
+        actual.contains(expected_fragment),
+        "query result did not contain expected text `{expected_fragment}`: {actual}",
+    );
+    actual
+}
+
+fn assert_eventually_metrics_contain(client: &Client, bind_port: u16, expected: &str) -> String {
+    for _ in 0..40 {
+        let metrics_body = metrics_body(client, bind_port);
+        if metrics_body.contains(expected) {
+            return metrics_body;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    let metrics_body = metrics_body(client, bind_port);
+    assert!(
+        metrics_body.contains(expected),
+        "metrics did not contain expected text `{expected}`:\n{metrics_body}",
+    );
+    metrics_body
 }
 
 #[test]
@@ -625,6 +642,90 @@ fn run_continuously_reconciles_helper_deletes_into_real_tables() {
         "app_a",
         "SELECT count(*)::text FROM public.customers WHERE id = 1;",
         "0",
+    );
+}
+
+#[test]
+fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let upsert_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "customer@example.com"),
+    );
+    assert_eq!(upsert_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        "customer@example.com",
+    );
+
+    let delete_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &delete_row_batch_body("demo_a", "customers"),
+    );
+    assert_eq!(delete_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT count(*)::text FROM public.customers WHERE id = 1;",
+        "0",
+    );
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_reconcile_apply_duration_seconds_total counter"
+        ),
+        "metrics should expose cumulative reconcile duration:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_reconcile_apply_attempts_total counter"
+        ),
+        "metrics should expose reconcile attempt counters:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_reconcile_apply_last_duration_seconds gauge"
+        ),
+        "metrics should expose last reconcile duration gauges:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_reconcile_apply_attempts_total{destination_database=\"app_a\",destination_table=\"public.customers\",phase=\"upsert\"}"
+        ),
+        "metrics should expose bounded upsert phase labels:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_reconcile_apply_attempts_total{destination_database=\"app_a\",destination_table=\"public.customers\",phase=\"delete\"}"
+        ),
+        "metrics should expose bounded delete phase labels:\n{metrics_body}",
     );
 }
 
@@ -1158,7 +1259,7 @@ fn run_advances_success_tracking_after_a_full_upsert_pass() {
 }
 
 #[test]
-fn run_records_reconcile_failure_state_before_exiting() {
+fn run_records_reconcile_failure_metrics_without_exiting_runner() {
     let postgres = TestPostgres::start();
     postgres.exec(
         "postgres",
@@ -1220,10 +1321,47 @@ fn run_records_reconcile_failure_state_before_exiting() {
     );
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
-    let stderr = runner.wait_for_failed_exit();
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+        "reconcile upsert failed for public.customers: error returned from database: new row for relation \"customers\" violates check constraint \"customers_email_check\"",
+    );
+
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\"} 1",
+    );
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
     assert!(
-        stderr.contains("failed to apply reconcile upsert"),
-        "runner stderr did not include reconcile failure context:\n{stderr}"
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
+        "metrics should expose cumulative apply failure counters:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"
+        ),
+        "metrics should expose latest apply outcome timestamps:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\",outcome=\"error\"}"
+        ),
+        "metrics should expose the latest reconcile error timestamp:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains("mapping_id="),
+        "metrics should not leak mapping identifiers into labels:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains("invalid-email"),
+        "metrics should not leak raw row payload values into metrics:\n{metrics_body}",
     );
 
     assert_eq!(
@@ -1315,11 +1453,18 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
         &resolved_body(failing_watermark),
     );
     assert_eq!(resolved_response.status(), StatusCode::OK);
-    let _stderr = runner.wait_for_failed_exit();
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+        "reconcile upsert failed for public.customers: error returned from database: new row for relation \"customers\" violates check constraint \"customers_email_check\"",
+    );
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
 
-    let mut retry_runner = RunnerProcess::start(&config_path);
-    retry_runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
-    let corrected_row_response = retry_runner.post(
+    let corrected_row_response = runner.post(
         &format!("https://localhost:{bind_port}/ingest/app-a"),
         &client,
         &row_batch_body("demo_a", "customers", "recovered@example.com"),
@@ -1349,6 +1494,18 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
          WHERE mapping_id = 'app-a'
            AND source_table_name = 'public.customers';",
         &format!("{failing_watermark}:<null>"),
+    );
+
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\",outcome=\"success\"}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\",outcome=\"error\"}"
+        ),
+        "metrics should preserve the last reconcile error timestamp across a later retry:\n{metrics_body}",
     );
 }
 
@@ -1436,8 +1593,27 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
         &resolved_body(failing_watermark),
     );
     assert_eq!(resolved_response.status(), StatusCode::OK);
-
-    let _stderr = runner.wait_for_failed_exit();
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.orders';",
+        "reconcile upsert failed for public.orders: error returned from database: new row for relation \"orders\" violates check constraint \"orders_total_cents_check\"",
+    );
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.orders\",stage=\"reconcile_upsert\"} 1",
+    );
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.orders\",stage=\"reconcile_upsert\",outcome=\"error\"}"
+        ),
+        "metrics should expose the latest failing multi-table reconcile outcome:\n{metrics_body}",
+    );
 
     assert_eq!(
         postgres.query(
@@ -1479,6 +1655,63 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
             "public.customers:{0}:<null>,public.orders:{0}:reconcile upsert failed for public.orders: error returned from database: new row for relation \"orders\" violates check constraint \"orders_total_cents_check\"",
             initial_watermark
         )
+    );
+}
+
+#[test]
+fn run_records_reconcile_delete_failure_metrics_without_exiting_runner() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.orders (
+             id bigint PRIMARY KEY,
+             customer_id bigint NOT NULL REFERENCES public.customers(id)
+         );
+         INSERT INTO public.customers (id, email) VALUES (1, 'blocked@example.com');
+         INSERT INTO public.orders (id, customer_id) VALUES (10, 1);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let table_sync_state = assert_eventually_query_contains(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_error, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a'
+           AND source_table_name = 'public.customers';",
+        "reconcile delete failed for public.customers",
+    );
+    assert!(
+        table_sync_state.contains("orders_customer_id_fkey"),
+        "delete failure should preserve the durable foreign-key context: {table_sync_state}",
+    );
+
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_delete\"} 1",
+    );
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_delete\",outcome=\"error\"}"
+        ),
+        "metrics should expose the latest reconcile delete error timestamp:\n{metrics_body}",
     );
 }
 

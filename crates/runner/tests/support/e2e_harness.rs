@@ -722,6 +722,27 @@ impl CdcE2eHarness {
         );
     }
 
+    pub fn wait_for_selected_tables_to_mismatch_via_image(
+        &self,
+        verify_image: &VerifyImageHarness,
+        description: &str,
+    ) -> VerifyCorrectnessAudit {
+        for _ in 0..60 {
+            self.assert_runner_process_alive();
+            let audit = self.verify_selected_tables_via_image(verify_image);
+            if audit.selected_tables_mismatch() {
+                return audit;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let audit = self.verify_selected_tables_via_image(verify_image);
+        panic!(
+            "{description} did not diverge through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            self.runner_diagnostics(),
+        );
+    }
+
     pub fn assert_selected_tables_match_via_image_stable(
         &self,
         verify_image: &VerifyImageHarness,

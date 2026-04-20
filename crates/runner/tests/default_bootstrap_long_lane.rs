@@ -89,9 +89,9 @@ fn verify_image_proves_default_e2e_correctness_through_the_real_http_contract() 
 
     harness.bootstrap_default_migration();
 
-    let audit = harness.verify_selected_tables_via_image(&verify_image);
-    audit.assert_finished_successfully();
-    audit.assert_selected_tables_match();
+    harness
+        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
+        .assert_selected_tables_match();
 }
 
 #[test]
@@ -106,12 +106,8 @@ fn verify_image_reports_selected_table_mismatches_through_the_real_http_contract
     let destination_failure =
         harness.fail_destination_customer_email_write(1, "alice+mismatch@example.com");
     harness.update_source_customer_email(1, "alice+mismatch@example.com");
-    let stderr = harness.wait_for_runner_failed_exit();
-    assert!(
-        stderr.contains("failed to apply reconcile upsert"),
-        "runner stderr did not include forced mismatch failure context:\n{stderr}"
-    );
-    let audit = harness.verify_selected_tables_via_image(&verify_image);
+    let audit = harness.wait_for_selected_tables_to_mismatch_via_verify_image(&verify_image);
+    harness.assert_runner_alive();
     drop(destination_failure);
 
     audit.assert_finished_successfully();

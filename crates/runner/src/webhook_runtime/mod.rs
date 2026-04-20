@@ -2,7 +2,11 @@ mod payload;
 mod persistence;
 mod routing;
 
-use std::{fs, sync::Arc};
+use std::{
+    fs,
+    sync::Arc,
+    time::{Instant, SystemTime},
+};
 
 use axum::{
     Router,
@@ -23,11 +27,12 @@ use tokio_rustls::TlsAcceptor;
 
 use crate::{
     error::{RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError},
+    metrics::WebhookOutcome,
     runtime_plan::RunnerRuntimePlan,
-    tracking_state::persist_resolved_watermark,
+    tracking_state::{ResolvedTrackingTarget, persist_resolved_watermark},
 };
 use payload::parse_webhook_request;
-use persistence::persist_row_batch;
+use persistence::{RowMutationBatch, persist_row_batch};
 
 pub(crate) async fn serve(
     runtime: Arc<RunnerRuntimePlan>,
@@ -41,6 +46,7 @@ pub(crate) async fn serve(
     let tls_acceptor = TlsAcceptor::from(Arc::new(load_tls_config(runtime.as_ref())?));
     let app = Router::new()
         .route("/healthz", get(healthz))
+        .route("/metrics", get(metrics))
         .route("/ingest/{mapping_id}", post(ingest))
         .with_state(runtime.clone());
     let mut connections = JoinSet::new();
@@ -131,6 +137,16 @@ async fn healthz() -> &'static str {
     "ok"
 }
 
+async fn metrics(State(runtime): State<Arc<RunnerRuntimePlan>>) -> impl IntoResponse {
+    (
+        [(
+            axum::http::header::CONTENT_TYPE,
+            "text/plain; version=0.0.4; charset=utf-8",
+        )],
+        runtime.metrics().render(),
+    )
+}
+
 async fn ingest(
     Path(mapping_id): Path<String>,
     State(runtime): State<Arc<RunnerRuntimePlan>>,
@@ -149,23 +165,58 @@ async fn handle_ingest(
 ) -> Result<StatusCode, RunnerIngressRequestError> {
     let mapping = runtime.require_mapping(&mapping_id)?;
     let request = parse_webhook_request(body.as_ref())?;
-    let dispatch_target = routing::route_request(mapping, request)?;
-    dispatch(dispatch_target).await
+    let kind = request.kind();
+    let result = match routing::route_request(mapping, request) {
+        Ok(routing::DispatchTarget::RowBatch(batch)) => {
+            handle_row_batch(runtime.as_ref(), mapping, *batch).await
+        }
+        Ok(routing::DispatchTarget::Resolved(target)) => handle_resolved(target).await,
+        Err(error) => Err(error.into()),
+    };
+    let outcome = match &result {
+        Ok(_) => WebhookOutcome::Ok,
+        Err(RunnerIngressRequestError::Persistence(_)) => WebhookOutcome::InternalError,
+        Err(RunnerIngressRequestError::Payload(_) | RunnerIngressRequestError::Routing(_)) => {
+            WebhookOutcome::BadRequest
+        }
+    };
+    runtime
+        .metrics()
+        .record_webhook_request(mapping, kind, outcome, SystemTime::now());
+    result
 }
 
-async fn dispatch(
-    dispatch_target: routing::DispatchTarget,
+async fn handle_row_batch(
+    runtime: &RunnerRuntimePlan,
+    mapping: &crate::runtime_plan::MappingRuntimePlan,
+    batch: RowMutationBatch,
 ) -> Result<StatusCode, RunnerIngressRequestError> {
-    match dispatch_target {
-        routing::DispatchTarget::RowBatch(batch) => {
-            persist_row_batch(*batch).await?;
+    let table = batch.table.clone();
+    let started_at = Instant::now();
+    match persist_row_batch(batch).await {
+        Ok(()) => {
+            runtime.metrics().record_webhook_apply(
+                mapping,
+                &table,
+                started_at.elapsed(),
+                SystemTime::now(),
+            );
             Ok(StatusCode::OK)
         }
-        routing::DispatchTarget::Resolved(target) => {
-            persist_resolved_watermark(target).await?;
-            Ok(StatusCode::OK)
+        Err(error) => {
+            runtime
+                .metrics()
+                .record_webhook_apply_failure(mapping, &table, SystemTime::now());
+            Err(error.into())
         }
     }
+}
+
+async fn handle_resolved(
+    target: ResolvedTrackingTarget,
+) -> Result<StatusCode, RunnerIngressRequestError> {
+    persist_resolved_watermark(target).await?;
+    Ok(StatusCode::OK)
 }
 
 impl IntoResponse for RunnerIngressRequestError {

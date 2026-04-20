@@ -14,7 +14,7 @@ pub(crate) struct ResolvedTrackingTarget {
     pub(crate) resolved_watermark: String,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ReconcilePhase {
     Upsert,
     Delete,

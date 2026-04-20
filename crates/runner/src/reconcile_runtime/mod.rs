@@ -1,7 +1,10 @@
 mod delete;
 mod upsert;
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Instant, SystemTime},
+};
 
 use sqlx::{Connection, PgConnection};
 use tokio::task::JoinSet;
@@ -22,7 +25,8 @@ pub(crate) async fn serve(
     for destination_group in runtime.destination_groups() {
         for mapping in destination_group.mappings().iter().cloned() {
             let interval = runtime.reconcile_interval();
-            workers.spawn(async move { run_mapping_loop(mapping, interval).await });
+            let runtime = runtime.clone();
+            workers.spawn(async move { run_mapping_loop(runtime, mapping, interval).await });
         }
     }
 
@@ -34,6 +38,7 @@ pub(crate) async fn serve(
 }
 
 async fn run_mapping_loop(
+    runtime: Arc<RunnerRuntimePlan>,
     mapping: MappingRuntimePlan,
     interval: std::time::Duration,
 ) -> Result<(), RunnerReconcileRuntimeError> {
@@ -41,13 +46,19 @@ async fn run_mapping_loop(
 
     loop {
         ticker.tick().await;
-        run_reconcile_pass(&mapping).await?;
+        let _pass_outcome = run_reconcile_pass(runtime.as_ref(), &mapping).await?;
     }
 }
 
+enum ReconcilePassOutcome {
+    Succeeded,
+    ApplyFailedRecorded,
+}
+
 async fn run_reconcile_pass(
+    runtime: &RunnerRuntimePlan,
     mapping: &MappingRuntimePlan,
-) -> Result<(), RunnerReconcileRuntimeError> {
+) -> Result<ReconcilePassOutcome, RunnerReconcileRuntimeError> {
     let endpoint = mapping.destination().endpoint_label();
     let database = mapping.destination().database().to_owned();
     let mut postgres = PgConnection::connect_with(&mapping.destination().connect_options())
@@ -67,7 +78,7 @@ async fn run_reconcile_pass(
                 source,
             })?;
 
-    match apply_reconcile_pass(&mut transaction, mapping).await {
+    match apply_reconcile_pass(runtime, &mut transaction, mapping).await {
         Ok(()) => {
             persist_reconcile_success(
                 &mut transaction,
@@ -85,7 +96,7 @@ async fn run_reconcile_pass(
                     database,
                     source,
                 })?;
-            Ok(())
+            Ok(ReconcilePassOutcome::Succeeded)
         }
         Err(failure) => {
             let phase = failure.phase();
@@ -109,20 +120,43 @@ async fn run_reconcile_pass(
                 ),
             )
             .await?;
-            Err(failure.into_runtime_error(mapping.mapping_id().to_owned()))
+            runtime.metrics().record_reconcile_apply_failure(
+                mapping,
+                failure.table(),
+                phase,
+                SystemTime::now(),
+            );
+            Ok(ReconcilePassOutcome::ApplyFailedRecorded)
         }
     }
 }
 
 async fn apply_reconcile_pass(
+    runtime: &RunnerRuntimePlan,
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     mapping: &MappingRuntimePlan,
 ) -> Result<(), ReconcileApplyFailure> {
     for table in mapping.reconcile_upsert_tables() {
+        let started_at = Instant::now();
         upsert::apply(transaction, mapping, table).await?;
+        runtime.metrics().record_reconcile_apply(
+            mapping,
+            table,
+            ReconcilePhase::Upsert,
+            started_at.elapsed(),
+            SystemTime::now(),
+        );
     }
     for table in mapping.reconcile_delete_tables() {
+        let started_at = Instant::now();
         delete::apply(transaction, mapping, table).await?;
+        runtime.metrics().record_reconcile_apply(
+            mapping,
+            table,
+            ReconcilePhase::Delete,
+            started_at.elapsed(),
+            SystemTime::now(),
+        );
     }
     Ok(())
 }
@@ -136,7 +170,6 @@ pub(super) enum ReconcileApplyFailure {
         phase: ReconcilePhase,
         table: String,
         source: String,
-        sqlx_source: sqlx::Error,
     },
 }
 
@@ -160,7 +193,6 @@ impl ReconcileApplyFailure {
             phase: ReconcilePhase::Upsert,
             table,
             source: source.to_string(),
-            sqlx_source: source,
         }
     }
 
@@ -169,7 +201,6 @@ impl ReconcileApplyFailure {
             phase: ReconcilePhase::Delete,
             table,
             source: source.to_string(),
-            sqlx_source: source,
         }
     }
 
@@ -189,36 +220,6 @@ impl ReconcileApplyFailure {
         match self {
             Self::MissingPrimaryKey { .. } => "primary-key metadata is missing".to_owned(),
             Self::Apply { source, .. } => source.clone(),
-        }
-    }
-
-    fn into_runtime_error(self, mapping_id: String) -> RunnerReconcileRuntimeError {
-        match self {
-            Self::MissingPrimaryKey { phase, table } => match phase {
-                ReconcilePhase::Upsert => {
-                    RunnerReconcileRuntimeError::MissingUpsertPrimaryKey { mapping_id, table }
-                }
-                ReconcilePhase::Delete => {
-                    RunnerReconcileRuntimeError::MissingDeletePrimaryKey { mapping_id, table }
-                }
-            },
-            Self::Apply {
-                phase,
-                table,
-                sqlx_source,
-                ..
-            } => match phase {
-                ReconcilePhase::Upsert => RunnerReconcileRuntimeError::ApplyUpsert {
-                    mapping_id,
-                    table,
-                    source: sqlx_source,
-                },
-                ReconcilePhase::Delete => RunnerReconcileRuntimeError::ApplyDelete {
-                    mapping_id,
-                    table,
-                    source: sqlx_source,
-                },
-            },
         }
     }
 }

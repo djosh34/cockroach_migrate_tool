@@ -4,6 +4,7 @@ use crate::{
     config::{MappingConfig, PostgresTargetConfig, RunnerConfig},
     error::{RunnerRuntimePlanError, RunnerWebhookRoutingError},
     helper_plan::{HelperShadowTablePlan, MappingHelperPlan},
+    metrics::RunnerMetrics,
     sql_name::QualifiedTableName,
 };
 
@@ -182,6 +183,7 @@ pub(crate) struct RunnerRuntimePlan {
     tls_cert_path: PathBuf,
     tls_key_path: PathBuf,
     reconcile_interval: Duration,
+    metrics: RunnerMetrics,
     mappings: BTreeMap<String, MappingRuntimePlan>,
     destination_groups: Vec<DestinationRuntimePlan>,
 }
@@ -230,6 +232,7 @@ impl RunnerRuntimePlan {
             tls_cert_path: startup_plan.tls_cert_path,
             tls_key_path: startup_plan.tls_key_path,
             reconcile_interval: startup_plan.reconcile_interval,
+            metrics: RunnerMetrics::new(),
             mappings,
             destination_groups,
         })
@@ -249,6 +252,10 @@ impl RunnerRuntimePlan {
 
     pub(crate) fn reconcile_interval(&self) -> Duration {
         self.reconcile_interval
+    }
+
+    pub(crate) fn metrics(&self) -> &RunnerMetrics {
+        &self.metrics
     }
 
     pub(crate) fn require_mapping(

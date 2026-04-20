@@ -1,4 +1,4 @@
-## Task: Expose low-cardinality runner activity, timing, and failure metrics at `/metrics` <status>not_started</status> <passes>false</passes>
+## Task: Expose low-cardinality runner activity, timing, and failure metrics at `/metrics` <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -77,13 +77,15 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers `/metrics` exposure and validates the required metric names, labels, and types
-- [ ] Operators can answer “is the webhook being called”, “how many requests arrived recently”, and “when was the latest request” from the exported metrics alone
-- [ ] Operators can compute average webhook-apply and reconcile-apply duration over a time window without histograms
-- [ ] Operators can tell when success last happened, when error last happened, and whether failures are accumulating over time
-- [ ] All metric names use the `cockroach_migration_tool_` prefix and all `destination_table` labels are schema-qualified
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers `/metrics` exposure and validates the required metric names, labels, and types
+- [x] Operators can answer “is the webhook being called”, “how many requests arrived recently”, and “when was the latest request” from the exported metrics alone
+- [x] Operators can compute average webhook-apply and reconcile-apply duration over a time window without histograms
+- [x] Operators can tell when success last happened, when error last happened, and whether failures are accumulating over time
+- [x] All metric names use the `cockroach_migration_tool_` prefix and all `destination_table` labels are schema-qualified
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] `make test-long` — not applicable; this task did not change the ultra-long / e2e lane boundary
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics_plans/2026-04-20-runner-activity-metrics-plan.md</plan>
