@@ -1,10 +1,10 @@
-## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>not_started</status> <passes>false</passes>
+## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>suspended</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
 
 
-**Goal:** Create a separate manual GitHub Actions workflow that lets a trusted operator retag the already-published commit-SHA images in the registry as a requested version tag and, optionally, also as `latest`, without rebuilding images or rerunning the full repository test suite. The higher order goal is to separate slow correctness validation from deliberate release-tag promotion so a known-good published commit can be promoted to human-friendly tags safely, quickly, and repeatably.
+**Goal:** Create a separate manual GitHub Actions workflow that lets a trusted operator retag the already-published commit-SHA images in the registry as a requested version tag and, optionally, also as `latest`, without rebuilding images or rerunning the full repository test suite. This task is suspended because this is out of scope for the story right now; first continue with other stories. The higher order goal is to separate slow correctness validation from deliberate release-tag promotion so a known-good published commit can be promoted to human-friendly tags safely, quickly, and repeatably.
 
 In scope:
 - a new manual workflow dedicated to retagging/promoting existing published images rather than rebuilding them
@@ -25,6 +25,7 @@ Out of scope:
 
 Decisions already made:
 - this task must be the last task in the GitHub workflows image-publish story
+- this task is suspended because this is out of scope for the story right now; first continue with other stories
 - the workflow is manual, not push-triggered
 - a user/operator must set the version parameter and optionally tick a "set as latest" box when dispatching it
 - this path should promote already-published images instead of redoing the entire test/build pipeline

@@ -1,4 +1,4 @@
-## Task: Publish the three-image split to Quay with strict secret redaction and `master`-only secret access <status>not_started</status> <passes>false</passes>
+## Task: Publish the three-image split to Quay with strict secret redaction and `master`-only secret access <status>not_started</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

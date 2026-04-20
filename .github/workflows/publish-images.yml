@@ -24,11 +24,11 @@ jobs:
   validate-fast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Restore Cargo registry cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry/cache
@@ -38,7 +38,7 @@ jobs:
           restore-keys: |
             validate-fast-cargo-registry-${{ runner.os }}-rust-1.93.0-
       - name: Restore Cargo target cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: target
           key: validate-fast-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
@@ -62,7 +62,7 @@ jobs:
           make test
       - name: Save Cargo registry cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ~/.cargo/registry/cache
@@ -71,7 +71,7 @@ jobs:
           key: validate-fast-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
       - name: Save Cargo target cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: target
           key: validate-fast-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
@@ -79,11 +79,11 @@ jobs:
   validate-long:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Restore Cargo registry cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: |
             ~/.cargo/registry/cache
@@ -93,7 +93,7 @@ jobs:
           restore-keys: |
             validate-long-cargo-registry-${{ runner.os }}-rust-1.93.0-
       - name: Restore Cargo target cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: target
           key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
@@ -115,7 +115,7 @@ jobs:
           make test-long
       - name: Save Cargo registry cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: |
             ~/.cargo/registry/cache
@@ -124,7 +124,7 @@ jobs:
           key: validate-long-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
       - name: Save Cargo target cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: target
           key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
@@ -175,7 +175,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Install publish dependencies
@@ -269,7 +269,7 @@ jobs:
             printf 'platform_tag_suffix=%s\n' "${{ matrix.platform.platform_tag_suffix }}"
           } > "${PUBLISHED_IMAGE_REF_FILE}"
       - name: Upload published image ref artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.image.artifact_name }}-${{ matrix.platform.platform_tag_suffix }}
           path: ${{ env.PUBLISHED_IMAGE_REF_FILE }}
@@ -286,7 +286,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes jq
       - name: Download published image refs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: published-image-*
           path: ${{ runner.temp }}/published-image-refs
@@ -363,7 +363,7 @@ jobs:
       setup_sql_image_ref: ${{ steps.publish-manifest.outputs.setup_sql_image_ref }}
       verify_image_ref: ${{ steps.publish-manifest.outputs.verify_image_ref }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - name: Install publish dependencies
@@ -411,7 +411,7 @@ jobs:
           set -euo pipefail
           printf '%s' "${GHCR_PASSWORD}" | docker login "${{ env.GHCR_REGISTRY }}" --username "${{ github.actor }}" --password-stdin
       - name: Download published image refs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: published-image-*
           path: ${{ runner.temp }}/published-image-refs
@@ -501,13 +501,13 @@ jobs:
             done
           } >> "${GITHUB_OUTPUT}"
       - name: Upload published image manifest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: published-image-manifest
           path: ${{ env.PUBLISHED_IMAGE_MANIFEST }}
           if-no-files-found: error
       - name: Upload published compose artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: published-compose-artifacts
           path: artifacts/compose

@@ -1,4 +1,4 @@
-## Task: Make the default-branch publish workflow succeed from a plain `git push` <status>not_started</status> <passes>false</passes>
+## Task: Make the default-branch publish workflow succeed from a plain `git push` <status>not_started</status> <passes>true</passes>
 
 <blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
 
