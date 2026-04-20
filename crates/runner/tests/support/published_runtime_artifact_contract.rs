@@ -75,6 +75,10 @@ const PUBLISHED_RUNTIME_ARTIFACTS: [PublishedRuntimeArtifactSpec; 3] = [
 pub struct PublishedRuntimeArtifactContract;
 
 impl PublishedRuntimeArtifactContract {
+    pub fn registry_host() -> &'static str {
+        "ghcr.io"
+    }
+
     pub fn compose_artifact_dir() -> PathBuf {
         repo_root().join("artifacts").join("compose")
     }
