@@ -26,6 +26,30 @@ fn verify_image_builds_from_the_verify_slice() {
 }
 
 #[test]
+fn verify_image_embeds_pgx_at_or_above_the_security_floor() {
+    let harness = VerifyImageArtifactHarness::start();
+
+    harness.assert_embedded_module_meets_minimum_version("github.com/jackc/pgx/v5", "v5.9.0");
+}
+
+#[test]
+fn verify_image_embeds_grpc_at_or_above_the_security_floor() {
+    let harness = VerifyImageArtifactHarness::start();
+
+    harness.assert_embedded_module_meets_minimum_version("google.golang.org/grpc", "v1.79.3");
+}
+
+#[test]
+fn verify_image_keeps_x_crypto_out_of_vulnerable_runtime_versions() {
+    let harness = VerifyImageArtifactHarness::start();
+
+    harness.assert_embedded_module_is_absent_or_meets_minimum_version(
+        "golang.org/x/crypto",
+        "v0.35.0",
+    );
+}
+
+#[test]
 fn verify_image_exposes_only_the_verify_command_surface() {
     let harness = VerifyImageArtifactHarness::start();
     let contract = VerifyDockerContract::load();

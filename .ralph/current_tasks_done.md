@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 05:43:50 PM CEST 2026
+Generated: Mon Apr 20 06:09:45 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -108,6 +108,18 @@ The verify HTTP audit found that `POST /jobs` and `POST /stop` decode directly f
 
 <description>
 The verify HTTP audit found that completed jobs are never pruned from `Service.jobs`. Each finished job keeps its full in-memory progress snapshot, including status messages, summary events, mismatch records, and error strings. `/metrics` then iterates every remembered job on every scrape.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-image-arm64-has-quay-vulnerability-findings.md`
+
+```
+## Bug: Verify image arm64 publish is blocked by real Quay vulnerability findings <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+Hosted GitHub Actions run `#39` on commit `4852f61843a8f3c1dbb89fbe5cf8bed5a09d9c25` proved the
+publish workflow changes are working, and then exposed a real product-security defect outside the
 ```
 
 ==============

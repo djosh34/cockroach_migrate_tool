@@ -181,8 +181,8 @@ impl VerifySourceContract {
     }
 
     fn direct_requirements(&self) -> BTreeSet<String> {
-        let mut direct_requirements = BTreeSet::new();
         let mut in_require_block = false;
+        let mut direct_requirements = BTreeSet::new();
 
         for raw_line in self.go_mod_text.lines() {
             let line = raw_line.trim();
