@@ -135,3 +135,4 @@
 .ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md
 .ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md
 .ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md
+.ralph/tasks/story-26-hosted-workflow-failure-investigation/01-task-debug-hosted-github-workflow-failures-parallelize-image-builds-and-surface-quay-security-findings.md

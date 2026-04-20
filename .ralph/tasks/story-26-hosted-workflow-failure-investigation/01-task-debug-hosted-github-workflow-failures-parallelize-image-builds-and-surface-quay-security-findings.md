@@ -1,4 +1,4 @@
-## Task: Debug hosted GitHub workflow failures, parallelize image builds with the test lanes, and surface Quay security findings clearly <status>not_started</status> <passes>false</passes>
+## Task: Debug hosted GitHub workflow failures, parallelize image builds with the test lanes, and surface Quay security findings clearly <status>completed</status> <passes>true</passes>
 
 <blocked_by>.ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md</blocked_by>
 
@@ -40,16 +40,18 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the workflow contract changes where practical, including the intended parallel build/validation topology and visible failure surfacing
-- [ ] Real hosted GitHub Actions runs, jobs, and logs have been inspected through authenticated access, and the actual current failure mode or modes are recorded and fixed
-- [ ] Container image build work runs in parallel with `make test` and `make test-long` where technically possible, without weakening the existing validation gate before publish/promotion decisions
-- [ ] The task proves whether `make test-long` itself is failing or whether another pipeline stage is the real blocker, and fixes the real blocker rather than masking it
-- [ ] The Quay security stage no longer fails as an opaque `exit 1`; workflow output clearly distinguishes scanner failure, policy failure, and vulnerabilities found
-- [ ] If vulnerabilities are present in Quay, the workflow exposes those findings clearly enough for an operator to see what they are
-- [ ] If the image is already published before the security step fails, the workflow makes that state explicit so publish success and scan failure are not conflated
-- [ ] Any newly discovered defect that cannot be fixed inside this task is immediately captured as a bug via `add-bug`
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers the workflow contract changes where practical, including the intended parallel build/validation topology and visible failure surfacing
+- [x] Real hosted GitHub Actions runs, jobs, and logs have been inspected through authenticated access, and the actual current failure mode or modes are recorded and fixed
+- [x] Container image build work runs in parallel with `make test` and `make test-long` where technically possible, without weakening the existing validation gate before publish/promotion decisions
+- [x] The task proves whether `make test-long` itself is failing or whether another pipeline stage is the real blocker, and fixes the real blocker rather than masking it
+- [x] The Quay security stage no longer fails as an opaque `exit 1`; workflow output clearly distinguishes scanner failure, policy failure, and vulnerabilities found
+- [x] If vulnerabilities are present in Quay, the workflow exposes those findings clearly enough for an operator to see what they are
+- [x] If the image is already published before the security step fails, the workflow makes that state explicit so publish success and scan failure are not conflated
+- [x] Any newly discovered defect that cannot be fixed inside this task is immediately captured as a bug via `add-bug`
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-26-hosted-workflow-failure-investigation/01-task-debug-hosted-github-workflow-failures-parallelize-image-builds-and-surface-quay-security-findings_plans/2026-04-20-hosted-quay-gate-and-parallel-build-plan.md</plan>
