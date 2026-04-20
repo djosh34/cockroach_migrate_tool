@@ -126,9 +126,6 @@ jobs:
           key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
 
   publish-image:
-    needs:
-      - validate-fast
-      - validate-long
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
@@ -272,7 +269,10 @@ jobs:
           if-no-files-found: error
 
   quay-security-gate:
-    needs: publish-image
+    needs:
+      - validate-fast
+      - validate-long
+      - publish-image
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     steps:
@@ -287,7 +287,9 @@ jobs:
           pattern: published-image-*
           path: ${{ runner.temp }}/published-image-refs
           merge-multiple: true
-      - name: Wait for Quay security gate
+      - name: Evaluate Quay security gate
+        id: evaluate-quay-security
+        continue-on-error: true
         env:
           QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
           QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
@@ -295,6 +297,12 @@ jobs:
           set -euo pipefail
           refs_dir="${{ runner.temp }}/published-image-refs"
           test -d "${refs_dir}"
+          summary_file="${{ runner.temp }}/quay-security-summary.md"
+          {
+            echo "## Quay Security Gate"
+            echo
+            echo "Raw Quay platform-tag publication completed before security evaluation began."
+          } > "${summary_file}"
           netrc_file="$(mktemp)"
           trap 'rm -f "${netrc_file}"' EXIT
           chmod 600 "${netrc_file}"
@@ -303,46 +311,245 @@ jobs:
             login ${QUAY_ROBOT_USERNAME}
             password ${QUAY_ROBOT_PASSWORD}
           EOF
+
+          append_summary() {
+            printf '%s\n' "$1" >> "${summary_file}"
+          }
+
+          append_summary_json() {
+            local title="$1"
+            local payload="$2"
+            {
+              printf '\n%s\n\n' "${title}"
+              printf '```json\n%s\n```\n' "${payload}"
+            } >> "${summary_file}"
+          }
+
+          record_outcome() {
+            local outcome="$1"
+            echo "gate_outcome=${outcome}" >> "${GITHUB_OUTPUT}"
+          }
+
+          fail_gate() {
+            local outcome="$1"
+            local message="$2"
+            local payload="${3:-}"
+            record_outcome "${outcome}"
+            append_summary ""
+            append_summary "Gate outcome: \`${outcome}\`"
+            append_summary "${message}"
+            if [[ -n "${payload}" ]]; then
+              append_summary_json "Payload" "${payload}"
+            fi
+            printf '%s\n' "${message}" >&2
+            if [[ -n "${payload}" ]]; then
+              printf '%s\n' "${payload}" >&2
+            fi
+            exit 1
+          }
+
+          run_quay_api() {
+            local url="$1"
+            local description="$2"
+            local response_file
+            local stderr_file
+            local stderr_output
+            local response_output
+            response_file="$(mktemp)"
+            stderr_file="$(mktemp)"
+            if ! curl --silent --show-error --fail --netrc-file "${netrc_file}" "${url}" > "${response_file}" 2> "${stderr_file}"; then
+              stderr_output="$(cat "${stderr_file}")"
+              response_output="$(cat "${response_file}")"
+              rm -f "${response_file}" "${stderr_file}"
+              fail_gate \
+                "scanner_failure" \
+                "Quay API call failed while ${description}." \
+                "$(printf '%s\n%s' "${stderr_output}" "${response_output}")"
+            fi
+            QUAY_API_RESPONSE="$(cat "${response_file}")"
+            rm -f "${response_file}" "${stderr_file}"
+          }
+
+          env_file_count=0
           while IFS= read -r env_file; do
+            env_file_count=$((env_file_count + 1))
             unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
             . "${env_file}"
             : "${quay_repository:?missing quay_repository}"
             : "${platform_image_ref:?missing platform_image_ref}"
             tag_name="${platform_image_ref##*:}"
-            tag_response="$(curl --fail --silent --show-error --netrc-file "${netrc_file}" "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/tag/?specificTag=${tag_name}")"
+            run_quay_api \
+              "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/tag/?specificTag=${tag_name}" \
+              "loading tag metadata for ${platform_image_ref}"
+            tag_response="${QUAY_API_RESPONSE}"
             manifest_digest="$(jq -r '.tags[0].manifest_digest // empty' <<< "${tag_response}")"
             is_manifest_list="$(jq -r '.tags[0].is_manifest_list // false' <<< "${tag_response}")"
-            test -n "${manifest_digest}"
-            test "${is_manifest_list}" = "false"
-            printf 'waiting for Quay scan on %s (%s)\n' "${platform_image_ref}" "${manifest_digest}"
-            scan_status=""
-            for attempt in $(seq 1 60); do
-              security_response="$(curl --fail --silent --show-error --netrc-file "${netrc_file}" "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${manifest_digest}/security?vulnerabilities=true")"
-              scan_status="$(jq -r '.status // empty' <<< "${security_response}")"
-              case "${scan_status}" in
-                scanned)
-                  vulnerability_count="$(jq '[.. | .Vulnerabilities? | arrays | .[]] | length' <<< "${security_response}")"
-                  if [[ "${vulnerability_count}" != "0" ]]; then
-                    printf 'Quay vulnerability gate failed for %s: %s findings\n' "${platform_image_ref}" "${vulnerability_count}" >&2
-                    jq '{status, findings: [.. | .Vulnerabilities? | arrays | .[] | {Name, Severity, FixedBy}]}' <<< "${security_response}" >&2
-                    exit 1
-                  fi
-                  printf 'Quay scan passed for %s with zero findings\n' "${platform_image_ref}"
-                  break
-                  ;;
-                queued|scanning|in_progress)
-                  printf 'Quay scan still pending for %s (attempt %s, status=%s)\n' "${platform_image_ref}" "${attempt}" "${scan_status}"
-                  sleep 10
-                  ;;
-                *)
-                  printf 'Quay scan returned unexpected status for %s: %s\n' "${platform_image_ref}" "${scan_status:-<empty>}" >&2
-                  jq '.' <<< "${security_response}" >&2
-                  exit 1
-                  ;;
-              esac
+            if [[ -z "${manifest_digest}" ]]; then
+              fail_gate \
+                "unexpected_payload" \
+                "Quay tag metadata for ${platform_image_ref} did not include a manifest digest." \
+                "$(jq '.' <<< "${tag_response}")"
+            fi
+
+            scan_targets=()
+            if [[ "${is_manifest_list}" == "true" ]]; then
+              run_quay_api \
+                "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${manifest_digest}" \
+                "loading manifest-list details for ${platform_image_ref}"
+              manifest_response="${QUAY_API_RESPONSE}"
+              scan_targets_text="$(
+                jq -er '
+                  .manifest_data
+                  | fromjson
+                  | .manifests[]
+                  | select((.annotations["vnd.docker.reference.type"]? // "") != "attestation-manifest")
+                  | select((.platform.os? // "") != "unknown")
+                  | select((.platform.architecture? // "") != "unknown")
+                  | .digest
+                ' <<< "${manifest_response}"
+              )" || fail_gate \
+                "unexpected_payload" \
+                "Quay manifest-list payload for ${platform_image_ref} did not expose any scanable child manifests." \
+                "$(jq '.' <<< "${manifest_response}")"
+              while IFS= read -r scan_target; do
+                test -n "${scan_target}"
+                scan_targets+=("${scan_target}")
+              done <<< "${scan_targets_text}"
+            else
+              scan_targets=("${manifest_digest}")
+            fi
+
+            append_summary ""
+            append_summary "### ${platform_image_ref}"
+            append_summary "- Quay repository: \`${quay_repository}\`"
+            append_summary "- Platform: \`${platform}\`"
+            append_summary "- Published tag digest: \`${manifest_digest}\`"
+            append_summary "- Tag is manifest list: \`${is_manifest_list}\`"
+            append_summary "- Scan target digests:"
+            for scan_target in "${scan_targets[@]}"; do
+              append_summary "  - \`${scan_target}\`"
             done
-            test "${scan_status}" = "scanned"
+
+            for scan_target in "${scan_targets[@]}"; do
+              printf 'waiting for Quay scan on %s via %s\n' "${platform_image_ref}" "${scan_target}"
+              scan_status=""
+              security_response=""
+              for attempt in $(seq 1 60); do
+                run_quay_api \
+                  "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${scan_target}/security?vulnerabilities=true" \
+                  "loading security status for ${platform_image_ref} (${scan_target})"
+                security_response="${QUAY_API_RESPONSE}"
+                scan_status="$(jq -r '.status // empty' <<< "${security_response}")"
+                case "${scan_status}" in
+                  scanned)
+                    vulnerability_count="$(
+                      jq -er '[.. | .Vulnerabilities? | arrays | .[]] | length' <<< "${security_response}"
+                    )" || fail_gate \
+                      "unexpected_payload" \
+                      "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing vulnerability structure." \
+                      "$(jq '.' <<< "${security_response}")"
+                    if [[ "${vulnerability_count}" != "0" ]]; then
+                      findings_json="$(
+                        jq '
+                          {
+                            status,
+                            scan_target: $scan_target,
+                            findings: [.. | .Vulnerabilities? | arrays | .[] | {Name, Severity, FixedBy}]
+                          }
+                        ' \
+                          --arg scan_target "${scan_target}" \
+                          <<< "${security_response}"
+                      )"
+                      fail_gate \
+                        "policy_failure" \
+                        "Quay vulnerability policy failed for ${platform_image_ref}: ${vulnerability_count} findings on ${scan_target}." \
+                        "${findings_json}"
+                    fi
+                    append_summary "- Scan result for \`${scan_target}\`: passed with zero findings"
+                    printf 'Quay scan passed for %s via %s with zero findings\n' "${platform_image_ref}" "${scan_target}"
+                    break
+                    ;;
+                  queued|scanning|in_progress)
+                    printf 'Quay scan still pending for %s via %s (attempt %s, status=%s)\n' "${platform_image_ref}" "${scan_target}" "${attempt}" "${scan_status}"
+                    sleep 10
+                    ;;
+                  failed|error)
+                    fail_gate \
+                      "scanner_failure" \
+                      "Quay reported scanner failure for ${platform_image_ref} (${scan_target}) with status ${scan_status}." \
+                      "$(jq '.' <<< "${security_response}")"
+                    ;;
+                  "")
+                    fail_gate \
+                      "unexpected_payload" \
+                      "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing a status value." \
+                      "$(jq '.' <<< "${security_response}")"
+                    ;;
+                  *)
+                    fail_gate \
+                      "unexpected_payload" \
+                      "Quay scan for ${platform_image_ref} (${scan_target}) returned unexpected status ${scan_status}." \
+                      "$(jq '.' <<< "${security_response}")"
+                    ;;
+                esac
+              done
+              if [[ "${scan_status}" != "scanned" ]]; then
+                fail_gate \
+                  "timeout" \
+                  "Timed out waiting for Quay scan completion for ${platform_image_ref} (${scan_target}); last status was ${scan_status:-<empty>}." \
+                  "$(jq '.' <<< "${security_response}")"
+              fi
+            done
           done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)
+          if [[ "${env_file_count}" -eq 0 ]]; then
+            fail_gate "unexpected_payload" "No published image-ref artifacts were available for Quay security evaluation."
+          fi
+          append_summary ""
+          append_summary "Gate outcome: \`passed\`"
+          record_outcome "passed"
+
+      - name: Publish Quay security summary
+        if: always()
+        run: |
+          set -euo pipefail
+          summary_file="${{ runner.temp }}/quay-security-summary.md"
+          if [[ -f "${summary_file}" ]]; then
+            cat "${summary_file}" >> "${GITHUB_STEP_SUMMARY}"
+            cat "${summary_file}"
+          else
+            printf '## Quay Security Gate\n\nNo summary was written.\n' | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
+
+      - name: Enforce Quay security gate
+        if: always()
+        run: |
+          set -euo pipefail
+          gate_outcome="${{ steps.evaluate-quay-security.outputs.gate_outcome }}"
+          case "${gate_outcome}" in
+            passed)
+              printf 'Quay security gate passed.\n'
+              ;;
+            policy_failure)
+              printf 'Quay security gate failed because Quay surfaced vulnerability findings.\n' >&2
+              exit 1
+              ;;
+            scanner_failure)
+              printf 'Quay security gate failed because the Quay scanner/API call failed.\n' >&2
+              exit 1
+              ;;
+            timeout)
+              printf 'Quay security gate failed because Quay never reached a scanned state before timeout.\n' >&2
+              exit 1
+              ;;
+            unexpected_payload|"")
+              printf 'Quay security gate failed because Quay returned an unexpected payload.\n' >&2
+              exit 1
+              ;;
+            *)
+              printf 'Quay security gate failed with unknown outcome %s.\n' "${gate_outcome}" >&2
+              exit 1
+              ;;
+          esac
 
   publish-manifest:
     needs: quay-security-gate
@@ -508,3 +715,60 @@ jobs:
           name: published-compose-artifacts
           path: artifacts/compose
           if-no-files-found: error
+
+  workflow-summary:
+    needs:
+      - validate-fast
+      - validate-long
+      - publish-image
+      - quay-security-gate
+      - publish-manifest
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Download published image refs
+        if: needs.publish-image.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: published-image-*
+          path: ${{ runner.temp }}/published-image-refs
+          merge-multiple: true
+      - name: Publish workflow summary
+        run: |
+          set -euo pipefail
+          refs_dir="${{ runner.temp }}/published-image-refs"
+          summary_file="${{ runner.temp }}/publish-workflow-summary.md"
+          {
+            echo "## Publish Workflow Summary"
+            echo
+            printf -- '- validate-fast: `%s`\n' "${{ needs.validate-fast.result }}"
+            printf -- '- validate-long: `%s`\n' "${{ needs.validate-long.result }}"
+            printf -- '- publish-image: `%s`\n' "${{ needs.publish-image.result }}"
+            printf -- '- quay-security-gate: `%s`\n' "${{ needs.quay-security-gate.result }}"
+            printf -- '- publish-manifest: `%s`\n' "${{ needs.publish-manifest.result }}"
+            echo
+            if [[ -d "${refs_dir}" ]]; then
+              echo "### Raw Quay Refs Published Before Security Or Promotion"
+              while IFS= read -r env_file; do
+                unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
+                . "${env_file}"
+                printf -- '- `%s` (%s)\n' "${platform_image_ref}" "${platform}"
+              done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)
+              echo
+            else
+              echo "No published image refs were available to summarize."
+              echo
+            fi
+            if [[ "${{ needs.publish-image.result }}" == "success" && "${{ needs.quay-security-gate.result }}" != "success" ]]; then
+              echo "Raw Quay publication succeeded before the security gate failed."
+              printf 'Manifest/GHCR promotion did not proceed because publish-manifest=`%s`.\n' "${{ needs.publish-manifest.result }}"
+            elif [[ "${{ needs.publish-manifest.result }}" == "success" ]]; then
+              echo "Manifest/GHCR promotion completed after validation and Quay security checks passed."
+            else
+              echo "Manifest/GHCR promotion did not complete successfully."
+            fi
+          } > "${summary_file}"
+          cat "${summary_file}" >> "${GITHUB_STEP_SUMMARY}"
+          cat "${summary_file}"
