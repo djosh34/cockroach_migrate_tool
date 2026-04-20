@@ -218,6 +218,8 @@ jobs:
             --file "${{ matrix.image.dockerfile }}" \
             --cache-from "type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }}" \
             --cache-to "type=gha,scope=${{ matrix.image.cache_scope }}-${{ matrix.platform.platform_tag_suffix }},mode=max" \
+            --provenance=false \
+            --sbom=false \
             --tag "${platform_image_ref}" \
             --push \
             "${{ matrix.image.context }}"
