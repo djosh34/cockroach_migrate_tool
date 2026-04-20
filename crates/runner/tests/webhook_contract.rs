@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::Read,
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -9,6 +8,15 @@ use std::{
 };
 
 use reqwest::{Certificate, StatusCode, blocking::Client};
+
+#[path = "support/host_process_runner.rs"]
+mod runner_process_support;
+#[path = "support/host_process_runner_ingest.rs"]
+mod runner_process_support_ingest;
+#[path = "support/host_process_runner_paths.rs"]
+mod runner_process_support_paths;
+
+use runner_process_support::HostProcessRunner;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -346,78 +354,6 @@ impl Drop for TestPostgres {
     }
 }
 
-struct RunnerProcess {
-    child: Child,
-}
-
-impl RunnerProcess {
-    fn start(config_path: &Path) -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_runner"))
-            .args(["run", "--config"])
-            .arg(config_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("runner should start");
-        Self { child }
-    }
-
-    fn assert_healthy(&mut self, url: &str, client: &Client) {
-        for _ in 0..50 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner child status should be readable")
-            {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                self.child
-                    .stdout
-                    .as_mut()
-                    .expect("runner stdout pipe should exist")
-                    .read_to_string(&mut stdout)
-                    .expect("runner stdout should be readable");
-                self.child
-                    .stderr
-                    .as_mut()
-                    .expect("runner stderr pipe should exist")
-                    .read_to_string(&mut stderr)
-                    .expect("runner stderr should be readable");
-                panic!(
-                    "runner exited before serving healthz with status {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-            }
-
-            match client.get(url).send() {
-                Ok(response) if response.status().is_success() => {
-                    let body = response.text().expect("healthz body should be readable");
-                    assert_eq!(body, "ok");
-                    return;
-                }
-                Ok(_) | Err(_) => thread::sleep(Duration::from_millis(100)),
-            }
-        }
-
-        panic!("runner did not serve healthz at {url}");
-    }
-
-    fn post(&self, url: &str, client: &Client, body: &str) -> reqwest::blocking::Response {
-        client
-            .post(url)
-            .header("content-type", "application/json")
-            .body(body.to_owned())
-            .send()
-            .expect("ingest request should complete")
-    }
-}
-
-impl Drop for RunnerProcess {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
 fn https_client() -> Client {
     let certificate = Certificate::from_pem(
         &fs::read(fixture_path("certs/server.crt")).expect("server certificate should be readable"),
@@ -430,9 +366,9 @@ fn https_client() -> Client {
         .expect("https client should build")
 }
 
-fn metrics_body(client: &Client, bind_port: u16) -> String {
+fn metrics_body(client: &Client, metrics_url: &str) -> String {
     let metrics_response = client
-        .get(format!("https://localhost:{bind_port}/metrics"))
+        .get(metrics_url)
         .send()
         .expect("metrics request should complete");
     assert_eq!(metrics_response.status(), StatusCode::OK);
@@ -454,16 +390,12 @@ fn run_serves_healthz_over_real_tls_after_bootstrap() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 }
 
 #[test]
@@ -479,23 +411,19 @@ fn run_serves_webhook_metrics_over_real_tls_after_successful_ingest() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let ingest_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let ingest_response =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(ingest_response.status(), StatusCode::OK);
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
 
     assert!(
         metrics_body.contains("# TYPE cockroach_migration_tool_webhook_requests_total counter"),
@@ -534,31 +462,27 @@ fn run_metrics_bound_webhook_outcomes_without_leaking_error_text_or_mapping_ids(
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let bad_request_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_b", "customers"),
-    );
+    let bad_request_response =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_b", "customers"));
     assert_eq!(bad_request_response.status(), StatusCode::BAD_REQUEST);
 
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let resolved_response = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
-    let internal_error_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let internal_error_response = runner.post_mapping(
+        "app-a",
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );
@@ -567,7 +491,7 @@ fn run_metrics_bound_webhook_outcomes_without_leaking_error_text_or_mapping_ids(
         StatusCode::INTERNAL_SERVER_ERROR
     );
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains(
             "cockroach_migration_tool_webhook_requests_total{destination_database=\"app_a\",kind=\"row_batch\",outcome=\"bad_request\"} 1"
@@ -609,23 +533,19 @@ fn run_exposes_webhook_apply_duration_and_attempt_metrics() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let ingest_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let ingest_response =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(ingest_response.status(), StatusCode::OK);
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains(
             "# TYPE cockroach_migration_tool_webhook_apply_duration_seconds_total counter"
@@ -675,24 +595,20 @@ fn run_exposes_webhook_apply_failure_and_latest_outcome_metrics() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let success_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let success_response =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(success_response.status(), StatusCode::OK);
 
-    let internal_error_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let internal_error_response = runner.post_mapping(
+        "app-a",
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );
@@ -701,7 +617,7 @@ fn run_exposes_webhook_apply_failure_and_latest_outcome_metrics() {
         StatusCode::INTERNAL_SERVER_ERROR
     );
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
         "metrics should expose cumulative apply failure counters:\n{metrics_body}",
@@ -748,28 +664,18 @@ fn run_exposes_mapping_scoped_ingest_paths_and_404s_unknown_mapping_ids() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    let health_url = format!("https://localhost:{bind_port}/healthz");
-    runner.assert_healthy(&health_url, &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let known_mapping_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        "{}",
-    );
+    let known_mapping_response = runner.post_mapping("app-a", &client, "{}");
     assert_ne!(known_mapping_response.status(), StatusCode::NOT_FOUND);
 
-    let unknown_mapping_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/missing"),
-        &client,
-        "{}",
-    );
+    let unknown_mapping_response = runner.post_json_path("/ingest/missing", &client, "{}");
     assert_eq!(unknown_mapping_response.status(), StatusCode::NOT_FOUND);
 }
 
@@ -786,35 +692,26 @@ fn run_distinguishes_malformed_json_from_supported_payload_shapes() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let malformed = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        "{",
-    );
+    let malformed = runner.post_mapping("app-a", &client, "{");
     assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
 
-    let row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let row_batch = runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     let row_batch_status = row_batch.status();
     let _row_batch_body = row_batch
         .text()
         .expect("row-batch response body should be readable");
     assert_eq!(row_batch_status, StatusCode::OK);
 
-    let resolved = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let resolved = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
@@ -838,45 +735,32 @@ fn run_rejects_row_batches_that_do_not_match_mapping_source_contract() {
         "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config_with_tables(
         &config_path,
-        bind_port,
+        0,
         &["public.customers", "public.orders"],
     );
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let missing_source = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let missing_source = runner.post_mapping("app-a",
         &client,
         r#"{"length":1,"payload":[{"after":{"id":1},"before":null,"key":{"id":1},"op":"c","ts_ns":1}]}"#,
     );
     assert_eq!(missing_source.status(), StatusCode::BAD_REQUEST);
 
-    let wrong_database = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_b", "customers"),
-    );
+    let wrong_database =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_b", "customers"));
     assert_eq!(wrong_database.status(), StatusCode::BAD_REQUEST);
 
-    let wrong_table = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "invoices"),
-    );
+    let wrong_table = runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "invoices"));
     assert_eq!(wrong_table.status(), StatusCode::BAD_REQUEST);
 
-    let mixed_tables = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &mixed_table_row_batch_body(),
-    );
+    let mixed_tables = runner.post_mapping("app-a", &client, &mixed_table_row_batch_body());
     assert_eq!(mixed_tables.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -893,14 +777,13 @@ fn run_persists_resolved_watermarks_before_returning_200() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     assert_eq!(
         postgres.query(
@@ -912,8 +795,8 @@ fn run_persists_resolved_watermarks_before_returning_200() {
         "<null>"
     );
 
-    let resolved = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let resolved = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
@@ -946,25 +829,24 @@ fn run_preserves_resolved_watermark_across_restart() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
     {
-        let mut runner = RunnerProcess::start(&config_path);
-        runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
-        let resolved = runner.post(
-            &format!("https://localhost:{bind_port}/ingest/app-a"),
+        let mut runner = HostProcessRunner::start(&config_path);
+        runner.assert_healthy(&client);
+        let resolved = runner.post_mapping(
+            "app-a",
             &client,
             &resolved_body("1776526353000000000.0000000000"),
         );
         assert_eq!(resolved.status(), StatusCode::OK);
     }
 
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
     assert_eq!(
         postgres.query(
             "app_a",
@@ -989,31 +871,30 @@ fn run_keeps_resolved_watermarks_monotonic() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let first = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let first = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000001"),
     );
     assert_eq!(first.status(), StatusCode::OK);
 
-    let older = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let older = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
     assert_eq!(older.status(), StatusCode::OK);
 
-    let duplicate = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let duplicate = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000001"),
     );
@@ -1052,17 +933,16 @@ fn run_isolates_resolved_tracking_state_per_mapping_destination() {
         "CREATE TABLE public.invoices (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_multi_mapping_runner_config(&config_path, bind_port);
+    postgres.write_multi_mapping_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let resolved = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let resolved = runner.post_mapping(
+        "app-a",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
@@ -1105,31 +985,24 @@ fn run_isolates_webhook_helper_state_per_mapping_in_a_shared_destination_databas
          CREATE TABLE public.invoices (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_shared_destination_runner_config(&config_path, bind_port);
+    postgres.write_shared_destination_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let customer_response =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(customer_response.status(), StatusCode::OK);
 
-    let invoice_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
-        &client,
-        &invoice_row_batch_body("demo_b", 4200),
-    );
+    let invoice_response =
+        runner.post_mapping("app-b", &client, &invoice_row_batch_body("demo_b", 4200));
     assert_eq!(invoice_response.status(), StatusCode::OK);
 
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
+    let resolved_response = runner.post_mapping(
+        "app-b",
         &client,
         &resolved_body("1776526353000000000.0000000000"),
     );
@@ -1182,14 +1055,13 @@ fn run_persists_insert_row_batches_before_returning_200() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     assert_eq!(
         postgres.query(
@@ -1199,11 +1071,7 @@ fn run_persists_insert_row_batches_before_returning_200() {
         "0"
     );
 
-    let row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let row_batch = runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     let row_batch_status = row_batch.status();
     let _row_batch_body = row_batch
         .text()
@@ -1231,21 +1099,16 @@ fn run_routes_quoted_source_table_names_to_the_configured_mapping_table() {
         r#"CREATE TABLE public."CustomerEvents" (id bigint PRIMARY KEY, email text NOT NULL);"#,
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(
-        &config_path,
-        bind_port,
-        &[r#"public."CustomerEvents""#],
-    );
+    postgres.write_runner_config_with_tables(&config_path, 0, &[r#"public."CustomerEvents""#]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &quoted_identifier_row_batch_body("demo_a", r#""CustomerEvents""#),
     );
@@ -1280,20 +1143,16 @@ fn run_deletes_helper_rows_from_row_batches() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let insert_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let insert_row_batch =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(insert_row_batch.status(), StatusCode::OK);
     assert_eq!(
         postgres.query(
@@ -1303,8 +1162,8 @@ fn run_deletes_helper_rows_from_row_batches() {
         "1"
     );
 
-    let delete_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
@@ -1335,24 +1194,20 @@ fn run_updates_existing_helper_rows_by_primary_key() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let insert_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &row_batch_body("demo_a", "customers"),
-    );
+    let insert_row_batch =
+        runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
     assert_eq!(insert_row_batch.status(), StatusCode::OK);
 
-    let update_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let update_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &update_row_batch_body("demo_a", "customers", "updated@example.com"),
     );
@@ -1379,21 +1234,17 @@ fn run_handles_duplicate_row_batch_delivery_idempotently() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     for _ in 0..2 {
-        let create_row_batch = runner.post(
-            &format!("https://localhost:{bind_port}/ingest/app-a"),
-            &client,
-            &row_batch_body("demo_a", "customers"),
-        );
+        let create_row_batch =
+            runner.post_mapping("app-a", &client, &row_batch_body("demo_a", "customers"));
         assert_eq!(create_row_batch.status(), StatusCode::OK);
     }
     assert_eq!(
@@ -1405,8 +1256,8 @@ fn run_handles_duplicate_row_batch_delivery_idempotently() {
     );
 
     for _ in 0..2 {
-        let update_row_batch = runner.post(
-            &format!("https://localhost:{bind_port}/ingest/app-a"),
+        let update_row_batch = runner.post_mapping(
+            "app-a",
             &client,
             &update_row_batch_body("demo_a", "customers", "duplicate-safe@example.com"),
         );
@@ -1421,8 +1272,8 @@ fn run_handles_duplicate_row_batch_delivery_idempotently() {
     );
 
     for _ in 0..2 {
-        let delete_row_batch = runner.post(
-            &format!("https://localhost:{bind_port}/ingest/app-a"),
+        let delete_row_batch = runner.post_mapping(
+            "app-a",
             &client,
             &delete_row_batch_body("demo_a", "customers"),
         );
@@ -1450,17 +1301,16 @@ fn run_persists_composite_primary_key_tables() {
         "CREATE TABLE public.order_items (order_id bigint NOT NULL, line_id bigint NOT NULL, sku text NOT NULL, PRIMARY KEY (order_id, line_id));",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(&config_path, bind_port, &["public.order_items"]);
+    postgres.write_runner_config_with_tables(&config_path, 0, &["public.order_items"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let insert_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let insert_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &composite_insert_row_batch_body("demo_a", "order_items", "starter-kit"),
     );
@@ -1473,8 +1323,8 @@ fn run_persists_composite_primary_key_tables() {
         "1|2|starter-kit"
     );
 
-    let update_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let update_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &composite_update_row_batch_body("demo_a", "order_items", "starter-kit-v2"),
     );
@@ -1487,8 +1337,8 @@ fn run_persists_composite_primary_key_tables() {
         "1|2|starter-kit-v2"
     );
 
-    let delete_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &composite_delete_row_batch_body("demo_a", "order_items"),
     );
@@ -1515,17 +1365,16 @@ fn run_returns_non_200_and_rolls_back_partial_row_batch_failures() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
+    postgres.write_runner_config(&config_path, 0);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let failing_row_batch = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let failing_row_batch = runner.post_mapping(
+        "app-a",
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );

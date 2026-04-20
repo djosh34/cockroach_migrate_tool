@@ -21,11 +21,13 @@ use hyper_util::{
     server::conn::auto::Builder as AutoBuilder,
     service::TowerToHyperService,
 };
+use operator_log::LogEvent;
 use rustls::ServerConfig;
 use tokio::{net::TcpListener, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
+    RuntimeEventSink,
     error::{RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError},
     metrics::WebhookOutcome,
     runtime_plan::RunnerRuntimePlan,
@@ -36,6 +38,7 @@ use persistence::{RowMutationBatch, persist_row_batch};
 
 pub(crate) async fn serve(
     runtime: Arc<RunnerRuntimePlan>,
+    emit_event: RuntimeEventSink,
 ) -> Result<(), RunnerWebhookRuntimeError> {
     let listener = TcpListener::bind(runtime.bind_addr())
         .await
@@ -43,6 +46,13 @@ pub(crate) async fn serve(
             addr: runtime.bind_addr(),
             source,
         })?;
+    let bound_addr = listener
+        .local_addr()
+        .map_err(|source| RunnerWebhookRuntimeError::LocalAddr { source })?;
+    emit_event(
+        LogEvent::info("runner", "webhook.bound", "runner webhook listener bound")
+            .with_field("webhook", bound_addr.to_string()),
+    );
     let tls_acceptor = TlsAcceptor::from(Arc::new(load_tls_config(runtime.as_ref())?));
     let app = Router::new()
         .route("/healthz", get(healthz))

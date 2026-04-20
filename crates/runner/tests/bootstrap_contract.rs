@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::Read,
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -11,6 +10,13 @@ use std::{
 use predicates::prelude::{PredicateBooleanExt, predicate};
 use reqwest::{Certificate, blocking::Client};
 use serde_json::Value;
+
+#[path = "support/host_process_runner.rs"]
+mod runner_process_support;
+#[path = "support/host_process_runner_failure.rs"]
+mod runner_process_support_failure;
+
+use runner_process_support::HostProcessRunner;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -350,141 +356,6 @@ impl Drop for TestPostgres {
     }
 }
 
-struct RunnerProcess {
-    child: Child,
-}
-
-impl RunnerProcess {
-    fn start(config_path: &Path) -> Self {
-        Self::start_with_args(config_path, &[])
-    }
-
-    fn start_json(config_path: &Path) -> Self {
-        Self::start_with_args(config_path, &["--log-format", "json"])
-    }
-
-    fn start_with_args(config_path: &Path, extra_args: &[&str]) -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_runner"))
-            .arg("run")
-            .args(extra_args)
-            .arg("--config")
-            .arg(config_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("runner should start");
-        Self { child }
-    }
-
-    fn read_stderr_line(&mut self) -> String {
-        let stderr = self
-            .child
-            .stderr
-            .as_mut()
-            .expect("runner stderr pipe should exist");
-        let mut bytes = Vec::new();
-
-        loop {
-            let mut byte = [0_u8; 1];
-            let read = stderr
-                .read(&mut byte)
-                .expect("runner stderr should be readable");
-            assert_ne!(read, 0, "runner stderr closed before emitting a log line");
-            bytes.push(byte[0]);
-            if byte[0] == b'\n' {
-                break;
-            }
-        }
-
-        String::from_utf8(bytes).expect("runner stderr line should be utf-8")
-    }
-
-    fn assert_healthy(&mut self, url: &str, client: &Client) {
-        for _ in 0..50 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner child status should be readable")
-            {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                self.child
-                    .stdout
-                    .as_mut()
-                    .expect("runner stdout pipe should exist")
-                    .read_to_string(&mut stdout)
-                    .expect("runner stdout should be readable");
-                self.child
-                    .stderr
-                    .as_mut()
-                    .expect("runner stderr pipe should exist")
-                    .read_to_string(&mut stderr)
-                    .expect("runner stderr should be readable");
-                panic!(
-                    "runner exited before serving healthz with status {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-            }
-
-            match client.get(url).send() {
-                Ok(response) if response.status().is_success() => return,
-                Ok(_) | Err(_) => thread::sleep(Duration::from_millis(100)),
-            }
-        }
-
-        panic!("runner did not serve healthz at {url}");
-    }
-
-    fn assert_exits_failure(mut self, stderr_predicate: impl predicates::Predicate<str>) {
-        let (stdout, stderr) = self.wait_for_failed_exit_logs();
-        assert!(
-            stderr_predicate.eval(&stderr),
-            "runner stderr did not match expectation\nstdout:\n{stdout}\nstderr:\n{stderr}"
-        );
-    }
-
-    fn wait_for_failed_exit_logs(&mut self) -> (String, String) {
-        for _ in 0..50 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner child status should be readable")
-            {
-                assert!(
-                    !status.success(),
-                    "runner unexpectedly exited successfully with status {status}"
-                );
-
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                self.child
-                    .stdout
-                    .as_mut()
-                    .expect("runner stdout pipe should exist")
-                    .read_to_string(&mut stdout)
-                    .expect("runner stdout should be readable");
-                self.child
-                    .stderr
-                    .as_mut()
-                    .expect("runner stderr pipe should exist")
-                    .read_to_string(&mut stderr)
-                    .expect("runner stderr should be readable");
-                return (stdout, stderr);
-            }
-
-            thread::sleep(Duration::from_millis(100));
-        }
-
-        panic!("runner stayed up instead of failing during startup");
-    }
-}
-
-impl Drop for RunnerProcess {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
 fn https_client() -> Client {
     let certificate = Certificate::from_pem(
         &fs::read(fixture_path("certs/server.crt")).expect("server certificate should be readable"),
@@ -521,15 +392,11 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -561,15 +428,12 @@ fn run_supports_json_operator_logs_for_runtime_startup() {
         "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start_json(&config_path);
+    postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
 
-    let startup_log = runner.read_stderr_line();
-    let payload: Value =
-        serde_json::from_str(startup_log.trim()).expect("runner startup log should be valid json");
+    let payload = runner.read_stderr_event();
     let json_object = payload
         .as_object()
         .expect("runner startup log should be a json object");
@@ -591,10 +455,30 @@ fn run_supports_json_operator_logs_for_runtime_startup() {
         Some("runtime.starting"),
         "runner startup json log must expose the runtime startup event",
     );
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
+    runner.assert_healthy(&https_client());
+}
+
+#[test]
+fn run_serves_healthz_after_binding_an_ephemeral_webhook_port() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
     );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let _stale_port_owner =
+        TcpListener::bind("127.0.0.1:0").expect("stale candidate port should be occupiable");
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 }
 
 #[test]
@@ -616,19 +500,15 @@ fn run_seeds_tracking_rows_for_stream_and_each_mapped_table() {
         "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config_with_tables(
         &config_path,
-        bind_port,
+        0,
         &["public.customers", "public.orders"],
     );
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -670,21 +550,17 @@ fn run_preserves_existing_table_sync_progress_on_restart() {
         "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config_with_tables(
         &config_path,
-        bind_port,
+        0,
         &["public.customers", "public.orders"],
     );
 
     {
-        let mut runner = RunnerProcess::start(&config_path);
-        runner.assert_healthy(
-            &format!("https://localhost:{bind_port}/healthz"),
-            &https_client(),
-        );
+        let mut runner = HostProcessRunner::start(&config_path);
+        runner.assert_healthy(&https_client());
     }
 
     postgres.exec(
@@ -696,11 +572,8 @@ fn run_preserves_existing_table_sync_progress_on_restart() {
            AND source_table_name = 'public.customers';",
     );
 
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -737,21 +610,17 @@ fn run_preserves_existing_stream_and_table_tracking_progress_on_restart() {
         "CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config_with_tables(
         &config_path,
-        bind_port,
+        0,
         &["public.customers", "public.orders"],
     );
 
     {
-        let mut runner = RunnerProcess::start(&config_path);
-        runner.assert_healthy(
-            &format!("https://localhost:{bind_port}/healthz"),
-            &https_client(),
-        );
+        let mut runner = HostProcessRunner::start(&config_path);
+        runner.assert_healthy(&https_client());
     }
 
     postgres.exec(
@@ -767,11 +636,8 @@ fn run_preserves_existing_stream_and_table_tracking_progress_on_restart() {
            AND source_table_name = 'public.customers';",
     );
 
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -817,21 +683,17 @@ fn run_bootstraps_shared_destination_helper_state_per_mapping() {
          CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_shared_destination_runner_config(
         &config_path,
-        bind_port,
+        0,
         &["public.customers"],
         &["public.orders"],
     );
 
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -881,15 +743,11 @@ fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
         );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -922,15 +780,11 @@ fn run_adds_one_automatic_helper_index_for_primary_key_columns() {
         );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(&config_path, bind_port, &["public.orders"]);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    postgres.write_runner_config_with_tables(&config_path, 0, &["public.orders"]);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -962,15 +816,11 @@ fn run_helper_shadow_tables_drop_defaults_and_generated_expressions() {
         );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port);
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(
-        &format!("https://localhost:{bind_port}/healthz"),
-        &https_client(),
-    );
+    postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
 
     assert_eq!(
         postgres.query(
@@ -998,13 +848,9 @@ fn run_fails_loudly_when_a_mapped_destination_table_is_missing() {
 
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(
-        &config_path,
-        pick_unused_port(),
-        &["public.missing_table"],
-    );
+    postgres.write_runner_config_with_tables(&config_path, 0, &["public.missing_table"]);
 
-    RunnerProcess::start(&config_path).assert_exits_failure(predicate::str::contains(
+    HostProcessRunner::start(&config_path).assert_exits_failure(predicate::str::contains(
         "postgres bootstrap: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
     ));
 }
@@ -1020,13 +866,9 @@ fn run_reports_startup_failures_as_json_error_events() {
 
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(
-        &config_path,
-        pick_unused_port(),
-        &["public.missing_table"],
-    );
+    postgres.write_runner_config_with_tables(&config_path, 0, &["public.missing_table"]);
 
-    let mut runner = RunnerProcess::start_json(&config_path);
+    let mut runner = HostProcessRunner::start(&config_path);
     let (stdout, stderr) = runner.wait_for_failed_exit_logs();
 
     assert!(
@@ -1108,12 +950,12 @@ fn run_fails_loudly_when_two_mappings_share_one_destination_table() {
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_shared_destination_runner_config(
         &config_path,
-        pick_unused_port(),
+        0,
         &["public.customers"],
         &["public.customers"],
     );
 
-    RunnerProcess::start(&config_path).assert_exits_failure(
+    HostProcessRunner::start(&config_path).assert_exits_failure(
         predicate::str::contains("destination database `127.0.0.1:").and(predicate::str::contains(
             "`public.customers` is claimed by both mappings `app-a` and `app-b`",
         )),
@@ -1155,14 +997,14 @@ fn run_fails_loudly_when_two_mappings_share_one_destination_with_conflicting_cre
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_shared_destination_runner_config_with_credentials(
         &config_path,
-        pick_unused_port(),
+        0,
         &["public.customers"],
         ("migration_user_shared_a", "runner-secret-shared-a"),
         &["public.orders"],
         ("migration_user_shared_b", "runner-secret-shared-b"),
     );
 
-    RunnerProcess::start(&config_path).assert_exits_failure(
+    HostProcessRunner::start(&config_path).assert_exits_failure(
         predicate::str::contains("destination database `127.0.0.1:").and(predicate::str::contains(
             "has conflicting PostgreSQL target contracts for mappings `app-a` and `app-b`",
         )),

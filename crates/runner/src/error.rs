@@ -156,6 +156,8 @@ pub enum RunnerWebhookRuntimeError {
         addr: std::net::SocketAddr,
         source: io::Error,
     },
+    #[error("failed to read bound webhook listener address")]
+    LocalAddr { source: io::Error },
     #[error("failed to accept webhook connection")]
     Accept { source: io::Error },
     #[error("failed to install the rustls ring crypto provider")]

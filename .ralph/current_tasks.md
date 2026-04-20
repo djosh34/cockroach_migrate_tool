@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 01:35:15 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-runner-test-port-selection-flakes-webhook-bind.md`
-
-```
-## Bug: Runner test port selection flakes and can fail webhook bind during parallel test runs <status>not_started</status> <passes>false</passes> <priority>medium</priority>
-
-<description>
-The runner test suite still has a time-of-check/time-of-use port-allocation race.
-```
-
-==============
+Generated: Mon Apr 20 13:58:58 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md`
 

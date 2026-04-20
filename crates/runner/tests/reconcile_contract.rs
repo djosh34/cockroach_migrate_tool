@@ -1,6 +1,5 @@
 use std::{
     fs,
-    io::Read,
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -9,6 +8,13 @@ use std::{
 };
 
 use reqwest::{Certificate, StatusCode, blocking::Client};
+
+#[path = "support/host_process_runner.rs"]
+mod runner_process_support;
+#[path = "support/host_process_runner_ingest.rs"]
+mod runner_process_support_ingest;
+
+use runner_process_support::HostProcessRunner;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -360,74 +366,6 @@ impl Drop for TestPostgres {
     }
 }
 
-struct RunnerProcess {
-    child: Child,
-}
-
-impl RunnerProcess {
-    fn start(config_path: &Path) -> Self {
-        let child = Command::new(env!("CARGO_BIN_EXE_runner"))
-            .args(["run", "--config"])
-            .arg(config_path)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("runner should start");
-        Self { child }
-    }
-
-    fn assert_healthy(&mut self, url: &str, client: &Client) {
-        for _ in 0..50 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner child status should be readable")
-            {
-                let mut stdout = String::new();
-                let mut stderr = String::new();
-                self.child
-                    .stdout
-                    .as_mut()
-                    .expect("runner stdout pipe should exist")
-                    .read_to_string(&mut stdout)
-                    .expect("runner stdout should be readable");
-                self.child
-                    .stderr
-                    .as_mut()
-                    .expect("runner stderr pipe should exist")
-                    .read_to_string(&mut stderr)
-                    .expect("runner stderr should be readable");
-                panic!(
-                    "runner exited before serving healthz with status {status}\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-            }
-
-            match client.get(url).send() {
-                Ok(response) if response.status().is_success() => return,
-                Ok(_) | Err(_) => thread::sleep(Duration::from_millis(100)),
-            }
-        }
-
-        panic!("runner did not serve healthz at {url}");
-    }
-
-    fn post(&self, url: &str, client: &Client, body: &str) -> reqwest::blocking::Response {
-        client
-            .post(url)
-            .header("content-type", "application/json")
-            .body(body.to_owned())
-            .send()
-            .expect("ingest request should complete")
-    }
-}
-
-impl Drop for RunnerProcess {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
 fn https_client() -> Client {
     let certificate = Certificate::from_pem(
         &fs::read(fixture_path("certs/server.crt")).expect("server certificate should be readable"),
@@ -440,9 +378,9 @@ fn https_client() -> Client {
         .expect("https client should build")
 }
 
-fn metrics_body(client: &Client, bind_port: u16) -> String {
+fn metrics_body(client: &Client, metrics_url: &str) -> String {
     let metrics_response = client
-        .get(format!("https://localhost:{bind_port}/metrics"))
+        .get(metrics_url)
         .send()
         .expect("metrics request should complete");
     assert_eq!(metrics_response.status(), StatusCode::OK);
@@ -529,16 +467,16 @@ fn assert_eventually_query_contains(
     actual
 }
 
-fn assert_eventually_metrics_contain(client: &Client, bind_port: u16, expected: &str) -> String {
+fn assert_eventually_metrics_contain(client: &Client, metrics_url: &str, expected: &str) -> String {
     for _ in 0..40 {
-        let metrics_body = metrics_body(client, bind_port);
+        let metrics_body = metrics_body(client, metrics_url);
         if metrics_body.contains(expected) {
             return metrics_body;
         }
         thread::sleep(Duration::from_millis(100));
     }
 
-    let metrics_body = metrics_body(client, bind_port);
+    let metrics_body = metrics_body(client, metrics_url);
     assert!(
         metrics_body.contains(expected),
         "metrics did not contain expected text `{expected}`:\n{metrics_body}",
@@ -568,17 +506,16 @@ fn run_continuously_reconciles_helper_upserts_into_real_tables() {
          GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "customer@example.com"),
     );
@@ -606,17 +543,16 @@ fn run_continuously_reconciles_helper_deletes_into_real_tables() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let upsert_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let upsert_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "customer@example.com"),
     );
@@ -629,8 +565,8 @@ fn run_continuously_reconciles_helper_deletes_into_real_tables() {
         "customer@example.com",
     );
 
-    let delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
@@ -658,17 +594,16 @@ fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let upsert_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let upsert_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "customer@example.com"),
     );
@@ -681,8 +616,8 @@ fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
         "customer@example.com",
     );
 
-    let delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
@@ -695,7 +630,7 @@ fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
         "0",
     );
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains(
             "# TYPE cockroach_migration_tool_reconcile_apply_duration_seconds_total counter"
@@ -741,27 +676,22 @@ fn run_exposes_cached_table_rows_and_current_reconcile_state_metrics_after_succe
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let watermark = "1776526353000000000.0000000000";
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "customer@example.com"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(watermark),
-    );
+    let resolved_response = runner.post_mapping("app-a", &client, &resolved_body(watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -781,7 +711,7 @@ fn run_exposes_cached_table_rows_and_current_reconcile_state_metrics_after_succe
 
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1",
     );
 
@@ -833,32 +763,27 @@ fn run_keeps_table_row_metrics_cached_between_scrapes() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 2, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let watermark = "1776526353000000000.0000000000";
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "customer@example.com"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(watermark),
-    );
+    let resolved_response = runner.post_mapping("app-a", &client, &resolved_body(watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 1",
     );
 
@@ -871,7 +796,7 @@ fn run_keeps_table_row_metrics_cached_between_scrapes() {
         "2"
     );
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains(
             "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1"
@@ -900,16 +825,15 @@ fn run_leaves_table_state_metric_samples_absent_before_first_refresh() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 30, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 30, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let metrics_body = metrics_body(&client, bind_port);
+    let metrics_body = metrics_body(&client, &runner.metrics_url());
     assert!(
         metrics_body.contains("# TYPE cockroach_migration_tool_table_rows gauge"),
         "metrics should always expose the table-row family type:\n{metrics_body}",
@@ -953,29 +877,20 @@ fn run_reconciles_tables_in_dependency_order_not_config_order() {
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(
-        &config_path,
-        bind_port,
-        1,
-        &["public.orders", "public.customers"],
-    );
+    postgres.write_runner_config(&config_path, 0, 1, &["public.orders", "public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let order_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &order_row_batch_body("demo_a", 1, 1500),
-    );
+    let order_response =
+        runner.post_mapping("app-a", &client, &order_row_batch_body("demo_a", 1, 1500));
     assert_eq!(order_response.status(), StatusCode::OK);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "fk@example.com"),
     );
@@ -1008,32 +923,23 @@ fn run_reconciles_deletes_in_reverse_dependency_order() {
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(
-        &config_path,
-        bind_port,
-        1,
-        &["public.orders", "public.customers"],
-    );
+    postgres.write_runner_config(&config_path, 0, 1, &["public.orders", "public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "fk-delete@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
 
-    let order_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &order_row_batch_body("demo_a", 1, 1500),
-    );
+    let order_response =
+        runner.post_mapping("app-a", &client, &order_row_batch_body("demo_a", 1, 1500));
     assert_eq!(order_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1043,18 +949,15 @@ fn run_reconciles_deletes_in_reverse_dependency_order() {
         "1",
     );
 
-    let customer_delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
     assert_eq!(customer_delete_response.status(), StatusCode::OK);
 
-    let order_delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &order_delete_row_batch_body("demo_a"),
-    );
+    let order_delete_response =
+        runner.post_mapping("app-a", &client, &order_delete_row_batch_body("demo_a"));
     assert_eq!(order_delete_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1085,17 +988,16 @@ fn run_repeats_upsert_reconcile_without_duplication() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "stable@example.com"),
     );
@@ -1133,17 +1035,16 @@ fn run_repeats_delete_reconcile_without_errors_or_reinserts() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let upsert_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let upsert_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "gone@example.com"),
     );
@@ -1156,8 +1057,8 @@ fn run_repeats_delete_reconcile_without_errors_or_reinserts() {
         "1",
     );
 
-    let delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
@@ -1205,27 +1106,23 @@ fn run_reconciles_each_mapping_into_only_its_own_destination_database() {
          CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_multi_mapping_runner_config(&config_path, bind_port, 1);
+    postgres.write_multi_mapping_runner_config(&config_path, 0, 1);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "isolated@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
 
-    let invoice_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
-        &client,
-        &invoice_row_batch_body("demo_b", 4200),
-    );
+    let invoice_response =
+        runner.post_mapping("app-b", &client, &invoice_row_batch_body("demo_b", 4200));
     assert_eq!(invoice_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1260,27 +1157,23 @@ fn run_reconciles_each_mapping_into_only_its_own_tables_inside_a_shared_destinat
          CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_shared_destination_runner_config(&config_path, bind_port, 1);
+    postgres.write_shared_destination_runner_config(&config_path, 0, 1);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "shared@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
 
-    let invoice_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
-        &client,
-        &invoice_row_batch_body("demo_b", 4200),
-    );
+    let invoice_response =
+        runner.post_mapping("app-b", &client, &invoice_row_batch_body("demo_b", 4200));
     assert_eq!(invoice_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1329,27 +1222,23 @@ fn run_reconciles_deletes_only_within_the_target_mapping_database() {
          CREATE TABLE public.invoices (id bigint PRIMARY KEY, amount_cents bigint NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_multi_mapping_runner_config(&config_path, bind_port, 1);
+    postgres.write_multi_mapping_runner_config(&config_path, 0, 1);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "isolated-delete@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
 
-    let invoice_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
-        &client,
-        &invoice_row_batch_body("demo_b", 4200),
-    );
+    let invoice_response =
+        runner.post_mapping("app-b", &client, &invoice_row_batch_body("demo_b", 4200));
     assert_eq!(invoice_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1365,8 +1254,8 @@ fn run_reconciles_deletes_only_within_the_target_mapping_database() {
         "1",
     );
 
-    let customer_delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
@@ -1385,11 +1274,8 @@ fn run_reconciles_deletes_only_within_the_target_mapping_database() {
         "4200",
     );
 
-    let invoice_delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-b"),
-        &client,
-        &invoice_delete_row_batch_body("demo_b"),
-    );
+    let invoice_delete_response =
+        runner.post_mapping("app-b", &client, &invoice_delete_row_batch_body("demo_b"));
     assert_eq!(invoice_delete_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1414,28 +1300,23 @@ fn run_advances_success_tracking_after_a_full_upsert_pass() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "tracked@example.com"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
 
     let watermark = "1776526353000000000.0000000000";
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(watermark),
-    );
+    let resolved_response = runner.post_mapping("app-a", &client, &resolved_body(watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1480,27 +1361,23 @@ fn run_records_reconcile_failure_metrics_without_exiting_runner() {
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 2, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let initial_watermark = "1776526353000000000.0000000000";
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "tracked@example.com"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(initial_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(initial_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1513,17 +1390,14 @@ fn run_records_reconcile_failure_metrics_without_exiting_runner() {
     );
 
     let failing_watermark = "1776526353000000000.0000000001";
-    let invalid_row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let invalid_row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "invalid-email"),
     );
     assert_eq!(invalid_row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(failing_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(failing_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1538,10 +1412,10 @@ fn run_records_reconcile_failure_metrics_without_exiting_runner() {
 
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\"} 1",
     );
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    runner.assert_healthy(&client);
 
     assert!(
         metrics_body.contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
@@ -1612,32 +1486,27 @@ fn run_exposes_current_reconcile_error_and_count_drift_after_failed_reconcile() 
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 2, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let watermark = "1776526353000000000.0000000000";
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "invalid-email"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(watermark),
-    );
+    let resolved_response = runner.post_mapping("app-a", &client, &resolved_body(watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_table_reconcile_error{destination_database=\"app_a\",destination_table=\"public.customers\"} 1",
     );
 
@@ -1678,27 +1547,23 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 2, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let initial_watermark = "1776526353000000000.0000000000";
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "tracked@example.com"),
     );
     assert_eq!(row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(initial_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(initial_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
     assert_eventually_query_equals(
         &postgres,
@@ -1710,17 +1575,14 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
     );
 
     let failing_watermark = "1776526353000000000.0000000001";
-    let invalid_row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let invalid_row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "invalid-email"),
     );
     assert_eq!(invalid_row_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(failing_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(failing_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
     assert_eventually_query_equals(
         &postgres,
@@ -1731,10 +1593,10 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
            AND source_table_name = 'public.customers';",
         "reconcile upsert failed for public.customers: error returned from database: new row for relation \"customers\" violates check constraint \"customers_email_check\"",
     );
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    runner.assert_healthy(&client);
 
-    let corrected_row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let corrected_row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "recovered@example.com"),
     );
@@ -1767,7 +1629,7 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
 
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\",outcome=\"success\"}",
     );
     assert!(
@@ -1824,38 +1686,26 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
          );",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(
-        &config_path,
-        bind_port,
-        2,
-        &["public.customers", "public.orders"],
-    );
+    postgres.write_runner_config(&config_path, 0, 2, &["public.customers", "public.orders"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let initial_watermark = "1776526353000000000.0000000000";
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "tracked@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
-    let order_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &order_row_batch_body("demo_a", 1, 1500),
-    );
+    let order_response =
+        runner.post_mapping("app-a", &client, &order_row_batch_body("demo_a", 1, 1500));
     assert_eq!(order_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(initial_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(initial_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(
@@ -1868,23 +1718,17 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
     );
 
     let failing_watermark = "1776526353000000000.0000000001";
-    let customer_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let customer_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "ahead@example.com"),
     );
     assert_eq!(customer_response.status(), StatusCode::OK);
-    let order_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &order_row_batch_body("demo_a", 1, -1),
-    );
+    let order_response =
+        runner.post_mapping("app-a", &client, &order_row_batch_body("demo_a", 1, -1));
     assert_eq!(order_response.status(), StatusCode::OK);
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(failing_watermark),
-    );
+    let resolved_response =
+        runner.post_mapping("app-a", &client, &resolved_body(failing_watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
     assert_eventually_query_equals(
         &postgres,
@@ -1897,10 +1741,10 @@ fn run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure() 
     );
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.orders\",stage=\"reconcile_upsert\"} 1",
     );
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    runner.assert_healthy(&client);
     assert!(
         metrics_body.contains(
             "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.orders\",stage=\"reconcile_upsert\",outcome=\"error\"}"
@@ -1971,14 +1815,13 @@ fn run_records_reconcile_delete_failure_metrics_without_exiting_runner() {
          INSERT INTO public.orders (id, customer_id) VALUES (10, 1);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
     let table_sync_state = assert_eventually_query_contains(
         &postgres,
@@ -1996,10 +1839,10 @@ fn run_records_reconcile_delete_failure_metrics_without_exiting_runner() {
 
     let metrics_body = assert_eventually_metrics_contain(
         &client,
-        bind_port,
+        &runner.metrics_url(),
         "cockroach_migration_tool_apply_failures_total{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_delete\"} 1",
     );
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    runner.assert_healthy(&client);
     assert!(
         metrics_body.contains(
             "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_delete\",outcome=\"error\"}"
@@ -2022,17 +1865,16 @@ fn run_advances_success_tracking_after_a_full_delete_pass() {
          CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
     );
 
-    let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+    postgres.write_runner_config(&config_path, 0, 1, &["public.customers"]);
 
     let client = https_client();
-    let mut runner = RunnerProcess::start(&config_path);
-    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
 
-    let row_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let row_response = runner.post_mapping(
+        "app-a",
         &client,
         &row_batch_body("demo_a", "customers", "tracked-delete@example.com"),
     );
@@ -2045,19 +1887,15 @@ fn run_advances_success_tracking_after_a_full_delete_pass() {
         "1",
     );
 
-    let delete_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
+    let delete_response = runner.post_mapping(
+        "app-a",
         &client,
         &delete_row_batch_body("demo_a", "customers"),
     );
     assert_eq!(delete_response.status(), StatusCode::OK);
 
     let watermark = "1776526353000000000.0000000001";
-    let resolved_response = runner.post(
-        &format!("https://localhost:{bind_port}/ingest/app-a"),
-        &client,
-        &resolved_body(watermark),
-    );
+    let resolved_response = runner.post_mapping("app-a", &client, &resolved_body(watermark));
     assert_eq!(resolved_response.status(), StatusCode::OK);
 
     assert_eventually_query_equals(

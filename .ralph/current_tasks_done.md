@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 01:35:15 PM CEST 2026
+Generated: Mon Apr 20 13:58:58 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 
@@ -20,6 +20,17 @@ Story 24 execution is blocked because the README cannot currently serve as the o
 
 <description>
 Story 24 verification found a blocking defect before the README-only public-image flow could be completed.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-runner-test-port-selection-flakes-webhook-bind.md`
+
+```
+## Bug: Runner test port selection flakes and can fail webhook bind during parallel test runs <status>done</status> <passes>true</passes> <priority>medium</priority>
+
+<description>
+The runner test suite still has a time-of-check/time-of-use port-allocation race.
 ```
 
 ==============
@@ -784,6 +795,17 @@ Must use tdd skill to complete
 
 ==============
 
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
+
+```
+## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md`
 
 ```
@@ -792,17 +814,6 @@ Must use tdd skill to complete
 <priority>ultra_high</priority>
 
 <description>
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
-
-```
-## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
-
-<description>
-Must use tdd skill to complete
 ```
 
 ==============
@@ -863,6 +874,17 @@ Must use tdd skill to complete
 
 ==============
 
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md`
+
+```
+## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md`
 
 ```
@@ -878,17 +900,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>completed</status> <passes>true</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md`
-
-```
-## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

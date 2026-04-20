@@ -74,7 +74,7 @@ where
             let runtime = std::sync::Arc::new(runtime);
             tokio::try_join!(
                 async {
-                    serve_webhook_runtime(runtime.clone())
+                    serve_webhook_runtime(runtime.clone(), emit_event.clone())
                         .await
                         .map_err(RunnerError::from)
                 },
