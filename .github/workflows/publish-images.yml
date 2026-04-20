@@ -515,12 +515,13 @@ jobs:
                 jq -n \
                   --arg platform_image_ref "${scan_target_refs[${scan_target}]}" \
                   --arg scan_target "${scan_target}" \
-                  --arg status "${scan_target_statuses[${scan_target}]}" \
-                  '{platform_image_ref: $platform_image_ref, scan_target: $scan_target, status: $status}'
+                --arg status "${scan_target_statuses[${scan_target}]}" \
+                '{platform_image_ref: $platform_image_ref, scan_target: $scan_target, status: $status}'
               fi
-            done | jq -s '{pending_targets: .}'
+            done | jq -c -s '{pending_targets: .}'
           )"
-          if [[ "${timeout_payload}" != '{"pending_targets":[]}' ]]; then
+          pending_target_count="$(jq -r '.pending_targets | length' <<< "${timeout_payload}")"
+          if [[ "${pending_target_count}" != "0" ]]; then
             fail_gate \
               "timeout" \
               "Timed out waiting for Quay scan completion across the published Quay refs." \
