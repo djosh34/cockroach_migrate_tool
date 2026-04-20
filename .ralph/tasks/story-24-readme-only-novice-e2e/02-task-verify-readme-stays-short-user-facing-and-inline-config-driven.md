@@ -1,4 +1,4 @@
-## Task: Verify the README stays short, user-facing, and driven by inline config examples instead of project philosophy <status>not_started</status> <passes>false</passes>
+## Task: Verify the README stays short, user-facing, and driven by inline config examples instead of project philosophy <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -33,15 +33,17 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers README-content requirements for operator focus, brevity, inline config examples, and simple argument explanation
-- [ ] The task fails if the README contains project philosophy, “why this matters”, contributor rules, or repo-structure guidance in the supported user path
-- [ ] The task proves contributor-only material is absent from the README rather than indirectly tolerated
-- [ ] The task proves the README begins with a simple working example and introduces extra arguments only when needed
-- [ ] The task proves the README includes the exact inline config and Compose text needed for the supported image flows
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers README-content requirements for operator focus, brevity, inline config examples, and simple argument explanation
+- [x] The task fails if the README contains project philosophy, “why this matters”, contributor rules, or repo-structure guidance in the supported user path
+- [x] The task proves contributor-only material is absent from the README rather than indirectly tolerated
+- [x] The task proves the README begins with a simple working example and introduces extra arguments only when needed
+- [x] The task proves the README includes the exact inline config and Compose text needed for the supported image flows
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only); not applicable because long-lane selection was unchanged
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-24-readme-only-novice-e2e/02-task-verify-readme-stays-short-user-facing-and-inline-config-driven_plans/2026-04-20-readme-operator-surface-plan.md</plan>

@@ -17,7 +17,7 @@ use tempfile::TempDir;
 use crate::published_image_refs_support::{
     runner_image_ref, setup_sql_image_ref, verify_image_ref,
 };
-use crate::readme_public_image_workspace_support::ReadmePublicImageContract;
+use crate::readme_operator_workspace_support::ReadmeOperatorWorkspace;
 
 pub struct CommandOutput {
     pub stdout: String,
@@ -26,7 +26,7 @@ pub struct CommandOutput {
 
 pub struct NoviceRegistryOnlyHarness {
     workspace: TempDir,
-    readme_contract: ReadmePublicImageContract,
+    readme_contract: ReadmeOperatorWorkspace,
 }
 
 pub struct RunningRunner {
@@ -51,7 +51,7 @@ pub struct RunningVerifyCompose {
 impl NoviceRegistryOnlyHarness {
     pub fn start() -> Self {
         let workspace = tempfile::tempdir().expect("novice workspace temp dir should be created");
-        let readme_contract = ReadmePublicImageContract::load();
+        let readme_contract = ReadmeOperatorWorkspace::load();
         let harness = Self {
             workspace,
             readme_contract,

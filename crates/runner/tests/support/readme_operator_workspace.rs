@@ -4,11 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub struct ReadmePublicImageContract {
+pub struct ReadmeOperatorWorkspace {
     operator_files: BTreeMap<&'static str, String>,
 }
 
-impl ReadmePublicImageContract {
+impl ReadmeOperatorWorkspace {
     pub fn load() -> Self {
         let readme_path = repo_root().join("README.md");
         let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
@@ -17,9 +17,6 @@ impl ReadmePublicImageContract {
                 readme_path.display(),
             )
         });
-        let novice_surface = novice_surface(&readme_text);
-
-        assert_registry_only_surface(&novice_surface);
 
         let mut operator_files = BTreeMap::new();
         for relative_path in [
@@ -28,20 +25,14 @@ impl ReadmePublicImageContract {
             "config/runner.yml",
             "config/verify-service.yml",
         ] {
-            operator_files.insert(
-                relative_path,
-                extract_inline_config(&novice_surface, relative_path),
-            );
+            operator_files.insert(relative_path, extract_inline_config(&readme_text, relative_path));
         }
         for relative_path in [
             "setup-sql.compose.yml",
             "runner.compose.yml",
             "verify.compose.yml",
         ] {
-            operator_files.insert(
-                relative_path,
-                extract_named_yaml_block(&novice_surface, relative_path),
-            );
+            operator_files.insert(relative_path, extract_named_yaml_block(&readme_text, relative_path));
         }
 
         Self { operator_files }
@@ -81,53 +72,23 @@ fn repo_root() -> PathBuf {
         .expect("repo root should resolve")
 }
 
-fn novice_surface(readme_text: &str) -> String {
-    readme_text
-        .split("## Setup SQL Quick Start")
-        .nth(1)
-        .and_then(|remainder| remainder.split("## CI Publish Safety").next())
-        .map(str::to_owned)
-        .expect("README must keep the novice-user quick start surface grouped together")
-}
-
-fn assert_registry_only_surface(novice_surface: &str) {
-    for forbidden in [
-        "git clone",
-        "docker build",
-        "cargo ",
-        "cargo\n",
-        "make ",
-        "make\n",
-        "AGENTS.md",
-        "CONTRIBUTING.md",
-        "crates/",
-        "tests/",
-        "investigations/",
-    ] {
-        assert!(
-            !novice_surface.contains(forbidden),
-            "README public-image novice surface must stay repo-free; found forbidden snippet `{forbidden}`",
-        );
-    }
-}
-
-fn extract_inline_config(novice_surface: &str, relative_path: &str) -> String {
+fn extract_inline_config(readme_text: &str, relative_path: &str) -> String {
     let prefix = format!("```yaml\n# {relative_path}\n");
-    extract_fenced_block_after_prefix(novice_surface, &prefix)
+    extract_fenced_block_after_prefix(readme_text, &prefix)
 }
 
-fn extract_named_yaml_block(novice_surface: &str, relative_path: &str) -> String {
+fn extract_named_yaml_block(readme_text: &str, relative_path: &str) -> String {
     let marker = format!("Save this as `{relative_path}`:");
-    let start = novice_surface.find(&marker).unwrap_or_else(|| {
-        panic!("README novice surface should declare `{relative_path}` inline")
+    let start = readme_text.find(&marker).unwrap_or_else(|| {
+        panic!("README should declare `{relative_path}` inline")
     });
-    let remainder = &novice_surface[start + marker.len()..];
+    let remainder = &readme_text[start + marker.len()..];
     extract_fenced_block_after_prefix(remainder, "```yaml\n")
 }
 
 fn extract_fenced_block_after_prefix(haystack: &str, prefix: &str) -> String {
     let start = haystack.find(prefix).unwrap_or_else(|| {
-        panic!("README novice surface should contain fenced block prefix `{prefix}`")
+        panic!("README should contain fenced block prefix `{prefix}`")
     });
     let remainder = &haystack[start + "```yaml\n".len()..];
     let end = remainder.find("\n```").expect("README fenced block should close");

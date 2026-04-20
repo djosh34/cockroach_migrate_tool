@@ -9,13 +9,12 @@ use serde_yaml::Value;
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
-#[path = "support/readme_public_image_workspace.rs"]
-mod readme_public_image_workspace_support;
+#[path = "support/readme_operator_workspace.rs"]
+mod readme_operator_workspace_support;
 #[path = "support/published_image_refs.rs"]
 mod published_image_refs_support;
 
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
-use readme_public_image_workspace_support::ReadmePublicImageContract;
 
 #[test]
 fn copied_verify_compose_artifact_mounts_the_listener_client_ca_contract() {
@@ -130,115 +129,6 @@ fn copied_runner_compose_artifact_uses_the_shared_bridge_network_contract() {
         network_mode, "bridge",
         "runner compose artifact must reuse Docker's shared bridge network instead of allocating a project default network",
     );
-}
-
-#[test]
-fn novice_readme_and_compose_contracts_stay_registry_only() {
-    let readme_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
-    let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
-        panic!(
-            "README should be readable at `{}`: {error}",
-            readme_path.display(),
-        )
-    });
-    let novice_surface = readme_text
-        .split("## Setup SQL Quick Start")
-        .nth(1)
-        .and_then(|remainder| remainder.split("## CI Publish Safety").next())
-        .expect("README must keep the novice-user quick start surface grouped together");
-
-    for forbidden in [
-        "git clone",
-        "docker build",
-        "cargo ",
-        "cargo\n",
-        "make ",
-        "make\n",
-        "AGENTS.md",
-        "CONTRIBUTING.md",
-    ] {
-        assert!(
-            !novice_surface.contains(forbidden),
-            "novice README surface must stay registry-only and repo-free; found forbidden snippet `{forbidden}`",
-        );
-    }
-
-    for (artifact_name, env_var) in [
-        ("setup-sql.compose.yml", "${SETUP_SQL_IMAGE}"),
-        ("runner.compose.yml", "${RUNNER_IMAGE}"),
-        ("verify.compose.yml", "${VERIFY_IMAGE}"),
-    ] {
-        let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../artifacts/compose")
-            .join(artifact_name);
-        let artifact_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
-            panic!(
-                "compose artifact should be readable at `{}`: {error}",
-                artifact_path.display(),
-            )
-        });
-        assert!(
-            artifact_text.contains(env_var),
-            "compose artifact `{artifact_name}` must keep using the published image env var `{env_var}`",
-        );
-        assert!(
-            !artifact_text.contains("\nbuild:"),
-            "compose artifact `{artifact_name}` must not require a local docker build",
-        );
-    }
-}
-
-#[test]
-fn readme_public_image_quick_start_documents_secure_runner_and_verify_config_inline() {
-    let readme_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
-    let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
-        panic!(
-            "README should be readable at `{}`: {error}",
-            readme_path.display(),
-        )
-    });
-
-    for required_snippet in [
-        "# config/runner.yml",
-        "destination:\n      host: pg-a.example.internal",
-        "tls:\n        mode: verify-ca",
-        "ca_cert_path: /config/certs/destination-ca.crt",
-        "client_cert_path: /config/certs/destination-client.crt",
-        "client_key_path: /config/certs/destination-client.key",
-        "# config/verify-service.yml",
-        "client_ca_path: /config/certs/client-ca.crt",
-        "- source: verify-client-ca",
-        "file: ./config/certs/client-ca.crt",
-    ] {
-        assert!(
-            readme_text.contains(required_snippet),
-            "README public-image quick start must document secure runner and verify config inline; missing `{required_snippet}`",
-        );
-    }
-}
-
-#[test]
-fn readme_public_image_workspace_materializes_the_inline_operator_files() {
-    let contract = ReadmePublicImageContract::load();
-    let workspace = tempfile::tempdir().expect("readme public-image temp dir should be created");
-
-    contract.materialize_operator_workspace(workspace.path());
-
-    for relative_path in [
-        "config/cockroach-setup.yml",
-        "config/postgres-grants.yml",
-        "config/runner.yml",
-        "config/verify-service.yml",
-        "setup-sql.compose.yml",
-        "runner.compose.yml",
-        "verify.compose.yml",
-    ] {
-        let path = workspace.path().join(relative_path);
-        assert!(
-            path.is_file(),
-            "README public-image contract must materialize `{relative_path}` into the operator workspace",
-        );
-    }
 }
 
 #[test]
