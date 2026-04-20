@@ -112,7 +112,7 @@ psql \
 ## Docker Quick Start
 
 The destination runtime is one published container that starts the `runner` binary directly. There is no wrapper shell script in the user path.
-You should not need to inspect `crates/`, `tests/`, or `investigations/` to complete this quick start.
+You should not need to inspect any repository-internal files to complete this quick start.
 
 1. Choose the published image coordinates and pull the validated runner image.
 

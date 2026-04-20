@@ -9,10 +9,13 @@ use serde_yaml::Value;
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
+#[path = "support/readme_public_image_workspace.rs"]
+mod readme_public_image_workspace_support;
 #[path = "support/published_image_refs.rs"]
 mod published_image_refs_support;
 
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
+use readme_public_image_workspace_support::ReadmePublicImageContract;
 
 #[test]
 fn copied_verify_compose_artifact_mounts_the_listener_client_ca_contract() {
@@ -215,6 +218,30 @@ fn readme_public_image_quick_start_documents_secure_runner_and_verify_config_inl
 }
 
 #[test]
+fn readme_public_image_workspace_materializes_the_inline_operator_files() {
+    let contract = ReadmePublicImageContract::load();
+    let workspace = tempfile::tempdir().expect("readme public-image temp dir should be created");
+
+    contract.materialize_operator_workspace(workspace.path());
+
+    for relative_path in [
+        "config/cockroach-setup.yml",
+        "config/postgres-grants.yml",
+        "config/runner.yml",
+        "config/verify-service.yml",
+        "setup-sql.compose.yml",
+        "runner.compose.yml",
+        "verify.compose.yml",
+    ] {
+        let path = workspace.path().join(relative_path);
+        assert!(
+            path.is_file(),
+            "README public-image contract must materialize `{relative_path}` into the operator workspace",
+        );
+    }
+}
+
+#[test]
 fn setup_sql_compose_emits_sql_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 
@@ -274,6 +301,66 @@ fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
     let verify_runtime = harness.start_verify_compose_runtime();
     verify_runtime.wait_until_running();
     verify_runtime.shutdown();
+}
+
+#[test]
+fn verify_compose_runtime_serves_the_https_api_with_readme_owned_mtls_material() {
+    let harness = NoviceRegistryOnlyHarness::start();
+    let verify_runtime = harness.start_verify_compose_runtime();
+    verify_runtime.wait_until_running();
+
+    let status = verify_runtime.readiness_probe_status();
+
+    assert_eq!(
+        status, 404,
+        "verify compose runtime must serve the HTTPS API from the README-owned mTLS workspace",
+    );
+
+    verify_runtime.shutdown();
+}
+
+#[test]
+fn runner_readme_runtime_distinguishes_authentication_and_connectivity_failures() {
+    let harness = NoviceRegistryOnlyHarness::start();
+    let postgres = harness.start_runner_destination_postgres();
+
+    let auth_failure = harness.run_runner_readme_runtime_failure(
+        "host.docker.internal",
+        postgres.host_port(),
+        "wrong-secret",
+    );
+    assert!(
+        auth_failure
+            .stderr
+            .contains("password authentication failed"),
+        "runner README runtime must surface authentication failures clearly; got stderr:\n{}",
+        auth_failure.stderr,
+    );
+    assert!(
+        !auth_failure.stderr.to_lowercase().contains("connection refused"),
+        "authentication failures must not be mislabeled as connectivity failures; got stderr:\n{}",
+        auth_failure.stderr,
+    );
+
+    let connectivity_failure = harness.run_runner_readme_runtime_failure(
+        "host.docker.internal",
+        novice_registry_only_harness_support::pick_unused_port_for_tests(),
+        "runner-secret-a",
+    );
+    let connectivity_stderr = connectivity_failure.stderr.to_lowercase();
+    assert!(
+        connectivity_stderr.contains("connection refused")
+            || connectivity_stderr.contains("timed out")
+            || connectivity_stderr.contains("failed to lookup address information")
+            || connectivity_stderr.contains("no route to host"),
+        "runner README runtime must surface connectivity failures clearly; got stderr:\n{}",
+        connectivity_failure.stderr,
+    );
+    assert!(
+        !connectivity_stderr.contains("password authentication failed"),
+        "connectivity failures must not masquerade as authentication failures; got stderr:\n{}",
+        connectivity_failure.stderr,
+    );
 }
 
 #[test]

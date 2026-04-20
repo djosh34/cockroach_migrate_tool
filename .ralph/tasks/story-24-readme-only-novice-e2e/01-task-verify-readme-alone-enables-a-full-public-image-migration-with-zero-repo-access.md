@@ -1,4 +1,4 @@
-## Task: Verify the README alone enables a full public-image migration with zero repo access <status>not_started</status> <passes>false</passes>
+## Task: Verify the README alone enables a full public-image migration with zero repo access <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -42,18 +42,18 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers a README-only novice-user path for a full independent migration using only public images
-- [ ] The task fails if the user must download the repo, run `git`, search repository files, build images locally, or consult any document besides the README
-- [ ] The task proves the user can apply the exact emitted Cockroach SQL first and the exact emitted PostgreSQL SQL second, without manual SQL rewriting
-- [ ] The task proves the user can derive the required secure mTLS config values from the README alone and run the runner successfully from pulled public images
-- [ ] The task proves wrong config produces clear operator-facing failures, including clean distinction between authentication and connectivity problems
-- [ ] The task proves the user can deploy and use the verify HTTP API from the README alone
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers a README-only novice-user path for a full independent migration using only public images
+- [x] The task fails if the user must download the repo, run `git`, search repository files, build images locally, or consult any document besides the README
+- [x] The task proves the user can apply the exact emitted Cockroach SQL first and the exact emitted PostgreSQL SQL second, without manual SQL rewriting
+- [x] The task proves the user can derive the required secure mTLS config values from the README alone and run the runner successfully from pulled public images
+- [x] The task proves wrong config produces clear operator-facing failures, including clean distinction between authentication and connectivity problems
+- [x] The task proves the user can deploy and use the verify HTTP API from the README alone
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only); not applicable because long-lane selection was unchanged
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-24-readme-only-novice-e2e/01-task-verify-readme-alone-enables-a-full-public-image-migration-with-zero-repo-access_plans/2026-04-20-readme-only-public-image-migration-plan.md</plan>

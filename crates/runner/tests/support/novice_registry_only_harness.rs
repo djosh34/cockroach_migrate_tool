@@ -8,11 +8,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use reqwest::{
+    Certificate, Identity,
+    blocking::Client,
+};
 use tempfile::TempDir;
 
 use crate::published_image_refs_support::{
     runner_image_ref, setup_sql_image_ref, verify_image_ref,
 };
+use crate::readme_public_image_workspace_support::ReadmePublicImageContract;
 
 pub struct CommandOutput {
     pub stdout: String,
@@ -21,6 +26,7 @@ pub struct CommandOutput {
 
 pub struct NoviceRegistryOnlyHarness {
     workspace: TempDir,
+    readme_contract: ReadmePublicImageContract,
 }
 
 pub struct RunningRunner {
@@ -28,6 +34,11 @@ pub struct RunningRunner {
     runner_container_name: String,
     host_port: u16,
     server_cert_path: PathBuf,
+}
+
+pub struct RunningDestinationPostgres {
+    container_name: String,
+    host_port: u16,
 }
 
 pub struct RunningVerifyCompose {
@@ -40,7 +51,14 @@ pub struct RunningVerifyCompose {
 impl NoviceRegistryOnlyHarness {
     pub fn start() -> Self {
         let workspace = tempfile::tempdir().expect("novice workspace temp dir should be created");
-        let harness = Self { workspace };
+        let readme_contract = ReadmePublicImageContract::load();
+        let harness = Self {
+            workspace,
+            readme_contract,
+        };
+        harness
+            .readme_contract
+            .materialize_operator_workspace(harness.root_dir());
         harness.materialize_setup_sql_workspace();
         harness.materialize_runner_workspace();
         harness.materialize_verify_workspace();
@@ -95,34 +113,13 @@ impl NoviceRegistryOnlyHarness {
     }
 
     pub fn start_runner_readme_runtime(&self) -> RunningRunner {
-        let postgres_container_name =
-            format!("cockroach-migrate-novice-postgres-{}", unique_suffix());
+        let postgres = self.start_runner_destination_postgres();
         let runner_container_name = format!("cockroach-migrate-novice-runner-{}", unique_suffix());
         let host_port = pick_unused_port();
-        let postgres_host_port = pick_unused_port();
         let config_mount = format!("{}:/config:ro", self.root_dir().join("config").display());
-        self.write_runner_config("host.docker.internal", postgres_host_port);
-
-        run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "-d",
-                "--name",
-                &postgres_container_name,
-                "-p",
-                &format!("{postgres_host_port}:5432"),
-                "-e",
-                "POSTGRES_USER=postgres",
-                "-e",
-                "POSTGRES_PASSWORD=postgres",
-                "-e",
-                "POSTGRES_DB=postgres",
-                "postgres:16",
-            ]),
-            "docker run novice postgres",
-        );
-        wait_for_postgres(&postgres_container_name);
-        prepare_postgres_schema(&postgres_container_name);
+        self.write_runner_config("host.docker.internal", postgres.host_port(), "runner-secret-a");
+        let postgres_container_name = postgres.container_name.clone();
+        std::mem::forget(postgres);
 
         run_command_capture(
             Command::new("docker").args([
@@ -151,6 +148,73 @@ impl NoviceRegistryOnlyHarness {
             runner_container_name,
             host_port,
             server_cert_path: self.root_dir().join("config/certs/server.crt"),
+        }
+    }
+
+    pub fn start_runner_destination_postgres(&self) -> RunningDestinationPostgres {
+        let container_name = format!("cockroach-migrate-novice-postgres-{}", unique_suffix());
+        let host_port = pick_unused_port();
+        run_command_capture(
+            Command::new("docker").args([
+                "run",
+                "-d",
+                "--name",
+                &container_name,
+                "-p",
+                &format!("{host_port}:5432"),
+                "-e",
+                "POSTGRES_USER=postgres",
+                "-e",
+                "POSTGRES_PASSWORD=postgres",
+                "-e",
+                "POSTGRES_DB=postgres",
+                "postgres:16",
+            ]),
+            "docker run novice postgres",
+        );
+        wait_for_postgres(&container_name);
+        enable_postgres_ssl(&container_name);
+        prepare_postgres_schema(&container_name);
+        RunningDestinationPostgres {
+            container_name,
+            host_port,
+        }
+    }
+
+    pub fn run_runner_readme_runtime_failure(
+        &self,
+        destination_host: &str,
+        destination_port: u16,
+        destination_password: &str,
+    ) -> CommandOutput {
+        self.write_runner_config(destination_host, destination_port, destination_password);
+        let config_mount = format!("{}:/config:ro", self.root_dir().join("config").display());
+        let output = Command::new("docker")
+            .args([
+                "run",
+                "--rm",
+                "--add-host",
+                "host.docker.internal:host-gateway",
+                "-v",
+                &config_mount,
+                runner_image_ref(),
+                "run",
+                "--log-format",
+                "json",
+                "--config",
+                "/config/runner.yml",
+            ])
+            .output()
+            .unwrap_or_else(|error| panic!("docker run runner failure probe should start: {error}"));
+        assert!(
+            !output.status.success(),
+            "docker run runner failure probe must fail for the negative config case\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+        CommandOutput {
+            stdout: String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
+            stderr: String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
         }
     }
 
@@ -243,19 +307,7 @@ impl NoviceRegistryOnlyHarness {
         let config_dir = self.root_dir().join("config");
         fs::create_dir_all(&config_dir).expect("novice config dir should be created");
 
-        copy_file(
-            &setup_sql_fixture("readme-cockroach-setup-config.yml"),
-            &config_dir.join("cockroach-setup.yml"),
-        );
-        copy_file(
-            &setup_sql_fixture("valid-postgres-grants-config.yml"),
-            &config_dir.join("postgres-grants.yml"),
-        );
         copy_file(&setup_sql_fixture("ca.crt"), &config_dir.join("ca.crt"));
-        copy_file(
-            &repo_root().join("artifacts/compose/setup-sql.compose.yml"),
-            &self.root_dir().join("setup-sql.compose.yml"),
-        );
     }
 
     fn materialize_runner_workspace(&self) {
@@ -270,11 +322,19 @@ impl NoviceRegistryOnlyHarness {
             &runner_fixture("certs/server.key"),
             &certs_dir.join("server.key"),
         );
-        self.write_runner_config("host.docker.internal", 5432);
         copy_file(
-            &repo_root().join("artifacts/compose/runner.compose.yml"),
-            &self.root_dir().join("runner.compose.yml"),
+            &investigation_cert("ca.crt"),
+            &certs_dir.join("destination-ca.crt"),
         );
+        copy_file(
+            &investigation_cert("server.crt"),
+            &certs_dir.join("destination-client.crt"),
+        );
+        copy_file(
+            &investigation_cert("server.key"),
+            &certs_dir.join("destination-client.key"),
+        );
+        self.write_runner_config("host.docker.internal", 5432, "runner-secret-a");
     }
 
     fn materialize_verify_workspace(&self) {
@@ -293,14 +353,7 @@ impl NoviceRegistryOnlyHarness {
             &investigation_cert("ca.crt"),
             &certs_dir.join("client-ca.crt"),
         );
-        copy_file(
-            &investigation_cert("server.crt"),
-            &certs_dir.join("source-client.crt"),
-        );
-        copy_file(
-            &investigation_cert("server.key"),
-            &certs_dir.join("source-client.key"),
-        );
+        generate_verify_listener_client_identity(&certs_dir);
         copy_file(
             &investigation_cert("server.crt"),
             &certs_dir.join("server.crt"),
@@ -308,36 +361,6 @@ impl NoviceRegistryOnlyHarness {
         copy_file(
             &investigation_cert("server.key"),
             &certs_dir.join("server.key"),
-        );
-        fs::write(
-            self.root_dir().join("config/verify-service.yml"),
-            r#"listener:
-  bind_addr: 0.0.0.0:8080
-  transport:
-    mode: https
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
-    client_auth:
-      mode: mtls
-      client_ca_path: /config/certs/client-ca.crt
-verify:
-  source:
-    url: postgresql://verify_source@source.internal:5432/appdb
-    tls:
-      mode: verify-ca
-      ca_cert_path: /config/certs/source-ca.crt
-  destination:
-    url: postgresql://verify_target@destination.internal:5432/appdb
-    tls:
-      mode: verify-ca
-      ca_cert_path: /config/certs/destination-ca.crt
-"#,
-        )
-        .expect("novice verify config should be written");
-        copy_file(
-            &repo_root().join("artifacts/compose/verify.compose.yml"),
-            &self.root_dir().join("verify.compose.yml"),
         );
     }
 
@@ -349,32 +372,21 @@ verify:
         self.root_dir().join("verify.compose.yml")
     }
 
-    fn write_runner_config(&self, destination_host: &str, destination_port: u16) {
+    fn write_runner_config(
+        &self,
+        destination_host: &str,
+        destination_port: u16,
+        destination_password: &str,
+    ) {
+        let config_text = self
+            .readme_contract
+            .operator_file("config/runner.yml")
+            .replace("pg-a.example.internal", destination_host)
+            .replacen("port: 5432", &format!("port: {destination_port}"), 1)
+            .replace("runner-secret-a", destination_password);
         fs::write(
             self.root_dir().join("config/runner.yml"),
-            format!(
-                r#"webhook:
-  bind_addr: 0.0.0.0:8443
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
-reconcile:
-  interval_secs: 30
-mappings:
-  - id: app-a
-    source:
-      database: demo_a
-      tables:
-        - public.customers
-        - public.orders
-    destination:
-      host: {destination_host}
-      port: {destination_port}
-      database: app_a
-      user: migration_user_a
-      password: runner-secret-a
-"#,
-            ),
+            config_text,
         )
         .expect("novice runner config should be written");
     }
@@ -409,6 +421,22 @@ impl RunningRunner {
         panic!(
             "runner novice container did not become healthy\n{}",
             docker_logs(&self.runner_container_name),
+        );
+    }
+}
+
+impl RunningDestinationPostgres {
+    pub fn host_port(&self) -> u16 {
+        self.host_port
+    }
+}
+
+impl Drop for RunningDestinationPostgres {
+    fn drop(&mut self) {
+        cleanup_if_present(
+            Command::new("docker").args(["container", "inspect", &self.container_name]),
+            Command::new("docker").args(["rm", "-f", &self.container_name]),
+            "docker rm novice postgres container",
         );
     }
 }
@@ -484,6 +512,85 @@ impl RunningVerifyCompose {
             "docker compose down verify",
         );
     }
+
+    pub fn readiness_probe_status(&self) -> u16 {
+        let client = self.client();
+        let mut last_error = None;
+        for _ in 0..30 {
+            if !container_running(
+                run_command_capture(
+                    Command::new("docker")
+                        .current_dir(&self.root_dir)
+                        .env("VERIFY_IMAGE", &self.verify_image)
+                        .env("VERIFY_HTTPS_PORT", self.verify_https_port.to_string())
+                        .args([
+                            "compose",
+                            "-p",
+                            &self.project_name,
+                            "-f",
+                            "verify.compose.yml",
+                            "ps",
+                            "-q",
+                            "verify",
+                        ]),
+                    "docker compose ps verify",
+                )
+                .trim(),
+            ) {
+                panic!(
+                    "verify compose runtime exited before readiness probe succeeded\n{}",
+                    compose_logs(
+                        &self.root_dir,
+                        &self.project_name,
+                        "verify.compose.yml",
+                        "verify"
+                    ),
+                );
+            }
+            match client
+                .get(format!(
+                    "https://localhost:{}/jobs/readiness-probe",
+                    self.verify_https_port
+                ))
+                .send()
+            {
+                Ok(response) => return response.status().as_u16(),
+                Err(error) => {
+                    last_error = Some(error.to_string());
+                    thread::sleep(Duration::from_secs(1));
+                }
+            }
+        }
+
+        panic!(
+            "verify compose readiness probe should respond over HTTPS\nlast error: {}\n{}",
+            last_error.unwrap_or_else(|| "missing reqwest error".to_owned()),
+            compose_logs(
+                &self.root_dir,
+                &self.project_name,
+                "verify.compose.yml",
+                "verify"
+            ),
+        );
+    }
+
+    fn client(&self) -> Client {
+        let certs_dir = self.root_dir.join("config/certs");
+        let trusted_server_ca = fs::read(certs_dir.join("source-ca.crt")).unwrap_or_else(|error| {
+            panic!("verify compose server CA should be readable: {error}")
+        });
+        Client::builder()
+            .add_root_certificate(
+                Certificate::from_pem(&trusted_server_ca)
+                    .expect("verify compose server CA should parse"),
+            )
+            .identity(client_identity(
+                certs_dir.join("source-client.crt").as_path(),
+                certs_dir.join("source-client.key").as_path(),
+            ))
+            .build()
+            .expect("verify compose client should build")
+    }
 }
 
 fn copy_file(from: &Path, to: &Path) {
@@ -520,6 +627,99 @@ fn investigation_cert(name: &str) -> PathBuf {
         .join(name)
 }
 
+fn generate_verify_listener_client_identity(certs_dir: &Path) {
+    let client_cert_config_path = certs_dir.join("source-client.cnf");
+    fs::write(
+        &client_cert_config_path,
+        "[req]\n\
+         distinguished_name = dn\n\
+         prompt = no\n\
+         req_extensions = req_ext\n\
+         \n\
+         [dn]\n\
+         CN = verify-listener-client\n\
+         \n\
+         [req_ext]\n\
+         basicConstraints = CA:FALSE\n\
+         keyUsage = critical,digitalSignature,keyEncipherment\n\
+         extendedKeyUsage = clientAuth\n",
+    )
+    .expect("verify source client config should be written");
+    run_command_capture(
+        Command::new("openssl").args([
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            certs_dir
+                .join("source-client.key")
+                .to_str()
+                .expect("verify source client key path should be utf-8"),
+            "-out",
+            certs_dir
+                .join("source-client.csr")
+                .to_str()
+                .expect("verify source client csr path should be utf-8"),
+            "-config",
+            client_cert_config_path
+                .to_str()
+                .expect("verify source client config path should be utf-8"),
+        ]),
+        "openssl req verify listener client csr",
+    );
+    run_command_capture(
+        Command::new("openssl").args([
+            "x509",
+            "-req",
+            "-days",
+            "365",
+            "-in",
+            certs_dir
+                .join("source-client.csr")
+                .to_str()
+                .expect("verify source client csr path should be utf-8"),
+            "-CA",
+            investigation_cert("ca.crt")
+                .to_str()
+                .expect("verify investigation ca cert path should be utf-8"),
+            "-CAkey",
+            investigation_cert("ca.key")
+                .to_str()
+                .expect("verify investigation ca key path should be utf-8"),
+            "-CAcreateserial",
+            "-CAserial",
+            certs_dir
+                .join("source-client.srl")
+                .to_str()
+                .expect("verify source client serial path should be utf-8"),
+            "-out",
+            certs_dir
+                .join("source-client.crt")
+                .to_str()
+                .expect("verify source client cert path should be utf-8"),
+            "-extensions",
+            "req_ext",
+            "-extfile",
+            client_cert_config_path
+                .to_str()
+                .expect("verify source client config path should be utf-8"),
+        ]),
+        "openssl x509 verify listener client cert",
+    );
+}
+
+fn copy_file_into_container(source: &Path, container: &str, destination: &str, context: &str) {
+    run_command_capture(
+        Command::new("docker").args([
+            "cp",
+            source.to_str().expect("copy source path should be utf-8"),
+            &format!("{container}:{destination}"),
+        ]),
+        context,
+    );
+}
+
 fn run_command_capture(command: &mut Command, context: &str) -> String {
     run_command_output(command, context).stdout
 }
@@ -539,6 +739,24 @@ fn run_command_output(command: &mut Command, context: &str) -> CommandOutput {
         stdout: String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
         stderr: String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
     }
+}
+
+fn client_identity(cert_path: &Path, key_path: &Path) -> Identity {
+    let cert = fs::read(cert_path).unwrap_or_else(|error| {
+        panic!(
+            "verify compose client cert should read from `{}`: {error}",
+            cert_path.display(),
+        )
+    });
+    let key = fs::read(key_path).unwrap_or_else(|error| {
+        panic!(
+            "verify compose client key should read from `{}`: {error}",
+            key_path.display(),
+        )
+    });
+    let mut pem = cert;
+    pem.extend_from_slice(&key);
+    Identity::from_pem(&pem).expect("verify compose client identity should parse")
 }
 
 fn wait_for_postgres(container_name: &str) {
@@ -566,6 +784,41 @@ fn wait_for_postgres(container_name: &str) {
     }
 
     panic!("novice postgres container did not become ready");
+}
+
+fn enable_postgres_ssl(container_name: &str) {
+    copy_file_into_container(
+        investigation_cert("server.crt").as_path(),
+        container_name,
+        "/var/lib/postgresql/data/server.crt",
+        "docker cp novice postgres server cert",
+    );
+    copy_file_into_container(
+        investigation_cert("server.key").as_path(),
+        container_name,
+        "/var/lib/postgresql/data/server.key",
+        "docker cp novice postgres server key",
+    );
+    run_command_capture(
+        Command::new("docker").args([
+            "exec",
+            "-u",
+            "0",
+            container_name,
+            "bash",
+            "-lc",
+            "set -euo pipefail\n\
+             chown postgres:postgres /var/lib/postgresql/data/server.crt /var/lib/postgresql/data/server.key\n\
+             chmod 600 /var/lib/postgresql/data/server.key\n\
+             printf '\\nssl=on\\nssl_cert_file='\"'\"'/var/lib/postgresql/data/server.crt'\"'\"'\\nssl_key_file='\"'\"'/var/lib/postgresql/data/server.key'\"'\"'\\n' >> /var/lib/postgresql/data/postgresql.conf",
+        ]),
+        "docker exec novice postgres enable ssl",
+    );
+    run_command_capture(
+        Command::new("docker").args(["restart", container_name]),
+        "docker restart novice postgres after ssl enable",
+    );
+    wait_for_postgres(container_name);
 }
 
 fn prepare_postgres_schema(container_name: &str) {
@@ -675,6 +928,10 @@ fn pick_unused_port() -> u16 {
         .local_addr()
         .expect("bound socket should have a local address")
         .port()
+}
+
+pub fn pick_unused_port_for_tests() -> u16 {
+    pick_unused_port()
 }
 
 fn unique_suffix() -> String {

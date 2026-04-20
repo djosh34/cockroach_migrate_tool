@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 12:13:08 PM CEST 2026
+Generated: Mon Apr 20 12:31:54 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 
@@ -878,6 +878,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-24-readme-only-novice-e2e/01-task-verify-readme-alone-enables-a-full-public-image-migration-with-zero-repo-access.md`
+
+```
+## Task: Verify the README alone enables a full public-image migration with zero repo access <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
