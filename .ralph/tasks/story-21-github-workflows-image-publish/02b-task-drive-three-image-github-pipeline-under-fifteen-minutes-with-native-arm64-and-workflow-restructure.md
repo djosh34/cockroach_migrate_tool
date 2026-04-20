@@ -1,4 +1,4 @@
-## Task: Drive the full three-image GitHub pipeline under fifteen minutes with native `arm64` execution and aggressive workflow restructuring <status>not_started</status> <passes>false</passes>
+## Task: Drive the full three-image GitHub pipeline under fifteen minutes with native `arm64` execution and aggressive workflow restructuring <status>completed</status> <passes>true</passes>
 
 <priority>ultra_high</priority>
 
@@ -38,19 +38,28 @@ Decisions already made:
 
 </description>
 
+<outcome>
+- Replaced the old emulated two-platform publish path with a two-axis `publish-image` matrix that keeps image identity on the image axis and platform-native runner topology on the platform axis.
+- Moved the `linux/arm64` publish lane onto the hosted `ubuntu-24.04-arm` runner and kept the `linux/amd64` lane on hosted `ubuntu-24.04`, with workflow contracts that fail loudly if either lane collapses back into a combined multi-arch invocation.
+- Removed the explicit QEMU/binfmt publish path, made buildx installation architecture-aware, and added a native-runner proof step that checks each lane's `runner.arch` against its target platform.
+- Changed publication to push platform-specific refs first and then assemble the canonical multi-arch `${{ github.sha }}` tags in `publish-manifest`, with the artifact/output boundary enforced by the workflow contract helper.
+- Updated the CI safety documentation to describe the new native per-platform publish path and the manifest fan-in boundary instead of the removed emulated-arm64 story.
+- Real hosted evidence for commit `05d0359df58589e6062616797a6ffcaf6503bf07` showed the full workflow succeeding from `2026-04-19T23:57:54Z` to `2026-04-20T00:07:40Z`, for an end-to-end wall-clock runtime of about `9m 46s`, which is below the fifteen-minute ceiling.
+</outcome>
+
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the intended fast-path workflow structure and fails loudly if later edits re-serialize or de-cache the pipeline in ways that would predictably blow the runtime budget
-- [ ] The hosted `arm64` image path no longer runs on an `amd64` machine; the workflow uses native `arm64` execution for the `arm64` build lane
-- [ ] The implementation delivers real workflow-level speedups beyond Dockerfile-only tuning, such as improved parallelism, matrix topology, artifact handoff, stage reordering, or broader cache reuse
-- [ ] Real hosted GitHub Actions evidence shows the full three-image pipeline, end to end for all required images, completes in fifteen minutes or less
-- [ ] The optimization work explicitly aims well below the fifteen-minute ceiling, targeting roughly five minutes if feasible and otherwise the fastest practical hosted runtime
-- [ ] This task is not marked `<passes>true</passes>` unless the full hosted pipeline runtime is fifteen minutes or less
-- [ ] The faster workflow still preserves the required validation, test, build, manifest, and publish correctness gates
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers the intended fast-path workflow structure and fails loudly if later edits re-serialize or de-cache the pipeline in ways that would predictably blow the runtime budget
+- [x] The hosted `arm64` image path no longer runs on an `amd64` machine; the workflow uses native `arm64` execution for the `arm64` build lane
+- [x] The implementation delivers real workflow-level speedups beyond Dockerfile-only tuning, such as improved parallelism, matrix topology, artifact handoff, stage reordering, or broader cache reuse
+- [x] Real hosted GitHub Actions evidence shows the full three-image pipeline, end to end for all required images, completes in fifteen minutes or less
+- [x] The optimization work explicitly aims well below the fifteen-minute ceiling, targeting roughly five minutes if feasible and otherwise the fastest practical hosted runtime
+- [x] This task is not marked `<passes>true</passes>` unless the full hosted pipeline runtime is fifteen minutes or less
+- [x] The faster workflow still preserves the required validation, test, build, manifest, and publish correctness gates
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] Ultra-long test selection was unchanged, so `make test-long` was not required for this task
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure_plans/2026-04-20-native-arm64-under-fifteen-plan.md</plan>

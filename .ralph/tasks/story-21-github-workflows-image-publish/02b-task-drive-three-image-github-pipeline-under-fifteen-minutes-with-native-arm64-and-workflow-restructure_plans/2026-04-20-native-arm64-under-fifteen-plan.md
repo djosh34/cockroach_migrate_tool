@@ -123,79 +123,79 @@
 
 ## Files And Structure To Add Or Change
 
-- [ ] `.github/workflows/publish-images.yml`
+- [x] `.github/workflows/publish-images.yml`
   - replace the emulated two-platform build shape with native per-platform publication
   - install buildx in an architecture-aware way
   - remove QEMU/binfmt publish setup
   - push platform-specific refs first
   - assemble final multi-arch commit-SHA tags in `publish-manifest`
-- [ ] `crates/runner/tests/ci_contract.rs`
+- [x] `crates/runner/tests/ci_contract.rs`
   - replace the old explicit-emulation assertion with native-arm64 and fast-topology assertions
-- [ ] `crates/runner/tests/support/github_workflow_contract.rs`
+- [x] `crates/runner/tests/support/github_workflow_contract.rs`
   - add the new platform-native workflow assertions
   - delete the old emulated-arm64 decision assertions
   - keep the helper as the one honest owner for workflow parsing
-- [ ] `crates/runner/tests/support/image_build_target_contract.rs`
+- [x] `crates/runner/tests/support/image_build_target_contract.rs`
   - extend only if needed for shared per-platform artifact naming or cache-scope derivation
   - otherwise keep image identity here and keep platform topology elsewhere
-- [ ] `README.md`
+- [x] `README.md`
   - update the CI description only if it still claims the old emulated arm64 path
-- [ ] No product runtime interfaces are expected to change
+- [x] No product runtime interfaces are expected to change
   - this task is workflow/test/doc contract work only
 
 ## TDD Execution Order
 
 ### Slice 1: Tracer Bullet For Native ARM64 Publish Topology
 
-- [ ] RED: add one failing contract that requires the publish workflow to run the `linux/arm64` lane on `ubuntu-24.04-arm` and to stop using one `linux/amd64,linux/arm64` build invocation
-- [ ] GREEN: make the smallest truthful workflow change that creates platform-native publish matrix entries and removes the old combined-platform publish command
-- [ ] REFACTOR: keep platform runner/arch parsing inside `GithubWorkflowContract`, not inline in the test file
+- [x] RED: add one failing contract that requires the publish workflow to run the `linux/arm64` lane on `ubuntu-24.04-arm` and to stop using one `linux/amd64,linux/arm64` build invocation
+- [x] GREEN: make the smallest truthful workflow change that creates platform-native publish matrix entries and removes the old combined-platform publish command
+- [x] REFACTOR: keep platform runner/arch parsing inside `GithubWorkflowContract`, not inline in the test file
 
 ### Slice 2: Remove The Explicit Emulated ARM64 Boundary
 
-- [ ] RED: add one failing contract that rejects:
+- [x] RED: add one failing contract that rejects:
   - `ARM64_BUILD_STRATEGY: emulated-buildx-qemu`
   - QEMU/binfmt installation in the publish lane
   - the old rejection text that claims no trusted native arm64 runner exists
-- [ ] GREEN: remove the old emulated strategy boundary and replace it with a native-runner verification step that proves runner architecture matches the platform lane
-- [ ] REFACTOR: keep the native-runner proof focused on observable workflow behavior, not exact shell wording
+- [x] GREEN: remove the old emulated strategy boundary and replace it with a native-runner verification step that proves runner architecture matches the platform lane
+- [x] REFACTOR: keep the native-runner proof focused on observable workflow behavior, not exact shell wording
 
 ### Slice 3: Arch-Aware Buildx Installation
 
-- [ ] RED: add one failing contract that requires publish dependency installation to derive the buildx download architecture from the runner instead of hard-coding `linux-amd64`
-- [ ] GREEN: implement the minimum architecture-aware buildx installation and bootstrap path that works on both x64 and arm64 hosted runners
-- [ ] REFACTOR: keep architecture mapping and install-step assertions owned by the workflow helper
+- [x] RED: add one failing contract that requires publish dependency installation to derive the buildx download architecture from the runner instead of hard-coding `linux-amd64`
+- [x] GREEN: implement the minimum architecture-aware buildx installation and bootstrap path that works on both x64 and arm64 hosted runners
+- [x] REFACTOR: keep architecture mapping and install-step assertions owned by the workflow helper
 
 ### Slice 4: Preserve Fast Parallelism While Splitting By Platform
 
-- [ ] RED: add one failing contract that requires the workflow to keep image publication parallelized after the native split:
+- [x] RED: add one failing contract that requires the workflow to keep image publication parallelized after the native split:
   - matrix still covers all three images
   - platform-native entries can run independently
   - manifest aggregation remains a fan-in stage after the build fan-out
-- [ ] GREEN: implement the minimum truthful topology that preserves parallel image publication while adding the native arm64 lane
-- [ ] REFACTOR: remove any transitional serialized job shape instead of carrying both old and new topologies
+- [x] GREEN: implement the minimum truthful topology that preserves parallel image publication while adding the native arm64 lane
+- [x] REFACTOR: remove any transitional serialized job shape instead of carrying both old and new topologies
 
 ### Slice 5: Publish Platform-Specific Refs And Rebuild The Final Multi-Arch Manifest
 
-- [ ] RED: add one failing contract that requires the manifest stage to consume platform-specific publish outputs and create the final commit-SHA image refs for runner, setup-sql, and verify
-- [ ] GREEN: add the minimum artifact/output boundary and manifest assembly logic needed to create the final multi-arch image refs from the native platform pushes
-- [ ] REFACTOR: keep the final published image ref shape owned by the existing canonical image-target boundary
+- [x] RED: add one failing contract that requires the manifest stage to consume platform-specific publish outputs and create the final commit-SHA image refs for runner, setup-sql, and verify
+- [x] GREEN: add the minimum artifact/output boundary and manifest assembly logic needed to create the final multi-arch image refs from the native platform pushes
+- [x] REFACTOR: keep the final published image ref shape owned by the existing canonical image-target boundary
 
 ### Slice 6: Hosted Runtime Evidence Is The Real GREEN
 
-- [ ] RED: after local contracts are green, use authenticated GitHub workflow inspection to measure a real hosted run of the three-image pipeline with the new topology
-- [ ] GREEN: iterate until the real hosted run shows:
+- [x] RED: after local contracts are green, use authenticated GitHub workflow inspection to measure a real hosted run of the three-image pipeline with the new topology
+- [x] GREEN: iterate until the real hosted run shows:
   - native arm64 execution for the arm64 lane
   - all three images published successfully
   - validation, build, and manifest gates still intact
   - full pipeline wall-clock runtime at or below fifteen minutes
-- [ ] REFACTOR: if hosted evidence shows the topology or runner choice is wrong, switch the plan back to `TO BE VERIFIED` instead of papering over it
+- [x] REFACTOR: if hosted evidence shows the topology or runner choice is wrong, switch the plan back to `TO BE VERIFIED` instead of papering over it
 
 ### Slice 7: Final Boundary Cleanup And Repo Lanes
 
-- [ ] RED: if any contract/doc boundary still allows the repo to drift back toward emulated arm64 or re-serialized publication, add the smallest failing coverage needed
-- [ ] GREEN: complete only the truthful doc/task updates after the required repo lanes and hosted evidence both pass
-- [ ] REFACTOR: run one final `improve-code-boundaries` pass so:
+- [x] RED: if any contract/doc boundary still allows the repo to drift back toward emulated arm64 or re-serialized publication, add the smallest failing coverage needed
+- [x] GREEN: complete only the truthful doc/task updates after the required repo lanes and hosted evidence both pass
+- [x] REFACTOR: run one final `improve-code-boundaries` pass so:
   - image identity has one honest owner
   - platform-native workflow topology has one honest owner
   - there is no leftover emulated-arm64 publish branch in code, docs, or tests
@@ -212,12 +212,18 @@
 
 ## Final Verification For The Execution Turn
 
-- [ ] `make check`
-- [ ] `make lint`
-- [ ] `make test`
-- [ ] `make test-long` only if execution changes the ultra-long lane or proves it is required
-- [ ] One final `improve-code-boundaries` pass after all required lanes are green
-- [ ] Update the task file acceptance checkboxes and set `<passes>true</passes>` only after the required lanes and hosted runtime evidence both pass
+- [x] `make check`
+- [x] `make lint`
+- [x] `make test`
+- [x] Ultra-long test selection was unchanged, so `make test-long` was not required
+- [x] One final `improve-code-boundaries` pass after all required lanes are green
+- [x] Update the task file acceptance checkboxes and set `<passes>true</passes>` only after the required lanes and hosted runtime evidence both pass
+
+## Execution Outcome
+
+- Hosted proof: GitHub Actions run `24642282707` for commit `05d0359df58589e6062616797a6ffcaf6503bf07` succeeded from `2026-04-19T23:57:54Z` to `2026-04-20T00:07:40Z`, for an end-to-end wall-clock runtime of about `9m 46s`.
+- Native runner proof: the publish matrix ran real `ubuntu-24.04-arm` jobs for the arm64 lanes and `ubuntu-24.04` jobs for the amd64 lanes.
+- Final boundary review: image identity still lives in `ImageBuildTargetContract`; platform-native publish topology now lives in `GithubWorkflowContract`; no emulated-arm64 publish branch remains in the workflow, docs, or workflow contract tests.
 
 Plan path: `.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure_plans/2026-04-20-native-arm64-under-fifteen-plan.md`
 
