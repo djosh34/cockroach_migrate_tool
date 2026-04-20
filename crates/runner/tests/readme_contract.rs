@@ -1,5 +1,7 @@
 #[path = "support/published_image_contract.rs"]
 mod published_image_contract_support;
+#[path = "support/published_runtime_artifact_contract.rs"]
+mod published_runtime_artifact_contract_support;
 #[path = "support/readme_contract.rs"]
 mod readme_contract_support;
 #[path = "support/readme_published_image_contract.rs"]
@@ -123,6 +125,81 @@ fn docker_quick_start_forbids_wrapper_script_handoff_in_the_public_container_pat
     let docker_quick_start = readme.docker_quick_start();
 
     ReadmePublishedImageContract::assert_readme_has_no_wrapper_handoff(docker_quick_start.text());
+}
+
+#[test]
+fn runner_compose_quick_start_is_copyable_without_a_repo_checkout() {
+    let readme = RepositoryReadme::load();
+    let runner_compose_quick_start = readme.runner_compose_quick_start();
+    let compose_text = fs::read_to_string(
+        published_runtime_artifact_contract_support::PublishedRuntimeArtifactContract::compose_artifact_path(
+            "runner",
+        ),
+    )
+    .expect("runner compose artifact should be readable");
+
+    assert_eq!(
+        runner_compose_quick_start.code_block("yaml"),
+        compose_text.trim_end(),
+        "README runner compose YAML should match the published compose artifact exactly",
+    );
+    ReadmePublishedImageContract::assert_runner_compose_quick_start_uses_published_image(
+        runner_compose_quick_start.text(),
+    );
+    ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
+        runner_compose_quick_start.text(),
+        "README runner compose quick start must keep the novice path on published images only",
+    );
+}
+
+#[test]
+fn setup_sql_compose_quick_start_is_copyable_without_a_repo_checkout() {
+    let readme = RepositoryReadme::load();
+    let setup_sql_compose_quick_start = readme.setup_sql_compose_quick_start();
+    let compose_text = fs::read_to_string(
+        published_runtime_artifact_contract_support::PublishedRuntimeArtifactContract::compose_artifact_path(
+            "setup-sql",
+        ),
+    )
+    .expect("setup-sql compose artifact should be readable");
+
+    assert_eq!(
+        setup_sql_compose_quick_start.code_block("yaml"),
+        compose_text.trim_end(),
+        "README setup-sql compose YAML should match the published compose artifact exactly",
+    );
+    ReadmePublishedImageContract::assert_setup_sql_compose_quick_start_uses_published_image(
+        setup_sql_compose_quick_start.text(),
+    );
+    ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
+        setup_sql_compose_quick_start.text(),
+        "README setup-sql compose quick start must keep the novice path on published images only",
+    );
+}
+
+#[test]
+fn verify_compose_quick_start_is_copyable_without_a_repo_checkout() {
+    let readme = RepositoryReadme::load();
+    let verify_compose_quick_start = readme.verify_compose_quick_start();
+    let compose_text = fs::read_to_string(
+        published_runtime_artifact_contract_support::PublishedRuntimeArtifactContract::compose_artifact_path(
+            "verify",
+        ),
+    )
+    .expect("verify compose artifact should be readable");
+
+    assert_eq!(
+        verify_compose_quick_start.code_block("yaml"),
+        compose_text.trim_end(),
+        "README verify compose YAML should match the published compose artifact exactly",
+    );
+    ReadmePublishedImageContract::assert_verify_compose_quick_start_uses_published_image(
+        verify_compose_quick_start.text(),
+    );
+    ReadmePublishedImageContract::assert_text_excludes_local_novice_steps(
+        verify_compose_quick_start.text(),
+        "README verify compose quick start must keep the novice path on published images only",
+    );
 }
 
 #[test]

@@ -1,0 +1,22 @@
+services:
+  setup-sql:
+    image: "${SETUP_SQL_IMAGE}"
+    configs:
+      - source: cockroach-setup-config
+        target: /config/cockroach-setup.yml
+      - source: postgres-grants-config
+        target: /config/postgres-grants.yml
+      - source: source-ca-cert
+        target: /config/ca.crt
+    command:
+      - emit-cockroach-sql
+      - --config
+      - /config/cockroach-setup.yml
+
+configs:
+  cockroach-setup-config:
+    file: ./config/cockroach-setup.yml
+  postgres-grants-config:
+    file: ./config/postgres-grants.yml
+  source-ca-cert:
+    file: ./config/ca.crt

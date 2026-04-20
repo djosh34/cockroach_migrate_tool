@@ -182,6 +182,156 @@ After startup, the runtime serves:
 
 The mounted `/config` directory is the only Docker-specific convention. The same `runner validate-config --config <path>` and `runner run --config <path>` interface remains the public contract on the host and in the container.
 
+## Setup SQL Docker Compose
+
+Copy this file next to a `config/` directory containing `cockroach-setup.yml`, `postgres-grants.yml`, and `ca.crt`. This compose contract still starts from published images only; no repository checkout or local image build is required.
+
+```bash
+export GITHUB_OWNER=<github-owner>
+export IMAGE_TAG=<published-commit-sha>
+export SETUP_SQL_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-setup-sql:${IMAGE_TAG}"
+```
+
+Save this as `setup-sql.compose.yml`:
+
+```yaml
+services:
+  setup-sql:
+    image: "${SETUP_SQL_IMAGE}"
+    configs:
+      - source: cockroach-setup-config
+        target: /config/cockroach-setup.yml
+      - source: postgres-grants-config
+        target: /config/postgres-grants.yml
+      - source: source-ca-cert
+        target: /config/ca.crt
+    command:
+      - emit-cockroach-sql
+      - --config
+      - /config/cockroach-setup.yml
+
+configs:
+  cockroach-setup-config:
+    file: ./config/cockroach-setup.yml
+  postgres-grants-config:
+    file: ./config/postgres-grants.yml
+  source-ca-cert:
+    file: ./config/ca.crt
+```
+
+Render the SQL artifacts directly through Docker Compose:
+
+```bash
+docker compose -f setup-sql.compose.yml run --rm setup-sql > cockroach-bootstrap.sql
+docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --config /config/postgres-grants.yml > postgres-grants.sql
+```
+
+## Runner Docker Compose
+
+Copy this file next to a `config/` directory containing `runner.yml`, `certs/server.crt`, and `certs/server.key`. This compose contract still starts from published images only; no repository checkout or local image build is required.
+
+```bash
+export GITHUB_OWNER=<github-owner>
+export IMAGE_TAG=<published-commit-sha>
+export RUNNER_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-runner:${IMAGE_TAG}"
+```
+
+Save this as `runner.compose.yml`:
+
+```yaml
+services:
+  runner:
+    image: "${RUNNER_IMAGE}"
+    ports:
+      - "${RUNNER_HTTPS_PORT:-8443}:8443"
+    configs:
+      - source: runner-config
+        target: /config/runner.yml
+      - source: runner-server-cert
+        target: /config/certs/server.crt
+      - source: runner-server-key
+        target: /config/certs/server.key
+    command:
+      - run
+      - --config
+      - /config/runner.yml
+
+configs:
+  runner-config:
+    file: ./config/runner.yml
+  runner-server-cert:
+    file: ./config/certs/server.crt
+  runner-server-key:
+    file: ./config/certs/server.key
+```
+
+Validate the mounted config and then start the runtime:
+
+```bash
+docker compose -f runner.compose.yml run --rm runner validate-config --config /config/runner.yml
+docker compose -f runner.compose.yml up runner
+```
+
+## Verify Docker Compose
+
+Copy this file next to a `config/` directory containing `verify-service.yml` and the certificate paths it references under `config/certs/`. This compose contract starts the published verify-service API directly; no repository checkout or local image build is required.
+
+```bash
+export GITHUB_OWNER=<github-owner>
+export IMAGE_TAG=<published-commit-sha>
+export VERIFY_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-verify:${IMAGE_TAG}"
+```
+
+Save this as `verify.compose.yml`:
+
+```yaml
+services:
+  verify:
+    image: "${VERIFY_IMAGE}"
+    ports:
+      - "${VERIFY_HTTPS_PORT:-9443}:8080"
+    configs:
+      - source: verify-service-config
+        target: /config/verify-service.yml
+      - source: verify-source-ca
+        target: /config/certs/source-ca.crt
+      - source: verify-source-client-cert
+        target: /config/certs/source-client.crt
+      - source: verify-source-client-key
+        target: /config/certs/source-client.key
+      - source: verify-destination-ca
+        target: /config/certs/destination-ca.crt
+      - source: verify-server-cert
+        target: /config/certs/server.crt
+      - source: verify-server-key
+        target: /config/certs/server.key
+    command:
+      - --config
+      - /config/verify-service.yml
+
+configs:
+  verify-service-config:
+    file: ./config/verify-service.yml
+  verify-source-ca:
+    file: ./config/certs/source-ca.crt
+  verify-source-client-cert:
+    file: ./config/certs/source-client.crt
+  verify-source-client-key:
+    file: ./config/certs/source-client.key
+  verify-destination-ca:
+    file: ./config/certs/destination-ca.crt
+  verify-server-cert:
+    file: ./config/certs/server.crt
+  verify-server-key:
+    file: ./config/certs/server.key
+```
+
+Start the dedicated verify-service API:
+
+```bash
+docker compose -f verify.compose.yml up verify
+```
+
 ## CI Publish Safety
 
 Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.

@@ -1,0 +1,39 @@
+services:
+  verify:
+    image: "${VERIFY_IMAGE}"
+    ports:
+      - "${VERIFY_HTTPS_PORT:-9443}:8080"
+    configs:
+      - source: verify-service-config
+        target: /config/verify-service.yml
+      - source: verify-source-ca
+        target: /config/certs/source-ca.crt
+      - source: verify-source-client-cert
+        target: /config/certs/source-client.crt
+      - source: verify-source-client-key
+        target: /config/certs/source-client.key
+      - source: verify-destination-ca
+        target: /config/certs/destination-ca.crt
+      - source: verify-server-cert
+        target: /config/certs/server.crt
+      - source: verify-server-key
+        target: /config/certs/server.key
+    command:
+      - --config
+      - /config/verify-service.yml
+
+configs:
+  verify-service-config:
+    file: ./config/verify-service.yml
+  verify-source-ca:
+    file: ./config/certs/source-ca.crt
+  verify-source-client-cert:
+    file: ./config/certs/source-client.crt
+  verify-source-client-key:
+    file: ./config/certs/source-client.key
+  verify-destination-ca:
+    file: ./config/certs/destination-ca.crt
+  verify-server-cert:
+    file: ./config/certs/server.crt
+  verify-server-key:
+    file: ./config/certs/server.key

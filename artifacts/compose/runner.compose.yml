@@ -1,0 +1,24 @@
+services:
+  runner:
+    image: "${RUNNER_IMAGE}"
+    ports:
+      - "${RUNNER_HTTPS_PORT:-8443}:8443"
+    configs:
+      - source: runner-config
+        target: /config/runner.yml
+      - source: runner-server-cert
+        target: /config/certs/server.crt
+      - source: runner-server-key
+        target: /config/certs/server.key
+    command:
+      - run
+      - --config
+      - /config/runner.yml
+
+configs:
+  runner-config:
+    file: ./config/runner.yml
+  runner-server-cert:
+    file: ./config/certs/server.crt
+  runner-server-key:
+    file: ./config/certs/server.key

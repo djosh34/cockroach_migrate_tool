@@ -26,9 +26,27 @@ impl RepositoryReadme {
         }
     }
 
+    pub fn runner_compose_quick_start(&self) -> ReadmeSection<'_> {
+        ReadmeSection {
+            text: self.section("## Runner Docker Compose"),
+        }
+    }
+
+    pub fn setup_sql_compose_quick_start(&self) -> ReadmeSection<'_> {
+        ReadmeSection {
+            text: self.section("## Setup SQL Docker Compose"),
+        }
+    }
+
     pub fn setup_sql_quick_start(&self) -> ReadmeSection<'_> {
         ReadmeSection {
             text: self.section("## Setup SQL Quick Start"),
+        }
+    }
+
+    pub fn verify_compose_quick_start(&self) -> ReadmeSection<'_> {
+        ReadmeSection {
+            text: self.section("## Verify Docker Compose"),
         }
     }
 

@@ -283,6 +283,9 @@ jobs:
       setup_sql_image_ref: ${{ steps.publish-manifest.outputs.setup_sql_image_ref }}
       verify_image_ref: ${{ steps.publish-manifest.outputs.verify_image_ref }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
       - name: Install publish dependencies
         run: |
           set -euo pipefail
@@ -401,4 +404,10 @@ jobs:
         with:
           name: published-image-manifest
           path: ${{ env.PUBLISHED_IMAGE_MANIFEST }}
+          if-no-files-found: error
+      - name: Upload published compose artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-compose-artifacts
+          path: artifacts/compose
           if-no-files-found: error

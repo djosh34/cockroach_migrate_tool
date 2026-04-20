@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 03:11:30 AM CEST 2026
+Generated: Mon Apr 20 03:29:11 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -756,6 +756,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Require `make test-long` to pass before any image publish or release path can proceed <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/04-task-publish-separate-docker-compose-artifacts-for-runner-verify-and-sql-images.md`
+
+```
+## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

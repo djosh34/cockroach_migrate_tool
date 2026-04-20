@@ -1,4 +1,4 @@
-## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>not_started</status> <passes>false</passes>
+## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -29,11 +29,11 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers separate Compose artifacts for runner, verify, and SQL-emitter usage from published images
-- [ ] Each Compose artifact is dedicated to one runtime and uses modern Compose config features where they fit the runtime contract
-- [ ] The supported operator path can consume these Compose artifacts without cloning the repository or building images locally, including via README examples
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers separate Compose artifacts for runner, verify, and SQL-emitter usage from published images
+- [x] Each Compose artifact is dedicated to one runtime and uses modern Compose config features where they fit the runtime contract
+- [x] The supported operator path can consume these Compose artifacts without cloning the repository or building images locally, including via README examples
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>

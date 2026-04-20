@@ -797,6 +797,47 @@ impl GithubWorkflowContract {
         );
     }
 
+    pub fn assert_uploads_the_source_controlled_compose_artifacts(&self) {
+        let publish_manifest_job = self.job("publish-manifest");
+        let checkout_inputs = self.step_inputs(
+            self.step_using_prefix(publish_manifest_job, "actions/checkout"),
+            "actions/checkout",
+        );
+        assert_eq!(
+            checkout_inputs
+                .get(Value::String("persist-credentials".to_owned()))
+                .map(value_as_bool),
+            Some(false),
+            "publish-manifest checkout must disable credential persistence when uploading source-controlled compose artifacts",
+        );
+
+        let upload_inputs = self.step_inputs(
+            self.step_named(publish_manifest_job, "Upload published compose artifacts"),
+            "Upload published compose artifacts",
+        );
+        assert_eq!(
+            upload_inputs
+                .get(Value::String("name".to_owned()))
+                .map(value_as_str),
+            Some("published-compose-artifacts"),
+            "publish workflow must upload the checked-in compose files through one stable artifact boundary",
+        );
+        assert_eq!(
+            upload_inputs
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("artifacts/compose"),
+            "publish workflow must upload the source-controlled compose artifact directory directly",
+        );
+        assert_eq!(
+            upload_inputs
+                .get(Value::String("if-no-files-found".to_owned()))
+                .map(value_as_str),
+            Some("error"),
+            "compose artifact upload must fail loudly if the checked-in compose files disappear",
+        );
+    }
+
     pub fn assert_publish_jobs_use_remote_buildkit_caches(&self) {
         let publish_script = self.step_run_script(
             self.step_named(self.job("publish-image"), "Publish image"),

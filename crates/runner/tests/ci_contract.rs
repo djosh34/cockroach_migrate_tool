@@ -1,7 +1,11 @@
+#[path = "support/compose_artifact_contract.rs"]
+mod compose_artifact_contract_support;
 #[path = "support/github_workflow_contract.rs"]
 mod github_workflow_contract_support;
 #[path = "support/image_build_target_contract.rs"]
 mod image_build_target_contract_support;
+#[path = "support/published_runtime_artifact_contract.rs"]
+mod published_runtime_artifact_contract_support;
 #[path = "support/published_image_contract.rs"]
 mod published_image_contract_support;
 #[path = "support/repo_license_contract.rs"]
@@ -13,6 +17,7 @@ mod runner_public_contract_support;
 #[path = "support/verify_source_contract.rs"]
 mod verify_source_contract_support;
 
+use compose_artifact_contract_support::ComposeArtifactContract;
 use github_workflow_contract_support::GithubWorkflowContract;
 use repo_license_contract_support::RepoLicenseContract;
 use runner_docker_contract_support::RunnerDockerContract;
@@ -122,6 +127,33 @@ fn publish_images_workflow_parallelizes_the_three_image_targets_through_shared_b
     let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_parallel_publish_topology_uses_shared_build_targets();
+}
+
+#[test]
+fn published_runtime_contract_defines_three_dedicated_compose_artifacts() {
+    ComposeArtifactContract::assert_defines_three_dedicated_compose_artifacts();
+}
+
+#[test]
+fn runner_compose_artifact_uses_the_published_runtime_contract() {
+    ComposeArtifactContract::load("runner").assert_runner_runtime_contract();
+}
+
+#[test]
+fn setup_sql_compose_artifact_uses_the_published_runtime_contract() {
+    ComposeArtifactContract::load("setup-sql").assert_setup_sql_runtime_contract();
+}
+
+#[test]
+fn verify_compose_artifact_uses_the_published_runtime_contract() {
+    ComposeArtifactContract::load("verify").assert_verify_runtime_contract();
+}
+
+#[test]
+fn publish_images_workflow_uploads_the_source_controlled_compose_artifacts() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_uploads_the_source_controlled_compose_artifacts();
 }
 
 #[test]

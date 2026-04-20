@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 03:11:30 AM CEST 2026
+Generated: Mon Apr 20 03:29:11 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/04-task-return-structured-verify-results-via-http-json.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add config-gated raw source and destination table JSON output to verify HTTP <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/04-task-publish-separate-docker-compose-artifacts-for-runner-verify-and-sql-images.md`
-
-```
-## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
