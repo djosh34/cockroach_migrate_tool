@@ -19,6 +19,8 @@ mod verify_source_contract_support;
 
 use compose_artifact_contract_support::ComposeArtifactContract;
 use github_workflow_contract_support::GithubWorkflowContract;
+use published_image_contract_support::PublishedImageContract;
+use published_runtime_artifact_contract_support::PublishedRuntimeArtifactContract;
 use repo_license_contract_support::RepoLicenseContract;
 use runner_docker_contract_support::RunnerDockerContract;
 use runner_public_contract_support::RunnerPublicContract;
@@ -127,6 +129,49 @@ fn publish_images_workflow_parallelizes_the_three_image_targets_through_shared_b
     let workflow = GithubWorkflowContract::load_publish_images();
 
     workflow.assert_parallel_publish_topology_uses_shared_build_targets();
+}
+
+#[test]
+fn publish_images_workflow_publishes_to_quay_before_any_ghcr_fan_out() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_publishes_to_quay_before_any_ghcr_fan_out();
+}
+
+#[test]
+fn publish_images_workflow_scopes_quay_credentials_to_publish_and_scan_only() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_scopes_quay_credentials_to_publish_and_scan_only();
+}
+
+#[test]
+fn publish_images_workflow_requires_a_quay_security_gate_before_publication_finishes() {
+    let workflow = GithubWorkflowContract::load_publish_images();
+
+    workflow.assert_requires_a_quay_security_gate_before_publication_finishes();
+}
+
+#[test]
+fn published_runtime_artifact_identity_stays_registry_agnostic() {
+    for artifact in PublishedRuntimeArtifactContract::all() {
+        assert!(
+            !artifact.repository().contains('/'),
+            "runtime artifact repository `{}` must stay namespace-free so workflow topology can own registry coordinates",
+            artifact.repository(),
+        );
+        assert!(
+            !artifact.repository().contains('.'),
+            "runtime artifact repository `{}` must stay host-free so registry choice does not leak into artifact identity",
+            artifact.repository(),
+        );
+    }
+
+    assert_eq!(
+        PublishedImageContract::operator_pull_registry_host(),
+        "ghcr.io",
+        "operator-facing pull coordinates should stay on GHCR until the public pull contract changes",
+    );
 }
 
 #[test]

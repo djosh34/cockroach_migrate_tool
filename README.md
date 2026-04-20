@@ -336,10 +336,10 @@ docker compose -f verify.compose.yml up verify
 
 Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.
 
-The `publish-image` and `publish-manifest` jobs still carry an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.
+The `publish-image`, `quay-security-gate`, and `publish-manifest` jobs still carry explicit `if:` gates that require a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the protected release path.
 
-Only the `publish-image` and `publish-manifest` jobs get `packages: write`, checkout disables credential persistence where source is fetched, derived registry credentials are masked before any diagnostic output, and the canonical published images are tagged only with `${{ github.sha }}` from the validated commit.
+Only the `publish-manifest` job gets `packages: write`, checkout disables credential persistence where source is fetched, Quay login uses `--password-stdin`, the Quay scan step uses a temporary netrc file instead of command-line passwords, and every canonical published image still resolves to `${{ github.sha }}` from the validated commit.
 
 Image publication is blocked on explicit `validate-fast` and `validate-long` jobs, so both the default repository validation boundary and the ultra-long lane must pass before any publish step can start.
 
-Both validation jobs restore and save Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.
+Both validation jobs restore and save Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` Quay lanes, the `quay-security-gate` job polls Quay manifest security until every published platform ref is scanned with zero findings, and only then does the manifest job assemble canonical Quay `${{ github.sha }}` tags and fan them out into GHCR while emitting a published-image manifest for downstream consumers.

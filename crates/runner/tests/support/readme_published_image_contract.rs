@@ -13,7 +13,7 @@ impl ReadmePublishedImageContract {
             "export IMAGE_TAG=<published-commit-sha>".to_owned(),
             format!(
                 "export SETUP_SQL_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
-                PublishedImageContract::registry_host(),
+                PublishedImageContract::operator_pull_registry_host(),
                 setup_sql_image.repository(),
             ),
             "docker pull \"${SETUP_SQL_IMAGE}\"".to_owned(),
@@ -41,7 +41,7 @@ impl ReadmePublishedImageContract {
             "export IMAGE_TAG=<published-commit-sha>".to_owned(),
             format!(
                 "export RUNNER_IMAGE=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
-                PublishedImageContract::registry_host(),
+                PublishedImageContract::operator_pull_registry_host(),
                 runner_image.repository(),
             ),
             "docker pull \"${RUNNER_IMAGE}\"".to_owned(),
@@ -68,7 +68,7 @@ impl ReadmePublishedImageContract {
             format!(
                 "export {}=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 runner_image.readme_image_env(),
-                PublishedImageContract::registry_host(),
+                PublishedImageContract::operator_pull_registry_host(),
                 runner_image.repository(),
             ),
             "runner.compose.yml".to_owned(),
@@ -102,7 +102,7 @@ impl ReadmePublishedImageContract {
             format!(
                 "export {}=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 setup_sql_image.readme_image_env(),
-                PublishedImageContract::registry_host(),
+                PublishedImageContract::operator_pull_registry_host(),
                 setup_sql_image.repository(),
             ),
             "setup-sql.compose.yml".to_owned(),
@@ -134,7 +134,7 @@ impl ReadmePublishedImageContract {
             format!(
                 "export {}=\"{}/${{GITHUB_OWNER}}/{}:${{IMAGE_TAG}}\"",
                 verify_image.readme_image_env(),
-                PublishedImageContract::registry_host(),
+                PublishedImageContract::operator_pull_registry_host(),
                 verify_image.repository(),
             ),
             "verify.compose.yml".to_owned(),

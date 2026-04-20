@@ -54,3 +54,21 @@ Decisions already made:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-main-only-access_plans/2026-04-20-explicit-quay-namespace-boundary-plan.md</plan>
+
+## PO Override 2026-04-20
+
+- Stop repeated local verification of the plan, Quay namespace boundary, or any supposed Quay secret source on this computer.
+- Do not try to discover or inspect Quay secrets or secret values locally. Those GitHub-managed secrets are not meant to be visible here.
+- Only check the outcome of the hosted GitHub workflow online.
+- Instead of re-verifying the plan, start reading the hosted GitHub workflow logs/results online and use that observation as the source of truth.
+- This task should observe whether the workflow actually works in GitHub rather than trying to prove it from local files or local environment inspection.
+- If the hosted GitHub workflow is observed working online, set `<passes>true</passes>`.
+
+## PO Extra Message 2026-04-20
+
+- The only Quay robot secret names to use for this task are `QUAY_ROBOT_USERNAME` and `QUAY_ROBOT_PASSWORD`.
+- Do not invent, search for, or depend on any other Quay secret names.
+- Treat the repo/namespace pair supplied by the PO as `determined_keldysh / cockroach_migrate_tool`.
+- Do not spend time guessing "namespace or whatever" from local state; use hosted workflow observation as the truth source and work from the PO-provided boundary above unless the hosted GitHub workflow itself proves otherwise.
