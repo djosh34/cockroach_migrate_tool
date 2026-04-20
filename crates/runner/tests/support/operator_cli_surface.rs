@@ -26,7 +26,11 @@ const SETUP_SQL_COMMAND_HELP_CONTRACTS: &[OperatorCommandHelp] = &[
             "--log-format <LOG_FORMAT>",
             "--format <FORMAT>",
         ],
-        forbidden_markers: &["SUBCOMMAND", "render-bootstrap-sql", "render-postgres-setup"],
+        forbidden_markers: &[
+            "SUBCOMMAND",
+            "render-bootstrap-sql",
+            "render-postgres-setup",
+        ],
     },
     OperatorCommandHelp {
         action: "emit-postgres-grants",
@@ -37,7 +41,11 @@ const SETUP_SQL_COMMAND_HELP_CONTRACTS: &[OperatorCommandHelp] = &[
             "--log-format <LOG_FORMAT>",
             "--format <FORMAT>",
         ],
-        forbidden_markers: &["SUBCOMMAND", "render-bootstrap-sql", "render-postgres-setup"],
+        forbidden_markers: &[
+            "SUBCOMMAND",
+            "render-bootstrap-sql",
+            "render-postgres-setup",
+        ],
     },
 ];
 

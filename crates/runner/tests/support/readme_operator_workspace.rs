@@ -25,14 +25,20 @@ impl ReadmeOperatorWorkspace {
             "config/runner.yml",
             "config/verify-service.yml",
         ] {
-            operator_files.insert(relative_path, extract_inline_config(&readme_text, relative_path));
+            operator_files.insert(
+                relative_path,
+                extract_inline_config(&readme_text, relative_path),
+            );
         }
         for relative_path in [
             "setup-sql.compose.yml",
             "runner.compose.yml",
             "verify.compose.yml",
         ] {
-            operator_files.insert(relative_path, extract_named_yaml_block(&readme_text, relative_path));
+            operator_files.insert(
+                relative_path,
+                extract_named_yaml_block(&readme_text, relative_path),
+            );
         }
 
         Self { operator_files }
@@ -59,9 +65,9 @@ impl ReadmeOperatorWorkspace {
     }
 
     pub fn operator_file(&self, relative_path: &str) -> &str {
-        self.operator_files.get(relative_path).unwrap_or_else(|| {
-            panic!("README operator workspace should define `{relative_path}`")
-        })
+        self.operator_files
+            .get(relative_path)
+            .unwrap_or_else(|| panic!("README operator workspace should define `{relative_path}`"))
     }
 }
 
@@ -79,18 +85,20 @@ fn extract_inline_config(readme_text: &str, relative_path: &str) -> String {
 
 fn extract_named_yaml_block(readme_text: &str, relative_path: &str) -> String {
     let marker = format!("Save this as `{relative_path}`:");
-    let start = readme_text.find(&marker).unwrap_or_else(|| {
-        panic!("README should declare `{relative_path}` inline")
-    });
+    let start = readme_text
+        .find(&marker)
+        .unwrap_or_else(|| panic!("README should declare `{relative_path}` inline"));
     let remainder = &readme_text[start + marker.len()..];
     extract_fenced_block_after_prefix(remainder, "```yaml\n")
 }
 
 fn extract_fenced_block_after_prefix(haystack: &str, prefix: &str) -> String {
-    let start = haystack.find(prefix).unwrap_or_else(|| {
-        panic!("README should contain fenced block prefix `{prefix}`")
-    });
+    let start = haystack
+        .find(prefix)
+        .unwrap_or_else(|| panic!("README should contain fenced block prefix `{prefix}`"));
     let remainder = &haystack[start + "```yaml\n".len()..];
-    let end = remainder.find("\n```").expect("README fenced block should close");
+    let end = remainder
+        .find("\n```")
+        .expect("README fenced block should close");
     remainder[..end].to_owned()
 }

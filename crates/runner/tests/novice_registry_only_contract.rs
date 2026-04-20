@@ -9,10 +9,10 @@ use serde_yaml::Value;
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
-#[path = "support/readme_operator_workspace.rs"]
-mod readme_operator_workspace_support;
 #[path = "support/published_image_refs.rs"]
 mod published_image_refs_support;
+#[path = "support/readme_operator_workspace.rs"]
+mod readme_operator_workspace_support;
 
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
 
@@ -227,7 +227,10 @@ fn runner_readme_runtime_distinguishes_authentication_and_connectivity_failures(
         auth_failure.stderr,
     );
     assert!(
-        !auth_failure.stderr.to_lowercase().contains("connection refused"),
+        !auth_failure
+            .stderr
+            .to_lowercase()
+            .contains("connection refused"),
         "authentication failures must not be mislabeled as connectivity failures; got stderr:\n{}",
         auth_failure.stderr,
     );
@@ -268,8 +271,7 @@ fn verify_compose_runtime_shutdown_reports_cleanup_failures() {
         )
     });
 
-    let shutdown_result =
-        panic::catch_unwind(AssertUnwindSafe(|| verify_runtime.shutdown()));
+    let shutdown_result = panic::catch_unwind(AssertUnwindSafe(|| verify_runtime.shutdown()));
 
     fs::rename(&hidden_path, &compose_path).unwrap_or_else(|error| {
         panic!(
@@ -278,8 +280,8 @@ fn verify_compose_runtime_shutdown_reports_cleanup_failures() {
         )
     });
 
-    let panic_payload =
-        shutdown_result.expect_err("verify compose shutdown must fail loudly when cleanup cannot start");
+    let panic_payload = shutdown_result
+        .expect_err("verify compose shutdown must fail loudly when cleanup cannot start");
     let panic_message = panic_message(panic_payload);
     assert!(
         panic_message.contains("docker compose down verify"),

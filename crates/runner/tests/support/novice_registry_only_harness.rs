@@ -8,10 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::{
-    Certificate, Identity,
-    blocking::Client,
-};
+use reqwest::{Certificate, Identity, blocking::Client};
 use tempfile::TempDir;
 
 use crate::published_image_refs_support::{
@@ -117,7 +114,11 @@ impl NoviceRegistryOnlyHarness {
         let runner_container_name = format!("cockroach-migrate-novice-runner-{}", unique_suffix());
         let host_port = pick_unused_port();
         let config_mount = format!("{}:/config:ro", self.root_dir().join("config").display());
-        self.write_runner_config("host.docker.internal", postgres.host_port(), "runner-secret-a");
+        self.write_runner_config(
+            "host.docker.internal",
+            postgres.host_port(),
+            "runner-secret-a",
+        );
         let postgres_container_name = postgres.container_name.clone();
         std::mem::forget(postgres);
 
@@ -205,7 +206,9 @@ impl NoviceRegistryOnlyHarness {
                 "/config/runner.yml",
             ])
             .output()
-            .unwrap_or_else(|error| panic!("docker run runner failure probe should start: {error}"));
+            .unwrap_or_else(|error| {
+                panic!("docker run runner failure probe should start: {error}")
+            });
         assert!(
             !output.status.success(),
             "docker run runner failure probe must fail for the negative config case\nstdout:\n{}\nstderr:\n{}",
@@ -384,11 +387,8 @@ impl NoviceRegistryOnlyHarness {
             .replace("pg-a.example.internal", destination_host)
             .replacen("port: 5432", &format!("port: {destination_port}"), 1)
             .replace("runner-secret-a", destination_password);
-        fs::write(
-            self.root_dir().join("config/runner.yml"),
-            config_text,
-        )
-        .expect("novice runner config should be written");
+        fs::write(self.root_dir().join("config/runner.yml"), config_text)
+            .expect("novice runner config should be written");
     }
 }
 
@@ -497,18 +497,18 @@ impl RunningVerifyCompose {
     pub fn shutdown(&self) {
         run_command_output(
             Command::new("docker")
-            .current_dir(&self.root_dir)
-            .env("VERIFY_IMAGE", &self.verify_image)
-            .env("VERIFY_HTTPS_PORT", self.verify_https_port.to_string())
-            .args([
-                "compose",
-                "-p",
-                &self.project_name,
-                "-f",
-                "verify.compose.yml",
-                "down",
-                "--remove-orphans",
-            ]),
+                .current_dir(&self.root_dir)
+                .env("VERIFY_IMAGE", &self.verify_image)
+                .env("VERIFY_HTTPS_PORT", self.verify_https_port.to_string())
+                .args([
+                    "compose",
+                    "-p",
+                    &self.project_name,
+                    "-f",
+                    "verify.compose.yml",
+                    "down",
+                    "--remove-orphans",
+                ]),
             "docker compose down verify",
         );
     }
@@ -576,9 +576,8 @@ impl RunningVerifyCompose {
 
     fn client(&self) -> Client {
         let certs_dir = self.root_dir.join("config/certs");
-        let trusted_server_ca = fs::read(certs_dir.join("source-ca.crt")).unwrap_or_else(|error| {
-            panic!("verify compose server CA should be readable: {error}")
-        });
+        let trusted_server_ca = fs::read(certs_dir.join("source-ca.crt"))
+            .unwrap_or_else(|error| panic!("verify compose server CA should be readable: {error}"));
         Client::builder()
             .add_root_certificate(
                 Certificate::from_pem(&trusted_server_ca)

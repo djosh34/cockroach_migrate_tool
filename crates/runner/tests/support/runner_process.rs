@@ -52,30 +52,6 @@ impl RunnerProcess {
             .expect("runner process should be waitable after kill");
     }
 
-    pub(crate) fn wait_for_failed_exit(&mut self) -> String {
-        for _ in 0..120 {
-            if let Some(status) = self
-                .child
-                .try_wait()
-                .expect("runner process status should be readable")
-            {
-                let (stdout, stderr) = self.read_logs();
-                assert!(
-                    !status.success(),
-                    "runner exited successfully but failure was expected\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-                return stderr;
-            }
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-
-        let (stdout, stderr) = self.read_logs();
-        panic!("runner did not exit with failure in time\nstdout:\n{stdout}\nstderr:\n{stderr}");
-    }
-
-    fn read_logs(&self) -> (String, String) {
-        (read_file(&self.stdout_path), read_file(&self.stderr_path))
-    }
 }
 
 impl Drop for RunnerProcess {

@@ -12,4 +12,4 @@ test:
 	cd cockroachdb_molt/molt && GOTOOLCHAIN=$(GOTOOLCHAIN) go test ./cmd/verifyservice -count=1
 
 test-long:
-	cargo test --workspace -- --ignored
+	cargo test --workspace -- --ignored --test-threads=1

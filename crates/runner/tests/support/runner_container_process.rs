@@ -1,4 +1,4 @@
-use std::{path::Path, sync::OnceLock, time::Duration};
+use std::{path::Path, sync::OnceLock};
 
 use super::{
     container_running, docker_inspect_format, docker_logs, investigation_server_cert_path,
@@ -54,27 +54,6 @@ impl RunnerContainerProcess {
         run_command_capture(
             std::process::Command::new("docker").args(["rm", "-f", &self.container_name]),
             "docker rm runner container",
-        );
-    }
-
-    pub(crate) fn wait_for_failed_exit(&self) -> String {
-        for _ in 0..120 {
-            if !container_running(&self.container_name) {
-                let exit_code = docker_inspect_format(&self.container_name, "{{.State.ExitCode}}");
-                assert_ne!(
-                    exit_code.trim(),
-                    "0",
-                    "runner container exited successfully but failure was expected\n{}",
-                    self.logs(),
-                );
-                return self.logs();
-            }
-            std::thread::sleep(Duration::from_secs(1));
-        }
-
-        panic!(
-            "runner container did not exit with failure in time\n{}",
-            self.logs()
         );
     }
 

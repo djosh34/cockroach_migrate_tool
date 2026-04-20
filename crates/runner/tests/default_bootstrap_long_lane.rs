@@ -262,66 +262,9 @@ fn ignored_long_lane_recovers_after_reconcile_transaction_failure() {
     let verify_image = VerifyImageHarness::start();
 
     harness.bootstrap_default_migration();
-    harness
-        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
-        .assert_selected_tables_match();
-    let baseline = harness.customer_tracking_progress();
-    let destination_failure =
-        harness.fail_destination_customer_email_write(1, "alice+reconcile-failure@example.com");
-    harness.update_source_customer_email(1, "alice+reconcile-failure@example.com");
-    let stderr = harness.wait_for_runner_failed_exit();
-    assert!(
-        stderr.contains("failed to apply reconcile upsert"),
-        "runner stderr did not include reconcile failure context:\n{stderr}"
-    );
-    harness.assert_helper_shadow_customers_snapshot(
-        "1:alice+reconcile-failure@example.com,2:bob@example.com",
-    );
-    harness
-        .verify_selected_tables_via_image(&verify_image)
-        .assert_detects_selected_table_mismatch();
-    let failed = harness.customer_tracking_progress();
-    assert_eq!(
-        failed.stream.latest_reconciled_resolved_watermark,
-        baseline.stream.latest_reconciled_resolved_watermark,
-        "reconciled watermark should stay at the last good checkpoint during failure",
-    );
-    assert_eq!(
-        failed.table.last_successful_sync_watermark, baseline.table.last_successful_sync_watermark,
-        "table sync watermark should stay at the last good checkpoint during failure",
-    );
-    let last_error = failed
-        .table
-        .last_error
-        .as_deref()
-        .expect("failed reconcile should persist last_error");
-    assert!(
-        last_error.contains("reconcile upsert failed for public.customers"),
-        "table sync error should persist the reconcile failure context: {last_error}",
-    );
-    drop(destination_failure);
-    harness.restart_runner();
-    harness
-        .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
-        .assert_selected_tables_match();
-    let expected_reconciled_watermark = failed
-        .stream
-        .latest_received_resolved_watermark
-        .clone()
-        .expect("failed reconcile should persist a received watermark");
-    let recovered = harness.wait_for_customer_tracking_progress(
-        "restarted runner should reconcile the failed watermark and clear the stored error",
-        |progress| {
-            progress.has_reconciled_through(expected_reconciled_watermark.as_str())
-                && progress.table.last_error.is_none()
-        },
-    );
-    assert!(
-        recovered
-            .stream
-            .has_received_through(expected_reconciled_watermark.as_str()),
-        "received watermark should remain monotonic after recovery",
-    );
+    let audit = harness.audit_reconcile_transaction_failure_recovery(&verify_image);
+
+    audit.assert_harmless_recovery("1:alice+reconcile-failure@example.com,2:bob@example.com");
 }
 
 #[test]

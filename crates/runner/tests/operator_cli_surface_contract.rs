@@ -6,7 +6,10 @@ use operator_cli_surface_support::OperatorCliSurface;
 #[test]
 fn operator_cli_surface_lists_every_readme_facing_surface_in_one_place() {
     let surfaces = OperatorCliSurface::documented();
-    let surface_ids = surfaces.iter().map(OperatorCliSurface::id).collect::<Vec<_>>();
+    let surface_ids = surfaces
+        .iter()
+        .map(OperatorCliSurface::id)
+        .collect::<Vec<_>>();
 
     assert_eq!(
         surface_ids,

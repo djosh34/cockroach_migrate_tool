@@ -1,6 +1,17 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 13:58:58 CEST 2026
+Generated: Mon Apr 20 16:28:36 CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
+
+```
+## Bug: Long-lane blocked-reconcile crash recovery still fails during story-23 validation <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+While validating `.ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md`, the repo gates reached a remaining blocker in `make test-long`.
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 

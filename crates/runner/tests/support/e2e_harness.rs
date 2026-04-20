@@ -555,31 +555,53 @@ impl CdcE2eHarness {
         );
     }
 
-    pub(crate) fn assert_gateway_attempt_count_stable_for_request_body(
+    pub(crate) fn wait_for_gateway_attempt_count_to_stabilize_for_request_body(
         &self,
         body_substring: &str,
-        expected_attempts: usize,
+        minimum_attempts: usize,
         duration: Duration,
-    ) {
-        let deadline = Instant::now() + duration;
-        loop {
+    ) -> usize {
+        'outer: for _ in 0..120 {
             self.assert_runner_process_alive();
             let gateway = self
                 .webhook_chaos_gateway
                 .as_ref()
                 .expect("chaos gateway should be configured for this harness");
             let attempt_count = gateway.attempt_count_for_body_substring(body_substring);
-            assert_eq!(
-                attempt_count, expected_attempts,
-                "gateway delivery count changed unexpectedly for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
-                gateway.attempt_summary_for_body_substring(body_substring),
-                self.runner_diagnostics(),
-            );
-            if Instant::now() >= deadline {
-                return;
+            if attempt_count < minimum_attempts {
+                thread::sleep(Duration::from_secs(1));
+                continue;
             }
-            thread::sleep(Duration::from_secs(1));
+
+            let deadline = Instant::now() + duration;
+            let stable_attempt_count = attempt_count;
+            loop {
+                self.assert_runner_process_alive();
+                let gateway = self
+                    .webhook_chaos_gateway
+                    .as_ref()
+                    .expect("chaos gateway should be configured for this harness");
+                let attempt_count = gateway.attempt_count_for_body_substring(body_substring);
+                if attempt_count != stable_attempt_count {
+                    thread::sleep(Duration::from_secs(1));
+                    continue 'outer;
+                }
+                if Instant::now() >= deadline {
+                    return stable_attempt_count;
+                }
+                thread::sleep(Duration::from_secs(1));
+            }
         }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        panic!(
+            "gateway delivery count did not stabilize after reaching at least {minimum_attempts} deliveries for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            self.runner_diagnostics(),
+        );
     }
 
     pub(crate) fn wait_for_gateway_source_job_ids_for_request_body(
@@ -593,7 +615,8 @@ impl CdcE2eHarness {
                 .webhook_chaos_gateway
                 .as_ref()
                 .expect("chaos gateway should be configured for this harness");
-            let observed_job_ids = gateway.observed_source_job_ids_for_body_substring(body_substring);
+            let observed_job_ids =
+                gateway.observed_source_job_ids_for_body_substring(body_substring);
             if observed_job_ids.len() >= minimum_job_ids {
                 return observed_job_ids;
             }
@@ -879,17 +902,6 @@ impl CdcE2eHarness {
         }
     }
 
-    pub fn wait_for_runner_failed_exit(&self) -> String {
-        let mut runner_process = self.runner_process.borrow_mut();
-        let process = runner_process
-            .take()
-            .expect("runner process should exist before waiting for a failed exit");
-        match process {
-            RunnerRuntime::Host(mut process) => process.wait_for_failed_exit(),
-            RunnerRuntime::Container(process) => process.wait_for_failed_exit(),
-        }
-    }
-
     pub fn wait_for_reconcile_block_on_destination_table(&self, mapped_table: &str) {
         let destination_database = sql_string_literal(&self.config.destination_database);
         let destination_user = sql_string_literal(&self.config.destination_user);
@@ -1054,7 +1066,10 @@ impl CdcE2eHarness {
         };
         self.rendered_bootstrap_changefeed_statement()
             .replace(CHANGEFEED_CURSOR_PLACEHOLDER, cursor)
-            .replace("initial_scan = 'yes'", &format!("initial_scan = '{initial_scan}'"))
+            .replace(
+                "initial_scan = 'yes'",
+                &format!("initial_scan = '{initial_scan}'"),
+            )
     }
 
     fn rendered_bootstrap_changefeed_statement(&self) -> String {

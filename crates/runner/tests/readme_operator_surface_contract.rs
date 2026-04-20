@@ -131,14 +131,22 @@ fn readme_keeps_inline_operator_files_copyable() {
     }
 
     for (relative_path, required_snippet) in [
-        ("config/runner.yml", "client_key_path: /config/certs/destination-client.key"),
-        ("config/verify-service.yml", "client_ca_path: /config/certs/client-ca.crt"),
+        (
+            "config/runner.yml",
+            "client_key_path: /config/certs/destination-client.key",
+        ),
+        (
+            "config/verify-service.yml",
+            "client_ca_path: /config/certs/client-ca.crt",
+        ),
         ("setup-sql.compose.yml", "image: \"${SETUP_SQL_IMAGE}\""),
         ("runner.compose.yml", "image: \"${RUNNER_IMAGE}\""),
         ("verify.compose.yml", "image: \"${VERIFY_IMAGE}\""),
     ] {
         assert!(
-            readme.operator_file(relative_path).contains(required_snippet),
+            readme
+                .operator_file(relative_path)
+                .contains(required_snippet),
             "README inline operator file `{relative_path}` should contain `{required_snippet}`",
         );
     }
@@ -147,7 +155,8 @@ fn readme_keeps_inline_operator_files_copyable() {
 #[test]
 fn readme_operator_surface_materializes_the_inline_operator_workspace() {
     let readme = ReadmeOperatorSurface::load();
-    let workspace = tempfile::tempdir().expect("readme operator-surface temp dir should be created");
+    let workspace =
+        tempfile::tempdir().expect("readme operator-surface temp dir should be created");
 
     readme.materialize_operator_workspace(workspace.path());
 

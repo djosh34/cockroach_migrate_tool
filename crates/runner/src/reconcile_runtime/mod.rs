@@ -31,7 +31,9 @@ pub(crate) async fn serve(
             let interval = runtime.reconcile_interval();
             let runtime = runtime.clone();
             let emit_event = emit_event.clone();
-            workers.spawn(async move { run_mapping_loop(runtime, mapping, interval, emit_event).await });
+            workers.spawn(
+                async move { run_mapping_loop(runtime, mapping, interval, emit_event).await },
+            );
         }
     }
 
@@ -52,7 +54,8 @@ async fn run_mapping_loop(
 
     loop {
         ticker.tick().await;
-        let _pass_outcome = run_reconcile_pass(runtime.as_ref(), &mapping, emit_event.as_ref()).await?;
+        let _pass_outcome =
+            run_reconcile_pass(runtime.as_ref(), &mapping, emit_event.as_ref()).await?;
     }
 }
 

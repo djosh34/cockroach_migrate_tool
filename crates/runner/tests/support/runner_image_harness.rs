@@ -11,6 +11,8 @@ use reqwest::{Certificate, blocking::Client};
 
 use crate::runner_docker_contract::{RunnerDockerContract, RunnerRuntimeLaunch};
 
+const SHARED_TEST_NETWORK_NAME: &str = "cockroach-migrate-runner-e2e-shared";
+
 pub struct RunnerImageHarness {
     image_tag: String,
     network_name: String,
@@ -24,13 +26,14 @@ impl RunnerImageHarness {
         let suffix = unique_suffix();
         let harness = Self {
             image_tag: format!("cockroach-migrate-runner-test-{suffix}"),
-            network_name: format!("cockroach-migrate-runner-net-{suffix}"),
+            network_name: SHARED_TEST_NETWORK_NAME.to_owned(),
             postgres_container: format!("cockroach-migrate-postgres-{suffix}"),
             runner_container: format!("cockroach-migrate-runner-{suffix}"),
             runner_host_port: pick_unused_port(),
         };
         harness.build_runner_image();
         harness.create_network();
+        harness.cleanup_stale_shared_network_containers();
         harness.start_postgres();
         harness.wait_for_postgres();
         harness.prepare_postgres_schema();
@@ -67,7 +70,7 @@ impl RunnerImageHarness {
                     image_tag: &self.image_tag,
                     container_name: &self.runner_container,
                     network_name: &self.network_name,
-                    auto_remove: true,
+                    auto_remove: false,
                     host_bind_ip: Some("127.0.0.1"),
                     host_port: self.runner_host_port,
                     mounts: &[&fixture_mount],
@@ -121,6 +124,15 @@ impl RunnerImageHarness {
     }
 
     fn create_network(&self) {
+        if Command::new("docker")
+            .args(["network", "inspect", &self.network_name])
+            .output()
+            .expect("docker network inspect should start")
+            .status
+            .success()
+        {
+            return;
+        }
         run_command_capture(
             Command::new("docker").args(["network", "create", &self.network_name]),
             "docker network create",
@@ -149,6 +161,41 @@ impl RunnerImageHarness {
             ]),
             "docker run postgres",
         );
+    }
+
+    fn cleanup_stale_shared_network_containers(&self) {
+        for prefix in [
+            "cockroach-migrate-cockroach-",
+            "cockroach-migrate-postgres-",
+            "cockroach-migrate-runner-",
+            "cockroach-migrate-verify-runtime-",
+        ] {
+            let container_ids = run_command_capture(
+                Command::new("docker").args([
+                    "ps",
+                    "-aq",
+                    "--filter",
+                    &format!("network={}", self.network_name),
+                    "--filter",
+                    &format!("name={prefix}"),
+                ]),
+                "docker ps shared network containers",
+            );
+            let container_ids = container_ids
+                .split_whitespace()
+                .filter(|container_id| !container_id.is_empty())
+                .collect::<Vec<_>>();
+            if container_ids.is_empty() {
+                continue;
+            }
+            run_command_capture(
+                Command::new("docker")
+                    .arg("rm")
+                    .arg("-f")
+                    .args(&container_ids),
+                "docker rm stale shared network containers",
+            );
+        }
     }
 
     fn wait_for_postgres(&self) {
@@ -244,11 +291,6 @@ impl Drop for RunnerImageHarness {
             Command::new("docker").args(["container", "inspect", &self.postgres_container]),
             Command::new("docker").args(["rm", "-f", &self.postgres_container]),
             "docker rm postgres container",
-        );
-        cleanup_if_present(
-            Command::new("docker").args(["network", "inspect", &self.network_name]),
-            Command::new("docker").args(["network", "rm", &self.network_name]),
-            "docker network rm",
         );
         cleanup_if_present(
             Command::new("docker").args(["image", "inspect", &self.image_tag]),

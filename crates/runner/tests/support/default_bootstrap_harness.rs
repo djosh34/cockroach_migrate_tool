@@ -5,9 +5,9 @@ use crate::e2e_harness::{
     DestinationWriteFailure, MappingTrackingProgress, WebhookSinkMode,
 };
 use crate::e2e_integrity::{
-    CustomerLiveUpdateAudit, DestinationRuntimeMode, DuplicateFeedAudit,
-    MappingProgressAudit, PostSetupSourceAudit, RecreatedFeedReplayAudit, RuntimeShapeAudit,
-    ScenarioOutcome, SchemaMismatchAudit, VerifyCorrectnessAudit,
+    CustomerLiveUpdateAudit, DestinationRuntimeMode, DuplicateFeedAudit, MappingProgressAudit,
+    PostSetupSourceAudit, ReconcileTransactionFailureAudit, RecreatedFeedReplayAudit,
+    RuntimeShapeAudit, ScenarioOutcome, SchemaMismatchAudit, VerifyCorrectnessAudit,
 };
 use crate::verify_image_harness_support::VerifyImageHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
@@ -163,17 +163,6 @@ impl DefaultBootstrapHarness {
         }
     }
 
-    pub fn assert_helper_shadow_customers_snapshot(&self, expected: &str) {
-        let actual = self
-            .inner
-            .query_destination(HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL);
-        assert_eq!(
-            actual.trim(),
-            expected,
-            "helper shadow customers snapshot did not match"
-        );
-    }
-
     pub fn assert_helper_shadow_customers_stable(&self, expected: &str, duration: Duration) {
         self.inner.assert_destination_query_stable(
             HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL,
@@ -181,13 +170,6 @@ impl DefaultBootstrapHarness {
             "helper shadow customers",
             duration,
         );
-    }
-
-    pub fn verify_selected_tables_via_image(
-        &self,
-        verify_image: &VerifyImageHarness,
-    ) -> VerifyCorrectnessAudit {
-        self.inner.verify_selected_tables_via_image(verify_image)
     }
 
     pub fn wait_for_selected_tables_to_match_via_verify_image(
@@ -363,7 +345,8 @@ impl DefaultBootstrapHarness {
             format!("1:{CONCURRENT_DUPLICATE_FEED_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         self.assert_helper_shadow_customers(2);
-        let verify_correctness = self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        let verify_correctness =
+            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
         self.assert_helper_shadow_customers_stable(
             &expected_helper_snapshot,
             Duration::from_secs(3),
@@ -410,7 +393,8 @@ impl DefaultBootstrapHarness {
             .into_iter()
             .next()
             .expect("original changefeed delivery should expose a source job id");
-        self.inner.cancel_changefeed_job(&original_changefeed_job_id);
+        self.inner
+            .cancel_changefeed_job(&original_changefeed_job_id);
         let recreated_changefeed_job_id = self
             .inner
             .create_additional_changefeed_from_current_cursor(ChangefeedInitialScanMode::Yes);
@@ -423,7 +407,8 @@ impl DefaultBootstrapHarness {
         let expected_helper_snapshot = format!("1:{RECREATED_FEED_REPLAY_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         self.assert_helper_shadow_customers(2);
-        let verify_correctness = self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        let verify_correctness =
+            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
         self.assert_helper_shadow_customers_stable(
             &expected_helper_snapshot,
             Duration::from_secs(3),
@@ -462,10 +447,18 @@ impl DefaultBootstrapHarness {
         let baseline = self.customer_tracking_progress();
         self.introduce_customer_email_schema_mismatch();
         self.update_source_customer_email(1, SCHEMA_MISMATCH_EMAIL);
-        self.inner.wait_for_gateway_forwarded_status_sequence_for_request_body(
-            SCHEMA_MISMATCH_EMAIL,
-            &[reqwest::StatusCode::OK],
-        );
+        self.inner
+            .wait_for_gateway_forwarded_status_sequence_for_request_body(
+                SCHEMA_MISMATCH_EMAIL,
+                &[reqwest::StatusCode::OK],
+            );
+        let delivery_attempt_count = self
+            .inner
+            .wait_for_gateway_attempt_count_to_stabilize_for_request_body(
+                SCHEMA_MISMATCH_EMAIL,
+                1,
+                Duration::from_secs(3),
+            );
         let expected_helper_snapshot = format!("1:{SCHEMA_MISMATCH_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         let verify_correctness =
@@ -483,14 +476,10 @@ impl DefaultBootstrapHarness {
                     && progress.table.last_error.is_some()
             },
         );
-        self.inner.assert_gateway_attempt_count_stable_for_request_body(
-            SCHEMA_MISMATCH_EMAIL,
-            1,
-            Duration::from_secs(3),
-        );
         self.assert_runner_alive();
         let progress = mapping_progress_audit_from(&failure_progress);
-        let outcome = if verify_correctness.selected_tables_mismatch()
+        let outcome = if delivery_attempt_count >= 1
+            && verify_correctness.selected_tables_mismatch()
             && progress.last_error().is_some()
             && failure_progress
                 .stream
@@ -505,8 +494,7 @@ impl DefaultBootstrapHarness {
 
         SchemaMismatchAudit::new(
             outcome,
-            self.inner
-                .wait_for_gateway_attempt_count_for_request_body(SCHEMA_MISMATCH_EMAIL, 1),
+            delivery_attempt_count,
             expected_helper_snapshot,
             self.inner.helper_table_row_count("public.customers"),
             progress,
@@ -521,6 +509,98 @@ impl DefaultBootstrapHarness {
         )
     }
 
+    pub fn audit_reconcile_transaction_failure_recovery(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> ReconcileTransactionFailureAudit {
+        const RECONCILE_FAILURE_EMAIL: &str = "alice+reconcile-failure@example.com";
+
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+            .assert_selected_tables_match();
+        let baseline = self.customer_tracking_progress();
+        let destination_failure = self.fail_destination_customer_email_write(1, RECONCILE_FAILURE_EMAIL);
+        self.update_source_customer_email(1, RECONCILE_FAILURE_EMAIL);
+        let expected_helper_snapshot = format!("1:{RECONCILE_FAILURE_EMAIL},2:bob@example.com");
+        self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
+        let failure_verify_correctness =
+            self.wait_for_selected_tables_to_mismatch_via_verify_image(verify_image);
+        let failure_progress = self.wait_for_customer_tracking_progress(
+            "reconcile transaction failure should keep the runner alive while persisting the received watermark, the last good checkpoint, and a last_error",
+            |progress| {
+                progress
+                    .stream
+                    .received_has_advanced_since(&baseline.stream)
+                    && progress.stream.latest_reconciled_resolved_watermark
+                        == baseline.stream.latest_reconciled_resolved_watermark
+                    && progress.table.last_successful_sync_watermark
+                        == baseline.table.last_successful_sync_watermark
+                    && progress.table.last_error.is_some()
+            },
+        );
+        self.assert_runner_alive();
+        let failed_received_watermark = failure_progress
+            .stream
+            .latest_received_resolved_watermark
+            .clone()
+            .expect("failed reconcile should persist a received watermark");
+        let failure_progress_audit = mapping_progress_audit_from(&failure_progress);
+        let runner_stderr = self.inner.runner_stderr_snapshot();
+
+        drop(destination_failure);
+
+        let recovery_verify_correctness =
+            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        let recovery_progress = self.wait_for_customer_tracking_progress(
+            "runner should reconcile the failed watermark in place and clear the stored error after destination writes recover",
+            |progress| {
+                progress.has_reconciled_through(failed_received_watermark.as_str())
+                    && progress.table.last_error.is_none()
+            },
+        );
+        let recovery_progress_audit = mapping_progress_audit_from(&recovery_progress);
+        let outcome = if failure_verify_correctness.selected_tables_mismatch()
+            && failure_progress
+                .stream
+                .received_has_advanced_since(&baseline.stream)
+            && failure_progress.stream.latest_reconciled_resolved_watermark
+                == baseline.stream.latest_reconciled_resolved_watermark
+            && failure_progress.table.last_successful_sync_watermark
+                == baseline.table.last_successful_sync_watermark
+            && failure_progress.table.last_error.is_some()
+            && recovery_progress.has_reconciled_through(failed_received_watermark.as_str())
+            && recovery_progress
+                .stream
+                .has_received_through(failed_received_watermark.as_str())
+            && recovery_progress.table.last_error.is_none()
+            && recovery_verify_correctness.selected_tables_match()
+        {
+            ScenarioOutcome::Harmless
+        } else {
+            ScenarioOutcome::Defective
+        };
+
+        ReconcileTransactionFailureAudit::new(
+            outcome,
+            expected_helper_snapshot,
+            self.inner.helper_table_row_count("public.customers"),
+            failure_progress_audit,
+            failure_progress
+                .stream
+                .received_has_advanced_since(&baseline.stream),
+            failure_progress.stream.latest_reconciled_resolved_watermark
+                == baseline.stream.latest_reconciled_resolved_watermark,
+            true,
+            runner_stderr,
+            failed_received_watermark.clone(),
+            failure_verify_correctness,
+            recovery_progress_audit,
+            recovery_progress
+                .stream
+                .has_received_through(failed_received_watermark.as_str()),
+            recovery_verify_correctness,
+        )
+    }
+
     pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
         self.inner.post_setup_source_audit()
     }
@@ -531,10 +611,6 @@ impl DefaultBootstrapHarness {
 
     pub fn restart_runner(&self) {
         self.inner.restart_runner();
-    }
-
-    pub fn wait_for_runner_failed_exit(&self) -> String {
-        self.inner.wait_for_runner_failed_exit()
     }
 
     pub fn customer_tracking_progress(&self) -> MappingTrackingProgress {

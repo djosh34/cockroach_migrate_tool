@@ -60,7 +60,7 @@ func (r *jobResult) recordReport(obj any) {
 	switch report := obj.(type) {
 	case inconsistency.SummaryReport:
 		key := newTableKey(report.Stats.Schema, report.Stats.Table)
-		r.tableSummaries[key] = tableSummary{
+		r.tableSummaries[key] = r.tableSummaries[key].accumulate(tableSummary{
 			Schema:            report.Stats.Schema,
 			Table:             report.Stats.Table,
 			NumVerified:       report.Stats.NumVerified,
@@ -70,7 +70,7 @@ func (r *jobResult) recordReport(obj any) {
 			NumColumnMismatch: report.Stats.NumColumnMismatch,
 			NumExtraneous:     report.Stats.NumExtraneous,
 			NumLiveRetry:      report.Stats.NumLiveRetry,
-		}
+		})
 		if statsHaveMismatch(report.Stats) {
 			r.mismatchTables[key] = struct{}{}
 		}
@@ -90,6 +90,20 @@ func (r *jobResult) recordReport(obj any) {
 		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
 	case utils.ExtraneousTable:
 		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+	}
+}
+
+func (s tableSummary) accumulate(other tableSummary) tableSummary {
+	return tableSummary{
+		Schema:            other.Schema,
+		Table:             other.Table,
+		NumVerified:       s.NumVerified + other.NumVerified,
+		NumSuccess:        s.NumSuccess + other.NumSuccess,
+		NumMissing:        s.NumMissing + other.NumMissing,
+		NumMismatch:       s.NumMismatch + other.NumMismatch,
+		NumColumnMismatch: s.NumColumnMismatch + other.NumColumnMismatch,
+		NumExtraneous:     s.NumExtraneous + other.NumExtraneous,
+		NumLiveRetry:      s.NumLiveRetry + other.NumLiveRetry,
 	}
 }
 

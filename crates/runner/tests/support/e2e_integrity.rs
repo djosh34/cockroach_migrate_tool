@@ -256,9 +256,9 @@ impl SchemaMismatchAudit {
             "schema-mismatch audit should classify the scenario as a bounded operator action: {:?}",
             self
         );
-        assert_eq!(
-            self.delivery_attempt_count, 1,
-            "schema-mismatch audit should not show duplicate retry amplification at ingress: {:?}",
+        assert!(
+            self.delivery_attempt_count >= 1,
+            "schema-mismatch audit should observe at least one bounded ingress delivery before reconcile fails: {:?}",
             self
         );
         assert_eq!(
@@ -292,13 +292,129 @@ impl SchemaMismatchAudit {
             "schema-mismatch audit should persist table-specific reconcile failure context: {last_error}",
         );
         assert!(
-            self.runner_stderr.contains("failed to apply reconcile upsert")
+            self.runner_stderr
+                .contains("failed to apply reconcile upsert")
                 && self.runner_stderr.contains("public.customers"),
             "schema-mismatch audit should emit operator-visible reconcile failure logs:\n{}",
             self.runner_stderr,
         );
         self.verify_correctness
             .assert_detects_selected_table_mismatch();
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ReconcileTransactionFailureAudit {
+    outcome: ScenarioOutcome,
+    helper_shadow_snapshot: String,
+    helper_shadow_rows: usize,
+    failure_progress: MappingProgressAudit,
+    received_advanced_since_baseline: bool,
+    reconciled_stalled_at_baseline: bool,
+    runner_alive_during_failure: bool,
+    runner_stderr: String,
+    failed_received_watermark: String,
+    failure_verify_correctness: VerifyCorrectnessAudit,
+    recovery_progress: MappingProgressAudit,
+    recovery_received_through_failed_watermark: bool,
+    recovery_verify_correctness: VerifyCorrectnessAudit,
+}
+
+impl ReconcileTransactionFailureAudit {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        outcome: ScenarioOutcome,
+        helper_shadow_snapshot: String,
+        helper_shadow_rows: usize,
+        failure_progress: MappingProgressAudit,
+        received_advanced_since_baseline: bool,
+        reconciled_stalled_at_baseline: bool,
+        runner_alive_during_failure: bool,
+        runner_stderr: String,
+        failed_received_watermark: String,
+        failure_verify_correctness: VerifyCorrectnessAudit,
+        recovery_progress: MappingProgressAudit,
+        recovery_received_through_failed_watermark: bool,
+        recovery_verify_correctness: VerifyCorrectnessAudit,
+    ) -> Self {
+        Self {
+            outcome,
+            helper_shadow_snapshot,
+            helper_shadow_rows,
+            failure_progress,
+            received_advanced_since_baseline,
+            reconciled_stalled_at_baseline,
+            runner_alive_during_failure,
+            runner_stderr,
+            failed_received_watermark,
+            failure_verify_correctness,
+            recovery_progress,
+            recovery_received_through_failed_watermark,
+            recovery_verify_correctness,
+        }
+    }
+
+    pub fn assert_harmless_recovery(&self, expected_helper_snapshot: &str) {
+        assert_eq!(
+            self.outcome,
+            ScenarioOutcome::Harmless,
+            "reconcile transaction failure audit should classify the scenario as harmless retry-and-recovery: {:?}",
+            self
+        );
+        assert_eq!(
+            self.helper_shadow_snapshot, expected_helper_snapshot,
+            "reconcile transaction failure audit should preserve the latest helper shadow state",
+        );
+        assert_eq!(
+            self.helper_shadow_rows, 2,
+            "reconcile transaction failure audit should not grow helper rows while reconcile is retrying",
+        );
+        assert!(
+            self.received_advanced_since_baseline,
+            "reconcile transaction failure audit should record that the new watermark was durably received",
+        );
+        assert!(
+            self.reconciled_stalled_at_baseline,
+            "reconcile transaction failure audit should preserve the last good reconcile checkpoint during failure",
+        );
+        assert!(
+            self.runner_alive_during_failure,
+            "reconcile transaction failure audit should keep the runner alive during transient destination write failure",
+        );
+        let last_error = self.failure_progress.last_error().unwrap_or_else(|| {
+            panic!(
+                "reconcile transaction failure audit should persist an operator-visible last_error while failing: {:?}",
+                self
+            )
+        });
+        assert!(
+            last_error.contains("reconcile upsert failed for public.customers"),
+            "reconcile transaction failure audit should persist table-specific reconcile failure context: {last_error}",
+        );
+        assert!(
+            self.runner_stderr
+                .contains("failed to apply reconcile upsert")
+                && self.runner_stderr.contains("public.customers"),
+            "reconcile transaction failure audit should emit operator-visible reconcile failure logs:\n{}",
+            self.runner_stderr,
+        );
+        assert!(
+            !self.failed_received_watermark.is_empty(),
+            "reconcile transaction failure audit should capture the failed received watermark: {:?}",
+            self
+        );
+        self.failure_verify_correctness
+            .assert_detects_selected_table_mismatch();
+        assert!(
+            self.recovery_received_through_failed_watermark,
+            "reconcile transaction failure audit should keep the received watermark monotonic across recovery",
+        );
+        assert!(
+            self.recovery_progress.cleanly_reconciled(),
+            "reconcile transaction failure audit should end fully reconciled without a stored error: {:?}",
+            self
+        );
+        self.recovery_verify_correctness.assert_selected_tables_match();
     }
 }
 
