@@ -111,17 +111,17 @@ jobs:
 
           while IFS= read -r image_target; do
             image_id="$(jq -r '.image_id' <<< "${image_target}")"
-            image_repository="$(jq -r '.image_repository' <<< "${image_target}")"
+            ghcr_repository="$(jq -r '.ghcr_repository' <<< "${image_target}")"
             : "${image_id:?missing image_id in image catalog}"
-            : "${image_repository:?missing image_repository in image catalog}"
-            source_ref="${GHCR_REGISTRY}/${image_repository}:${GITHUB_SHA}"
-            version_ref="${GHCR_REGISTRY}/${image_repository}:${REQUESTED_VERSION}"
+            : "${ghcr_repository:?missing ghcr_repository in image catalog}"
+            source_ref="${GHCR_REGISTRY}/${{ github.repository_owner }}/${ghcr_repository}:${GITHUB_SHA}"
+            version_ref="${GHCR_REGISTRY}/${{ github.repository_owner }}/${ghcr_repository}:${REQUESTED_VERSION}"
 
             promote_tag "${source_ref}" "${version_ref}"
 
             latest_summary="not requested"
             if [[ "${SET_LATEST}" == "true" ]]; then
-              latest_ref="${GHCR_REGISTRY}/${image_repository}:latest"
+              latest_ref="${GHCR_REGISTRY}/${{ github.repository_owner }}/${ghcr_repository}:latest"
               promote_tag "${source_ref}" "${latest_ref}"
               latest_summary="\`${latest_ref}\`"
             fi

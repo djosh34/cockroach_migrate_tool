@@ -205,8 +205,11 @@ jobs:
         run: |
           set -euo pipefail
           : "${QUAY_ORGANIZATION:?missing QUAY_ORGANIZATION GitHub repository variable}"
-          image_repository="${{ matrix.image.image_repository }}"
-          quay_repository="${QUAY_ORGANIZATION}/${image_repository}"
+          quay_repository_name="${{ matrix.image.quay_repository }}"
+          ghcr_repository="${{ matrix.image.ghcr_repository }}"
+          : "${quay_repository_name:?missing quay repository in image catalog}"
+          : "${ghcr_repository:?missing ghcr repository in image catalog}"
+          quay_repository="${QUAY_ORGANIZATION}/${quay_repository_name}"
           final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
           platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
           docker buildx build \
@@ -221,8 +224,8 @@ jobs:
           mkdir -p "$(dirname "${PUBLISHED_IMAGE_REF_FILE}")"
           {
             printf 'image_id=%s\n' "${{ matrix.image.image_id }}"
-            printf 'image_repository=%s\n' "${image_repository}"
             printf 'manifest_key=%s\n' "${{ matrix.image.manifest_key }}"
+            printf 'ghcr_repository=%s\n' "${ghcr_repository}"
             printf 'quay_repository=%s\n' "${quay_repository}"
             printf 'final_image_ref=%s\n' "${final_image_ref}"
             printf 'platform_image_ref=%s\n' "${platform_image_ref}"
@@ -345,7 +348,7 @@ jobs:
           all_scan_targets=()
           while IFS= read -r env_file; do
             env_file_count=$((env_file_count + 1))
-            unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
+            unset image_id manifest_key ghcr_repository quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
             . "${env_file}"
             : "${quay_repository:?missing quay_repository}"
             : "${platform_image_ref:?missing platform_image_ref}"
@@ -627,16 +630,16 @@ jobs:
           refs_dir="${{ runner.temp }}/published-image-refs"
           test -d "${refs_dir}"
           declare -A manifest_keys=()
-          declare -A image_repositories=()
+          declare -A ghcr_repositories=()
           declare -A final_refs=()
           declare -A amd64_refs=()
           declare -A arm64_refs=()
           image_ids=()
           while IFS= read -r env_file; do
-            unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
+            unset image_id manifest_key ghcr_repository quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
             . "${env_file}"
             : "${image_id:?missing image_id}"
-            : "${image_repository:?missing image_repository}"
+            : "${ghcr_repository:?missing ghcr_repository}"
             : "${manifest_key:?missing manifest_key}"
             : "${final_image_ref:?missing final_image_ref}"
             : "${platform_image_ref:?missing platform_image_ref}"
@@ -646,7 +649,7 @@ jobs:
               image_ids+=("${safe_image_id}")
             fi
             manifest_keys["${safe_image_id}"]="${manifest_key}"
-            image_repositories["${safe_image_id}"]="${image_repository}"
+            ghcr_repositories["${safe_image_id}"]="${ghcr_repository}"
             final_refs["${safe_image_id}"]="${final_image_ref}"
             case "${platform}" in
               linux/amd64)
@@ -666,11 +669,11 @@ jobs:
           output_lines=()
           for safe_image_id in "${image_ids[@]}"; do
             manifest_key="${manifest_keys[${safe_image_id}]:?missing manifest key}"
-            image_repository="${image_repositories[${safe_image_id}]:?missing image repository}"
+            ghcr_repository="${ghcr_repositories[${safe_image_id}]:?missing ghcr repository}"
             final_image_ref="${final_refs[${safe_image_id}]:?missing final image ref}"
             amd64_ref="${amd64_refs[${safe_image_id}]:?missing amd64 ref}"
             arm64_ref="${arm64_refs[${safe_image_id}]:?missing arm64 ref}"
-            ghcr_final_image_ref="${{ env.GHCR_REGISTRY }}/${image_repository}:${{ github.sha }}"
+            ghcr_final_image_ref="${{ env.GHCR_REGISTRY }}/${{ github.repository_owner }}/${ghcr_repository}:${{ github.sha }}"
             docker buildx imagetools create \
               --tag "${final_image_ref}" \
               "${amd64_ref}" \
@@ -754,7 +757,7 @@ jobs:
             if [[ -d "${refs_dir}" ]]; then
               echo "### Raw Quay Refs Published Before Security Or Promotion"
               while IFS= read -r env_file; do
-                unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
+                unset image_id manifest_key ghcr_repository quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
                 . "${env_file}"
                 printf -- '- `%s` (%s)\n' "${platform_image_ref}" "${platform}"
               done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)

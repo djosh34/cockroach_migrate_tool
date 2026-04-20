@@ -2,7 +2,7 @@
 
 Run the published `setup-sql`, `runner`, and `verify` images with inline configs only. No repository checkout, local Rust install, or local image build is required.
 
-Automated publication pushes commit-SHA tags for the canonical GHCR packages `cockroach-migrate-setup-sql`, `cockroach-migrate-runner`, and `cockroach-migrate-verify`. Repository owners can later promote those already-published GHCR images to a version tag, and optionally `latest`, with the manual GitHub Actions workflow `promote-image-tags`.
+Automated publication pushes commit-SHA tags for the canonical GHCR packages `cockroach-migrate-setup-sql`, `cockroach-migrate-runner`, and `cockroach-migrate-verify`.
 
 ## Setup SQL Quick Start
 

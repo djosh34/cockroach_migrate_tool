@@ -25,7 +25,8 @@ jobs:
           [
             {
               "image_id": "runner",
-              "image_repository": "cockroach-migrate-runner",
+              "quay_repository": "runner",
+              "ghcr_repository": "cockroach-migrate-runner",
               "dockerfile": "./Dockerfile",
               "context": ".",
               "manifest_key": "runner_image_ref",
@@ -35,7 +36,8 @@ jobs:
             },
             {
               "image_id": "setup-sql",
-              "image_repository": "cockroach-migrate-setup-sql",
+              "quay_repository": "setup-sql",
+              "ghcr_repository": "cockroach-migrate-setup-sql",
               "dockerfile": "./crates/setup-sql/Dockerfile",
               "context": ".",
               "manifest_key": "setup_sql_image_ref",
@@ -45,7 +47,8 @@ jobs:
             },
             {
               "image_id": "verify",
-              "image_repository": "cockroach-migrate-verify",
+              "quay_repository": "verify",
+              "ghcr_repository": "cockroach-migrate-verify",
               "dockerfile": "./cockroachdb_molt/molt/Dockerfile",
               "context": "./cockroachdb_molt/molt",
               "manifest_key": "verify_image_ref",
