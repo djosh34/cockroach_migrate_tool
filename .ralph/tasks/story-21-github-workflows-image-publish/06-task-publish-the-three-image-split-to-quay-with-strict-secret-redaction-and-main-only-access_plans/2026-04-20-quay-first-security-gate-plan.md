@@ -69,7 +69,7 @@
 - Hosted execution on commit `06860f7ebf5d14a0cd2bf47143ad4948b934e14f` disproved the key namespace assumption in this plan:
   - `validate-fast` and `validate-long` both passed
   - Quay login succeeded and masked diagnostics stayed redacted
-  - Quay publish lanes then failed while pushing to `quay.io/djosh34/...` with `401 UNAUTHORIZED` on blob `HEAD` requests
+  - Quay publish lanes then failed while pushing to `quay.io/determined_keldysh/...` with `401 UNAUTHORIZED` on blob `HEAD` requests
   - this means `github.repository_owner` is not a truthful Quay publication boundary for this repository, so Quay coordinates and/or permissions must be re-planned from a non-secret source before execution resumes
 
 ## Public Contract To Establish
@@ -211,7 +211,7 @@
 - Trigger observed on 2026-04-20 during hosted run `publish-images` #15 for commit `06860f7ebf5d14a0cd2bf47143ad4948b934e14f`.
 - Concrete failure:
   - the Quay robot credentials authenticate successfully
-  - the publish lanes fail when pushing `quay.io/djosh34/cockroach-migrate-verify:*` and sibling refs because Quay returns `401 UNAUTHORIZED` on blob `HEAD` requests
+  - the publish lanes fail when pushing `quay.io/determined_keldysh/cockroach-migrate-verify:*` and sibling refs because Quay returns `401 UNAUTHORIZED` on blob `HEAD` requests
 - Required next planning question:
   - what non-secret repository-owned source should define the real Quay namespace/repository coordinates, or what existing Quay repository permission/bootstrap step is missing?
 

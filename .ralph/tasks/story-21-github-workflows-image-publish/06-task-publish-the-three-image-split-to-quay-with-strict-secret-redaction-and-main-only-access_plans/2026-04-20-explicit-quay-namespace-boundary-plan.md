@@ -26,9 +26,9 @@
 - Hosted reality disproved that assumption on 2026-04-20:
   - validation jobs passed
   - Quay login succeeded
-  - the hosted workflow exposed an explicit non-secret `QUAY_NAMESPACE=djosh34` boundary in job env
+  - the hosted workflow exposed an explicit non-secret `QUAY_NAMESPACE=determined_keldysh` boundary in job env
   - masked diagnostics stayed redacted
-  - push attempts to `quay.io/djosh34/...` failed with `401 UNAUTHORIZED` on blob `HEAD` requests
+  - push attempts to `quay.io/determined_keldysh/...` failed with `401 UNAUTHORIZED` on blob `HEAD` requests
 - That means the workflow guessed the Quay namespace from the wrong boundary.
   - the Quay robot secret is valid enough to authenticate
   - the namespace boundary is now verified from hosted source-of-truth logs
@@ -76,12 +76,12 @@
   - local repo search for `QUAY_NAMESPACE`, `quay.io`, and `QUAY_` returned no source-controlled coordinate boundary
   - a fresh repo-root `rg -n "QUAY_NAMESPACE|quay\\.io|QUAY_" .` still exited with status `1`, which re-confirms there is no checked-in Quay namespace or Quay coordinate source anywhere in this workspace
   - local search across the workflow, README, and runner support contracts still shows the GHCR-shaped ownership leak: `.github/workflows/publish-images.yml` derives all image repositories from `${{ github.repository_owner }}`, `README.md` still documents only GHCR pull coordinates, and `crates/runner/tests/support/github_workflow_contract.rs` plus `crates/runner/tests/support/published_runtime_artifact_contract.rs` still encode GHCR-specific publication assumptions
-  - connected GitHub code search for `QUAY_NAMESPACE` and `quay.io` in `djosh34/cockroach_migrate_tool` is currently unusable because GitHub returned `408 This query timed out`; the checked-out workspace remains the authoritative source for absence
+  - connected GitHub code search for `QUAY_NAMESPACE` and `quay.io` in `determined_keldysh/cockroach_migrate_tool` is currently unusable because GitHub returned `408 This query timed out`; the checked-out workspace remains the authoritative source for absence
   - connected GitHub commit search for Quay namespace/config history returned no matches
   - connected GitHub issue and PR search for Quay namespace/config discussion returned no matches
   - a fresh connected GitHub metadata read on 2026-04-20 still reports `default_branch=master`, while local branch listing still shows both `main` and `master`; any eventual hosted verification must target `refs/heads/main` explicitly instead of assuming the default branch is `main`
   - `gh` is not installed in this environment, so the repository-variable CLI path is unavailable here
-  - an authenticated GitHub REST call to `GET /repos/djosh34/cockroach_migrate_tool/actions/variables` returned `403 Resource not accessible by personal access token`, so this environment still cannot verify whether a repo variable such as `QUAY_NAMESPACE` exists
+  - an authenticated GitHub REST call to `GET /repos/determined_keldysh/cockroach_migrate_tool/actions/variables` returned `403 Resource not accessible by personal access token`, so this environment still cannot verify whether a repo variable such as `QUAY_NAMESPACE` exists
 
 ## Improve-Code-Boundaries Focus
 
@@ -120,7 +120,7 @@
 
 - Hosted workflow run `#15` on 2026-04-20 answered the old planning question directly:
   - the publish jobs ran with explicit env `QUAY_REGISTRY=quay.io`
-  - the publish jobs ran with explicit env `QUAY_NAMESPACE=djosh34`
+  - the publish jobs ran with explicit env `QUAY_NAMESPACE=determined_keldysh`
   - image repository names stayed registry-agnostic (`cockroach-migrate-runner`, `cockroach-migrate-setup-sql`, `cockroach-migrate-verify`)
 - That means the plan no longer needs to block on discovering a Quay namespace source.
   - the namespace boundary is verified from hosted source-of-truth logs
@@ -215,7 +215,7 @@
 
 - Start TDD execution from Slice 1 using the hosted-verified Quay boundary:
   - `QUAY_REGISTRY=quay.io`
-  - `QUAY_NAMESPACE=djosh34`
+  - `QUAY_NAMESPACE=determined_keldysh`
 - Use the hosted `401 UNAUTHORIZED` push failure as the first concrete red signal.
   - preserve the explicit namespace boundary
   - fix the workflow and contracts so the Quay-first publish path is authorized, gated, and then re-verified online on `main`

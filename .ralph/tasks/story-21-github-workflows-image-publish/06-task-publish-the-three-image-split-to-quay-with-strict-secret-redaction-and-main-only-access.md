@@ -72,3 +72,10 @@ Decisions already made:
 - Do not invent, search for, or depend on any other Quay secret names.
 - Treat the repo/namespace pair supplied by the PO as `determined_keldysh / cockroach_migrate_tool`.
 - Do not spend time guessing "namespace or whatever" from local state; use hosted workflow observation as the truth source and work from the PO-provided boundary above unless the hosted GitHub workflow itself proves otherwise.
+
+## PO Follow-Up 2026-04-20
+
+- Reread the task file and attached plan files before resuming. The currently recorded Quay namespace in those files is `determined_keldysh`.
+- Change the Quay publish namespace first, before rerunning the hosted workflow that pushes to Quay.
+- Prefer expressing that publish namespace through a GitHub variable if the workflow has access to one.
+- If a GitHub variable cannot be used from the available workflow context, fill the namespace in directly and leave comments stating that the intended end state is an explicit GitHub variable-backed publish namespace.
