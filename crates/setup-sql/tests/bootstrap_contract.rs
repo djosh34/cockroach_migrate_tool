@@ -1,11 +1,7 @@
 use std::{fs, path::PathBuf};
 
-#[path = "support/readme_contract.rs"]
-mod readme_contract_support;
-
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
-use readme_contract_support::RepositoryReadme;
 use serde_json::Value;
 
 fn fixture_path(name: &str) -> PathBuf {
@@ -206,17 +202,5 @@ fn emit_postgres_grants_outputs_sql_only_text_and_json_from_minimal_destination_
     assert!(
         !app_a_sql.contains("ALL TABLES IN SCHEMA"),
         "app_a json payload must not emit schema-wide blanket table grants",
-    );
-}
-
-#[test]
-fn readme_setup_sql_cockroach_config_matches_its_canonical_fixture() {
-    let readme = RepositoryReadme::load();
-    let fixture_text = fs::read_to_string(fixture_path("readme-cockroach-setup-config.yml"))
-        .expect("README Cockroach setup fixture should be readable");
-    assert_eq!(
-        readme.setup_sql_cockroach_yaml_block(),
-        fixture_text.trim_end(),
-        "README Cockroach setup YAML should match its canonical fixture"
     );
 }

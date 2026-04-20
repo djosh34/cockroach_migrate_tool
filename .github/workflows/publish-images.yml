@@ -15,10 +15,10 @@ permissions:
 env:
   GHCR_REGISTRY: ghcr.io
   QUAY_REGISTRY: quay.io
-  QUAY_NAMESPACE: djosh34
-  RUNNER_IMAGE_REPOSITORY: cockroach-migrate-runner
-  SETUP_SQL_IMAGE_REPOSITORY: cockroach-migrate-setup-sql
-  VERIFY_IMAGE_REPOSITORY: cockroach-migrate-verify
+  QUAY_ORGANIZATION: ${{ vars.QUAY_ORGANIZATION }}
+  RUNNER_IMAGE_REPOSITORY: ${{ vars.RUNNER_IMAGE_REPOSITORY }}
+  SETUP_SQL_IMAGE_REPOSITORY: ${{ vars.SETUP_SQL_IMAGE_REPOSITORY }}
+  VERIFY_IMAGE_REPOSITORY: ${{ vars.VERIFY_IMAGE_REPOSITORY }}
 
 jobs:
   validate-fast:
@@ -242,9 +242,10 @@ jobs:
       - name: Publish image
         run: |
           set -euo pipefail
+          : "${QUAY_ORGANIZATION:?missing QUAY_ORGANIZATION GitHub repository variable}"
           image_repository="$(printenv "${{ matrix.image.repository_env }}")"
-          test -n "${image_repository}"
-          quay_repository="${{ env.QUAY_NAMESPACE }}/${image_repository}"
+          : "${image_repository:?missing ${{ matrix.image.repository_env }} GitHub repository variable}"
+          quay_repository="${QUAY_ORGANIZATION}/${image_repository}"
           final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
           platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
           docker buildx build \
