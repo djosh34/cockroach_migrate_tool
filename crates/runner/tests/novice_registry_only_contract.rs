@@ -235,11 +235,29 @@ fn verify_readme_http_flow_uses_the_flat_start_contract_and_surfaces_failures() 
         terminal.status, "failed",
         "verify README flow should surface the published-image failure response when the copied config points at unreachable databases",
     );
+    let failure = terminal.failure.expect(
+        "verify README flow should return a typed failure object for unreachable databases",
+    );
+    assert_eq!(failure.category, "source_access");
+    assert_eq!(failure.code, "connection_failed");
+    assert!(
+        failure.message.contains("source connection failed"),
+        "verify README flow should keep an operator-facing source failure message: {}",
+        failure.message,
+    );
 
     let validation_error = verify_runtime.start_job_with_legacy_filters_error();
     assert_eq!(
-        validation_error.error, r#"json: unknown field "filters""#,
-        "verify README flow should reject the removed nested filter contract with the documented validation error",
+        validation_error.error.category, "request_validation",
+        "verify README flow should classify the removed nested filter contract as request validation",
+    );
+    assert_eq!(
+        validation_error.error.code, "unknown_field",
+        "verify README flow should keep the documented stable validation code",
+    );
+    assert_eq!(
+        validation_error.error.message, "request body contains an unsupported field",
+        "verify README flow should reject the removed nested filter contract with the documented validation message",
     );
 
     verify_runtime.shutdown();

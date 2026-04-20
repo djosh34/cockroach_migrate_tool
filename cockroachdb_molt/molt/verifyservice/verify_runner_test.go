@@ -2,6 +2,7 @@ package verifyservice
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
@@ -89,6 +90,155 @@ func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t 
 		ExcludeSchemaFilter: "audit|tmp;rm -rf /",
 		ExcludeTableFilter:  "^tmp_",
 	}, gotFilter)
+}
+
+func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
+	t.Parallel()
+
+	request, err := (JobRequest{}).Compile()
+	require.NoError(t, err)
+
+	runner := VerifyRunner{
+		config: Config{
+			Verify: VerifyConfig{
+				Source: DatabaseConfig{
+					URL: "postgres://verify_source:wrong-secret@source-db:26257/source_db?application_name=verify",
+				},
+				Destination: DatabaseConfig{
+					URL: "postgres://verify_target:correct-secret@target-db:26257/target_db?application_name=verify",
+				},
+			},
+		},
+		logger: zerolog.Nop(),
+		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
+			if preferredID == "source" {
+				return nil, errors.New("password authentication failed for user verify_source")
+			}
+			return fakeConn{id: preferredID}, nil
+		},
+		runVerify: func(
+			_ context.Context,
+			_ dbconn.OrderedConns,
+			_ zerolog.Logger,
+			_ inconsistency.Reporter,
+			_ utils.FilterConfig,
+		) error {
+			t.Fatal("runVerify should not be called when source connection setup fails")
+			return nil
+		},
+	}
+
+	err = runner.Run(context.Background(), request, noopReporter{})
+	require.Equal(
+		t,
+		&operatorError{
+			category: "source_access",
+			code:     "connection_failed",
+			message:  "source connection failed: password authentication failed for user verify_source",
+			details: []operatorErrorDetail{
+				{Reason: "password authentication failed for user verify_source"},
+			},
+		},
+		err,
+	)
+}
+
+func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
+	t.Parallel()
+
+	request, err := (JobRequest{}).Compile()
+	require.NoError(t, err)
+
+	runner := VerifyRunner{
+		config: Config{
+			Verify: VerifyConfig{
+				Source: DatabaseConfig{
+					URL: "postgres://verify_source:correct-secret@source-db:26257/source_db?application_name=verify",
+				},
+				Destination: DatabaseConfig{
+					URL: "postgres://verify_target:wrong-secret@target-db:26257/target_db?application_name=verify",
+				},
+			},
+		},
+		logger: zerolog.Nop(),
+		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
+			if preferredID == "target" {
+				return nil, errors.New("password authentication failed for user verify_target")
+			}
+			return fakeConn{id: preferredID}, nil
+		},
+		runVerify: func(
+			_ context.Context,
+			_ dbconn.OrderedConns,
+			_ zerolog.Logger,
+			_ inconsistency.Reporter,
+			_ utils.FilterConfig,
+		) error {
+			t.Fatal("runVerify should not be called when destination connection setup fails")
+			return nil
+		},
+	}
+
+	err = runner.Run(context.Background(), request, noopReporter{})
+	require.Equal(
+		t,
+		&operatorError{
+			category: "destination_access",
+			code:     "connection_failed",
+			message:  "destination connection failed: password authentication failed for user verify_target",
+			details: []operatorErrorDetail{
+				{Reason: "password authentication failed for user verify_target"},
+			},
+		},
+		err,
+	)
+}
+
+func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
+	t.Parallel()
+
+	request, err := (JobRequest{}).Compile()
+	require.NoError(t, err)
+
+	runner := VerifyRunner{
+		config: Config{
+			Verify: VerifyConfig{
+				Source: DatabaseConfig{
+					URL: "postgres://verify_source:correct-secret@source-db:26257/source_db?application_name=verify",
+				},
+				Destination: DatabaseConfig{
+					URL: "postgres://verify_target:correct-secret@target-db:26257/target_db?application_name=verify",
+				},
+			},
+		},
+		logger: zerolog.Nop(),
+		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
+			return fakeConn{id: preferredID}, nil
+		},
+		runVerify: func(
+			_ context.Context,
+			_ dbconn.OrderedConns,
+			_ zerolog.Logger,
+			_ inconsistency.Reporter,
+			_ utils.FilterConfig,
+		) error {
+			return errors.New("verify reported checksum mismatch for public.accounts")
+		},
+	}
+
+	err = runner.Run(context.Background(), request, noopReporter{})
+	require.Equal(
+		t,
+		&operatorError{
+			category: "verify_execution",
+			code:     "verify_failed",
+			message:  "verify execution failed: verify reported checksum mismatch for public.accounts",
+			details: []operatorErrorDetail{
+				{Reason: "verify reported checksum mismatch for public.accounts"},
+			},
+		},
+		err,
+	)
 }
 
 type fakeConn struct {

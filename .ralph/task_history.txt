@@ -140,3 +140,4 @@
 .ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md
 .ralph/tasks/story-27-verify-operator-ux-reset/01-task-reset-verify-service-config-to-operator-chosen-security-and-remove-redundant-tls-knobs.md
 .ralph/tasks/story-27-verify-operator-ux-reset/02-task-simplify-the-verify-http-contract-and-publish-curl-first-operator-docs.md
+.ralph/tasks/story-27-verify-operator-ux-reset/03-task-make-verify-http-errors-and-logs-actionable-at-startup-and-runtime.md

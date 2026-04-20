@@ -40,17 +40,28 @@ func (r RunRequest) FilterConfig() utils.FilterConfig {
 }
 
 func validateFilters(filterConfig utils.FilterConfig) error {
-	for _, pattern := range []string{
-		filterConfig.SchemaFilter,
-		filterConfig.TableFilter,
-		filterConfig.ExcludeSchemaFilter,
-		filterConfig.ExcludeTableFilter,
+	for _, candidate := range []struct {
+		field   string
+		pattern string
+	}{
+		{field: "include_schema", pattern: filterConfig.SchemaFilter},
+		{field: "include_table", pattern: filterConfig.TableFilter},
+		{field: "exclude_schema", pattern: filterConfig.ExcludeSchemaFilter},
+		{field: "exclude_table", pattern: filterConfig.ExcludeTableFilter},
 	} {
-		if pattern == "" {
+		if candidate.pattern == "" {
 			continue
 		}
-		if _, err := regexp.CompilePOSIX(pattern); err != nil {
-			return err
+		if _, err := regexp.CompilePOSIX(candidate.pattern); err != nil {
+			return newOperatorError(
+				"request_validation",
+				"invalid_filter",
+				"request validation failed",
+				operatorErrorDetail{
+					Field:  candidate.field,
+					Reason: err.Error(),
+				},
+			)
 		}
 	}
 	return nil

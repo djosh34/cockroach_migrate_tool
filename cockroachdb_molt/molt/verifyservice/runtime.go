@@ -51,13 +51,23 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 	} else {
 		tlsConfig, tlsErr := cfg.Listener.TLS.ServerTLSConfig()
 		if tlsErr != nil {
-			return tlsErr
+			return newOperatorError(
+				"startup",
+				"listener_tls_setup_failed",
+				"verify-service listener TLS setup failed",
+				operatorErrorDetail{Reason: tlsErr.Error()},
+			)
 		}
 		server.TLSConfig = tlsConfig
 		err = server.ListenAndServeTLS("", "")
 	}
 	if !errors.Is(err, http.ErrServerClosed) {
-		return err
+		return newOperatorError(
+			"startup",
+			"listener_start_failed",
+			"verify-service listener failed to start",
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 
 	select {

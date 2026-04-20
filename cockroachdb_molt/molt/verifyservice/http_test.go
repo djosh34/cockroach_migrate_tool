@@ -146,13 +146,23 @@ func TestGetJobReturnsStructuredResultsAfterCompletion(t *testing.T) {
 
 		var payload map[string]any
 		require.NoError(t, json.Unmarshal(body, &payload))
-		if payload["status"] != "succeeded" {
+		if payload["status"] != "failed" {
 			return false
 		}
 
 		require.Equal(t, map[string]any{
 			"job_id": "job-000001",
-			"status": "succeeded",
+			"status": "failed",
+			"failure": map[string]any{
+				"category": "mismatch",
+				"code":     "mismatch_detected",
+				"message":  "verify detected mismatches in 1 table",
+				"details": []any{
+					map[string]any{
+						"reason": "mismatch detected for public.accounts",
+					},
+				},
+			},
 			"result": map[string]any{
 				"table_summaries": []any{
 					map[string]any{
@@ -233,13 +243,23 @@ func TestGetJobReturnsTableDefinitionMismatchDetailsAfterCompletion(t *testing.T
 
 		var payload map[string]any
 		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
-		if payload["status"] != "succeeded" {
+		if payload["status"] != "failed" {
 			return false
 		}
 
 		require.Equal(t, map[string]any{
 			"job_id": "job-000001",
-			"status": "succeeded",
+			"status": "failed",
+			"failure": map[string]any{
+				"category": "mismatch",
+				"code":     "mismatch_detected",
+				"message":  "verify detected mismatches in 1 table",
+				"details": []any{
+					map[string]any{
+						"reason": "mismatch detected for public.orders",
+					},
+				},
+			},
 			"result": map[string]any{
 				"table_summaries": []any{
 					map[string]any{
@@ -611,12 +631,17 @@ func TestPostJobsRejectsConcurrentStartAttempts(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusConflict, secondResponse.StatusCode)
-
-	var payload struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.NewDecoder(secondResponse.Body).Decode(&payload))
-	require.Equal(t, "a verify job is already running", payload.Error)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "job_state",
+				Code:     "job_already_running",
+				Message:  "a verify job is already running",
+			},
+		},
+		decodeOperatorErrorResponse(t, secondResponse),
+	)
 }
 
 func TestPostTablesRawFailsClosedWhenDisabled(t *testing.T) {
@@ -853,7 +878,7 @@ func TestPostJobStopStopsTheActiveJob(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestGetJobReturnsOnlySafeStatusFieldsAfterFailure(t *testing.T) {
+func TestGetJobReturnsActionableFailureDetailsAfterFailure(t *testing.T) {
 	t.Parallel()
 
 	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
@@ -906,11 +931,33 @@ func TestGetJobReturnsOnlySafeStatusFieldsAfterFailure(t *testing.T) {
 		require.Equal(t, map[string]any{
 			"job_id": "job-000001",
 			"status": "failed",
+			"failure": map[string]any{
+				"category": "verify_execution",
+				"code":     "verify_failed",
+				"message":  `verify execution failed: verify exploded; $(curl attacker) "quoted"`,
+				"details": []any{
+					map[string]any{
+						"reason": `verify exploded; $(curl attacker) "quoted"`,
+					},
+				},
+			},
+			"result": map[string]any{
+				"table_summaries": []any{},
+				"mismatch_tables": []any{
+					map[string]any{
+						"schema": "public",
+						"table":  "accounts",
+					},
+				},
+				"table_definition_mismatches": []any{
+					map[string]any{
+						"schema":  "public",
+						"table":   "accounts",
+						"message": `primary key mismatch; $(touch /tmp/pwned) "quoted"`,
+					},
+				},
+			},
 		}, payload)
-		require.NotContains(t, string(body), "table_definition")
-		require.NotContains(t, string(body), "public")
-		require.NotContains(t, string(body), "accounts")
-		require.NotContains(t, string(body), "verify exploded")
 		return true
 	}, 2*time.Second, 20*time.Millisecond)
 }
@@ -973,11 +1020,7 @@ func TestPostJobsRejectsInvalidFilterRegex(t *testing.T) {
 		server.URL+"/jobs",
 		"application/json",
 		bytes.NewBufferString(`{
-			"filters": {
-				"include": {
-					"schema": "["
-				}
-			}
+			"include_schema": "["
 		}`),
 	)
 	require.NoError(t, err)
@@ -986,6 +1029,23 @@ func TestPostJobsRejectsInvalidFilterRegex(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "request_validation",
+				Code:     "invalid_filter",
+				Message:  "request validation failed",
+				Details: []operatorErrorDetail{
+					{
+						Field:  "include_schema",
+						Reason: "error parsing regexp: missing closing ]: `[`",
+					},
+				},
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	select {
 	case <-runner.started:
@@ -1030,12 +1090,23 @@ func TestPostJobsRejectsConnectionLikeRequestFields(t *testing.T) {
 		_ = response.Body.Close()
 	})
 	require.Equal(t, http.StatusBadRequest, response.StatusCode)
-
-	var payload struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-	require.Contains(t, payload.Error, `json: unknown field "verify"`)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "request_validation",
+				Code:     "unknown_field",
+				Message:  "request body contains an unsupported field",
+				Details: []operatorErrorDetail{
+					{
+						Field:  "verify",
+						Reason: "unknown field",
+					},
+				},
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	select {
 	case <-runner.started:
@@ -1070,12 +1141,23 @@ func TestPostJobsRejectsUnknownTopLevelFields(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusBadRequest, response.StatusCode)
-
-	var payload struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-	require.Contains(t, payload.Error, `json: unknown field "command"`)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "request_validation",
+				Code:     "unknown_field",
+				Message:  "request body contains an unsupported field",
+				Details: []operatorErrorDetail{
+					{
+						Field:  "command",
+						Reason: "unknown field",
+					},
+				},
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	select {
 	case <-runner.started:
@@ -1107,12 +1189,17 @@ func TestPostJobsRejectsTrailingJSONDocuments(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusBadRequest, response.StatusCode)
-
-	var payload struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-	require.Contains(t, payload.Error, "request body must contain exactly one JSON object")
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "request_validation",
+				Code:     "multiple_documents",
+				Message:  "request body must contain exactly one JSON object",
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	select {
 	case <-runner.started:
@@ -1144,12 +1231,17 @@ func TestPostJobsRejectsOversizedRequestBody(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, response.StatusCode)
-
-	var payload struct {
-		Error string `json:"error"`
-	}
-	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-	require.NotEmpty(t, payload.Error)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "request_validation",
+				Code:     "request_body_too_large",
+				Message:  "request body exceeds maximum size",
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	select {
 	case <-runner.started:
@@ -1180,6 +1272,17 @@ func TestPostJobStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusNotFound, response.StatusCode)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "job_state",
+				Code:     "job_not_found",
+				Message:  "job not found",
+			},
+		},
+		decodeOperatorErrorResponse(t, response),
+	)
 
 	getResponse, err := http.Get(server.URL + "/jobs/" + url.PathEscape(`job-999999;$(touch /tmp/pwned) "quoted"`))
 	require.NoError(t, err)
@@ -1187,6 +1290,17 @@ func TestPostJobStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 		_ = getResponse.Body.Close()
 	})
 	require.Equal(t, http.StatusNotFound, getResponse.StatusCode)
+	require.Equal(
+		t,
+		operatorErrorResponse{
+			Error: operatorErrorPayload{
+				Category: "job_state",
+				Code:     "job_not_found",
+				Message:  "job not found",
+			},
+		},
+		decodeOperatorErrorResponse(t, getResponse),
+	)
 }
 
 func TestJobResultsAreLostAfterProcessRestart(t *testing.T) {
@@ -1282,9 +1396,33 @@ type fakeRawTableReader struct {
 	err         error
 }
 
+type operatorErrorResponse struct {
+	Error operatorErrorPayload `json:"error"`
+}
+
+type operatorErrorPayload struct {
+	Category string                `json:"category"`
+	Code     string                `json:"code"`
+	Message  string                `json:"message"`
+	Details  []operatorErrorDetail `json:"details,omitempty"`
+}
+
+type operatorErrorDetail struct {
+	Field  string `json:"field,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
 func (r *fakeRawTableReader) ReadRawTable(_ context.Context, request verifyservice.RawTableRequest) (verifyservice.RawTableResponse, error) {
 	r.lastRequest = request
 	return r.response, r.err
+}
+
+func decodeOperatorErrorResponse(t *testing.T, response *http.Response) operatorErrorResponse {
+	t.Helper()
+
+	var payload operatorErrorResponse
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	return payload
 }
 
 func metricLabelNames(t *testing.T, family *dto.MetricFamily) []string {

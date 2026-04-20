@@ -280,7 +280,7 @@ docker compose -f runner.compose.yml up runner
 
 ## Verify Quick Start
 
-Pull the published verify image and write the verify-service config inline. Choose the listener mode by config shape: omit `listener.tls` for HTTP, set `cert_path` and `key_path` for HTTPS, and add `client_ca_path` only when you want mTLS. The source and destination database URLs own `sslmode`; the YAML only carries the cert paths the runtime injects. Create the cert files that match your chosen mode.
+Pull the published verify image and write the verify-service config inline. Omit `listener.tls` for HTTP, set `cert_path` plus `key_path` for HTTPS, and add `client_ca_path` for mTLS. Database URLs own `sslmode`; the YAML only carries mounted cert paths.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -338,7 +338,7 @@ Drive the verify HTTP API with curl after the process is listening:
 - `GET /jobs/${JOB_ID}` polls the running job and later returns the final result.
 - `POST /jobs/${JOB_ID}/stop` requests cancellation for the active job.
 
-The examples below assume the listener is serving HTTPS on `localhost:9443` and client auth uses the same `config/certs/source-client.crt` plus `config/certs/source-client.key` pair you mounted for the runtime. Reuse the `job_id` from the start response as `JOB_ID` before polling or stopping.
+These examples assume HTTPS on `localhost:9443` and reuse `config/certs/source-client.crt` plus `config/certs/source-client.key` for client auth. Export the returned `job_id` as `JOB_ID` before polling or stopping.
 
 ```bash
 export VERIFY_API="https://localhost:9443"
@@ -402,13 +402,19 @@ Stop response:
 Failed final response:
 
 ```json
-{"job_id":"job-000001","status":"failed"}
+{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: dial tcp source.internal:5432: connect: connection refused","details":[{"reason":"dial tcp source.internal:5432: connect: connection refused"}]}}
 ```
 
 Validation error response:
 
 ```json
-{"error":"json: unknown field \"filters\""}
+{"error":{"category":"request_validation","code":"unknown_field","message":"request body contains an unsupported field","details":[{"field":"filters","reason":"unknown field"}]}}
+```
+
+Mismatch final response:
+
+```json
+{"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":1,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"mismatch_tables":[{"schema":"public","table":"accounts"}],"table_definition_mismatches":[]}}
 ```
 
 If you prefer Compose, use the same image contract with Docker Compose.

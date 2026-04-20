@@ -62,7 +62,12 @@ func (r VerifyRunner) Run(
 
 	sourceConn, err := connect(ctx, "source", sourceConnStr)
 	if err != nil {
-		return err
+		return newOperatorError(
+			"source_access",
+			"connection_failed",
+			"source connection failed: "+err.Error(),
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 	defer func() {
 		runErr = errors.CombineErrors(runErr, sourceConn.Close(ctx))
@@ -70,7 +75,12 @@ func (r VerifyRunner) Run(
 
 	destinationConn, err := connect(ctx, "target", destinationConnStr)
 	if err != nil {
-		return err
+		return newOperatorError(
+			"destination_access",
+			"connection_failed",
+			"destination connection failed: "+err.Error(),
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 	defer func() {
 		runErr = errors.CombineErrors(runErr, destinationConn.Close(ctx))
@@ -84,13 +94,22 @@ func (r VerifyRunner) Run(
 	}
 	defer combinedReporter.Close()
 
-	return runVerify(
+	err = runVerify(
 		ctx,
 		dbconn.OrderedConns{sourceConn, destinationConn},
 		r.logger,
 		combinedReporter,
 		request.FilterConfig(),
 	)
+	if err != nil {
+		return newOperatorError(
+			"verify_execution",
+			"verify_failed",
+			"verify execution failed: "+err.Error(),
+			operatorErrorDetail{Reason: err.Error()},
+		)
+	}
+	return nil
 }
 
 func defaultRunVerify(

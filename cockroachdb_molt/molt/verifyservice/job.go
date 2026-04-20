@@ -3,10 +3,11 @@ package verifyservice
 import "context"
 
 type job struct {
-	id     string
-	status JobStatus
-	cancel context.CancelFunc
-	result jobResult
+	id      string
+	status  JobStatus
+	cancel  context.CancelFunc
+	result  jobResult
+	failure *operatorError
 }
 
 func newJob(id string, cancel context.CancelFunc) *job {
@@ -23,8 +24,12 @@ func (j job) response() any {
 		JobID:  j.id,
 		Status: j.status,
 	}
-	if j.status == JobStatusSucceeded && j.result.hasData() {
+	if j.status != JobStatusRunning && j.result.hasData() {
 		view.Result = j.result.response()
+	}
+	if j.failure != nil {
+		payload := j.failure.payload()
+		view.Failure = &payload
 	}
 	return view
 }
@@ -34,7 +39,8 @@ func (j *job) recordReport(obj any) {
 }
 
 type jobStatusView struct {
-	JobID  string         `json:"job_id"`
-	Status JobStatus      `json:"status"`
-	Result *jobResultView `json:"result,omitempty"`
+	JobID   string                `json:"job_id"`
+	Status  JobStatus             `json:"status"`
+	Result  *jobResultView        `json:"result,omitempty"`
+	Failure *operatorErrorPayload `json:"failure,omitempty"`
 }

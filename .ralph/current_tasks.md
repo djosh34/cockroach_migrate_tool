@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 08:47:45 PM CEST 2026
+Generated: Mon Apr 20 21:12:52 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md`
 
 ```
 ## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-27-verify-operator-ux-reset/03-task-make-verify-http-errors-and-logs-actionable-at-startup-and-runtime.md`
-
-```
-## Task: Make verify HTTP errors and logs actionable at startup and runtime <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

@@ -2,6 +2,7 @@ package verifyservice
 
 import (
 	"cmp"
+	"fmt"
 	"slices"
 
 	"github.com/cockroachdb/molt/utils"
@@ -111,6 +112,29 @@ func (r jobResult) hasData() bool {
 	return len(r.tableSummaries) > 0 ||
 		len(r.mismatchTables) > 0 ||
 		len(r.tableDefinitionMismatches) > 0
+}
+
+func (r jobResult) hasMismatch() bool {
+	return len(r.mismatchTables) > 0 || len(r.tableDefinitionMismatches) > 0
+}
+
+func (r jobResult) mismatchFailure() *operatorError {
+	mismatchTables := r.mismatchTablesView()
+	if len(mismatchTables) == 0 {
+		return nil
+	}
+	details := make([]operatorErrorDetail, 0, len(mismatchTables))
+	for _, table := range mismatchTables {
+		details = append(details, operatorErrorDetail{
+			Reason: fmt.Sprintf("mismatch detected for %s.%s", table.Schema, table.Table),
+		})
+	}
+	return newOperatorError(
+		"mismatch",
+		"mismatch_detected",
+		fmt.Sprintf("verify detected mismatches in %d table", len(mismatchTables)),
+		details...,
+	)
 }
 
 func (r jobResult) response() *jobResultView {

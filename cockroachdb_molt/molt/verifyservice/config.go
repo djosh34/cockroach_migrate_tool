@@ -42,16 +42,31 @@ func LoadConfig(path string) (Config, error) {
 	var cfg Config
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return Config{}, err
+		return Config{}, newOperatorError(
+			"config",
+			"config_read_failed",
+			"verify-service config could not be read",
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 	if err := decoder.Decode(&cfg); err != nil {
-		return Config{}, err
+		return Config{}, newOperatorError(
+			"config",
+			"invalid_config",
+			"verify-service config is invalid",
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 	if err := cfg.Validate(); err != nil {
-		return Config{}, err
+		return Config{}, newOperatorError(
+			"config",
+			"invalid_config",
+			"verify-service config is invalid",
+			operatorErrorDetail{Reason: err.Error()},
+		)
 	}
 	return cfg, nil
 }

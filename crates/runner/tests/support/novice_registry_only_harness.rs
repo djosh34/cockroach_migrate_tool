@@ -51,11 +51,27 @@ pub struct RunningVerifyCompose {
 pub struct VerifyComposeJobResponse {
     pub job_id: String,
     pub status: String,
+    #[serde(default)]
+    pub failure: Option<VerifyComposeFailure>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct VerifyComposeErrorResponse {
-    pub error: String,
+    pub error: VerifyComposeErrorPayload,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyComposeFailure {
+    pub category: String,
+    pub code: String,
+    pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyComposeErrorPayload {
+    pub category: String,
+    pub code: String,
+    pub message: String,
 }
 
 impl NoviceRegistryOnlyHarness {

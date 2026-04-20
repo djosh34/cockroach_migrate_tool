@@ -1,4 +1,4 @@
-## Task: Make verify HTTP errors and logs actionable at startup and runtime <status>not_started</status> <passes>false</passes>
+## Task: Make verify HTTP errors and logs actionable at startup and runtime <status>not_started</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -56,3 +56,5 @@ Relevant files and boundaries:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-27-verify-operator-ux-reset/03-task-make-verify-http-errors-and-logs-actionable-at-startup-and-runtime_plans/2026-04-20-verify-http-errors-and-logs-plan.md</plan>

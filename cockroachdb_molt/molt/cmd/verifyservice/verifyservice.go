@@ -144,7 +144,18 @@ func newCommandLogger(w io.Writer, logFormat string) (zerolog.Logger, error) {
 
 func writeJSONCommandError(logger zerolog.Logger, logFormat string, err error) error {
 	if logFormat == logFormatJSON {
-		logger.Error().Str("event", "command.failed").Msg(err.Error())
+		event := logger.Error().Str("event", "command.failed")
+		if opErr, ok := serviceconfig.ExtractOperatorError(err); ok {
+			event = event.
+				Str("category", opErr.Category).
+				Str("code", opErr.Code)
+			if len(opErr.Details) > 0 {
+				event = event.Any("details", opErr.Details)
+			}
+			event.Msg(opErr.Message)
+		} else {
+			event.Msg(err.Error())
+		}
 		return loggedCommandError{cause: err}
 	}
 	return err

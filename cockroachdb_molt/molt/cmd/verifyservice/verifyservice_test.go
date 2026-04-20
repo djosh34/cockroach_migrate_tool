@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,23 @@ func parseJSONLogLine(t *testing.T, raw string) map[string]any {
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(lines[0], &payload), "json logging mode must emit valid JSON")
 	return payload
+}
+
+func parseJSONLogLines(t *testing.T, raw string) []map[string]any {
+	t.Helper()
+
+	lines := bytes.Split(bytes.TrimSpace([]byte(raw)), []byte("\n"))
+	payloads := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(line, &payload), "json logging mode must emit valid JSON")
+		payloads = append(payloads, payload)
+	}
+	require.NotEmpty(t, payloads, "json logging mode must emit at least one log line")
+	return payloads
 }
 
 type lockedBuffer struct {
@@ -76,6 +94,23 @@ verify:
 		serverKeyPath,
 		clientCAPath,
 	)
+	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
+	return configPath
+}
+
+func writeHTTPRuntimeConfig(t *testing.T, bindAddr string) string {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "verify-service.yml")
+	config := fmt.Sprintf(`listener:
+  bind_addr: %s
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=disable
+  destination:
+    url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=disable
+`, bindAddr)
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
 	return configPath
 }
@@ -210,7 +245,18 @@ func TestValidateConfigReportsInvalidConfigAsJSONError(t *testing.T) {
 	require.Equal(t, "error", payload["level"])
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "command.failed", payload["event"])
-	require.Contains(t, payload["message"].(string), "listener.tls.cert_path")
+	require.Equal(t, "config", payload["category"])
+	require.Equal(t, "invalid_config", payload["code"])
+	require.Equal(t, "verify-service config is invalid", payload["message"])
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"reason": "listener.tls.cert_path and listener.tls.key_path must both be set when listener.tls is configured",
+			},
+		},
+		payload["details"],
+	)
 }
 
 func TestRunSupportsJSONOperatorLogsForRuntimeStartup(t *testing.T) {
@@ -292,7 +338,66 @@ func TestRunReportsInvalidConfigAsJSONError(t *testing.T) {
 	require.Equal(t, "error", payload["level"])
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "command.failed", payload["event"])
-	require.Contains(t, payload["message"].(string), "listener.tls.cert_path")
+	require.Equal(t, "config", payload["category"])
+	require.Equal(t, "invalid_config", payload["code"])
+	require.Equal(t, "verify-service config is invalid", payload["message"])
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"reason": "listener.tls.cert_path and listener.tls.key_path must both be set when listener.tls is configured",
+			},
+		},
+		payload["details"],
+	)
+}
+
+func TestRunReportsStartupFailureAsJSONError(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer func() {
+		_ = listener.Close()
+	}()
+
+	cmd := rootcmd.NewRootCmd()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{
+		"verify-service",
+		"run",
+		"--log-format",
+		"json",
+		"--config",
+		writeHTTPRuntimeConfig(t, listener.Addr().String()),
+	})
+
+	err = cmd.Execute()
+	require.Error(t, err)
+	require.Empty(t, stdout.String(), "startup failure must not emit stdout output")
+
+	payloads := parseJSONLogLines(t, stderr.String())
+	require.GreaterOrEqual(t, len(payloads), 2, "runtime startup failure should log the start attempt and the failure")
+	require.Equal(t, "runtime.starting", payloads[0]["event"])
+
+	failure := payloads[len(payloads)-1]
+	require.Equal(t, "error", failure["level"])
+	require.Equal(t, "verify", failure["service"])
+	require.Equal(t, "command.failed", failure["event"])
+	require.Equal(t, "startup", failure["category"])
+	require.Equal(t, "listener_start_failed", failure["code"])
+	require.Equal(t, "verify-service listener failed to start", failure["message"])
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"reason": failure["details"].([]any)[0].(map[string]any)["reason"],
+			},
+		},
+		failure["details"],
+	)
+	require.Contains(t, failure["details"].([]any)[0].(map[string]any)["reason"].(string), "address already in use")
 }
 
 func TestValidateConfigHelpStaysConfigOnly(t *testing.T) {

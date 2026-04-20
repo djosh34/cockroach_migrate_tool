@@ -424,6 +424,7 @@ pub struct VerifyCorrectnessAudit {
     expected_tables: Vec<String>,
     job_id: String,
     status: String,
+    failure_category: Option<String>,
     table_summaries: Vec<VerifyTableSummary>,
     mismatched_tables: BTreeSet<String>,
 }
@@ -436,15 +437,16 @@ impl VerifyCorrectnessAudit {
             expected_tables,
             job_id: response.job_id,
             status: response.status,
+            failure_category: response.failure.map(|failure| failure.category),
             table_summaries: result.table_summaries,
             mismatched_tables,
         }
     }
 
-    pub fn assert_finished_successfully(&self) {
+    pub fn assert_finished_with_mismatch(&self) {
         assert!(
-            self.finished_successfully(),
-            "verify image job `{}` should succeed without hidden fallback verification: {:?}",
+            self.finished_with_mismatch(),
+            "verify image job `{}` should finish as a mismatch failure when selected tables diverge: {:?}",
             self.job_id,
             self
         );
@@ -493,7 +495,7 @@ impl VerifyCorrectnessAudit {
     }
 
     pub fn selected_tables_mismatch(&self) -> bool {
-        self.finished_successfully()
+        self.finished_with_mismatch()
             && self.covers_expected_tables()
             && (self.table_summaries.iter().any(|summary| {
                 self.expected_tables.contains(&summary.table_name()) && summary.num_mismatch > 0
@@ -501,6 +503,10 @@ impl VerifyCorrectnessAudit {
                 .expected_tables
                 .iter()
                 .any(|expected_table| self.mismatched_tables.contains(expected_table)))
+    }
+
+    fn finished_with_mismatch(&self) -> bool {
+        self.status == "failed" && self.failure_category.as_deref() == Some("mismatch")
     }
 
     fn covers_expected_tables(&self) -> bool {
@@ -523,6 +529,8 @@ impl VerifyCorrectnessAudit {
 pub struct VerifyJobResponse {
     job_id: String,
     status: String,
+    #[serde(default)]
+    failure: Option<VerifyJobFailure>,
     #[serde(default)]
     result: Option<VerifyJobResult>,
 }
@@ -555,6 +563,11 @@ struct VerifyJobResult {
     mismatch_tables: Vec<VerifyTableRef>,
     #[serde(default)]
     table_definition_mismatches: Vec<VerifyTableDefinitionMismatch>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyJobFailure {
+    category: String,
 }
 
 impl VerifyJobResult {

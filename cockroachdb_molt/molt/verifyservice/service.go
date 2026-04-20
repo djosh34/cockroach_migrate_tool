@@ -89,14 +89,14 @@ func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	runRequest, err := jobRequest.Compile()
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, err.Error())
+		writeOperatorError(w, http.StatusBadRequest, err)
 		return
 	}
 
 	job, err := s.startJob(runRequest)
 	if err != nil {
 		if errors.Is(err, errJobAlreadyRunning) {
-			writeJSONError(w, http.StatusConflict, err.Error())
+			writeOperatorError(w, http.StatusConflict, err)
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -112,7 +112,7 @@ func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-var errJobAlreadyRunning = errors.New("a verify job is already running")
+var errJobAlreadyRunning = newOperatorError("job_state", "job_already_running", "a verify job is already running")
 
 func (s *Service) startJob(request RunRequest) (*job, error) {
 	s.mu.Lock()
@@ -145,11 +145,17 @@ func (s *Service) finishJob(jobID string, err error) {
 
 	switch {
 	case err == nil:
-		job.status = JobStatusSucceeded
+		if mismatchFailure := job.result.mismatchFailure(); mismatchFailure != nil {
+			job.status = JobStatusFailed
+			job.failure = mismatchFailure
+		} else {
+			job.status = JobStatusSucceeded
+		}
 	case errors.Is(err, context.Canceled):
 		job.status = JobStatusStopped
 	default:
 		job.status = JobStatusFailed
+		job.failure = classifyRunFailure(err)
 	}
 	job.cancel = nil
 	s.lastCompletedJob = job
@@ -160,7 +166,7 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("job_id")
 	jobResponse, ok := s.getJobResponse(jobID)
 	if !ok {
-		writeJSONError(w, http.StatusNotFound, "job not found")
+		writeOperatorError(w, http.StatusNotFound, errJobNotFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, jobResponse)
@@ -176,7 +182,7 @@ func (s *Service) handlePostJobStop(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("job_id")
 	if err := s.stopJob(jobID); err != nil {
 		if errors.Is(err, errJobNotFound) {
-			writeJSONError(w, http.StatusNotFound, err.Error())
+			writeOperatorError(w, http.StatusNotFound, err)
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -232,7 +238,7 @@ func (s *Service) getJobResponse(jobID string) (any, bool) {
 	return nil, false
 }
 
-var errJobNotFound = errors.New("job not found")
+var errJobNotFound = newOperatorError("job_state", "job_not_found", "job not found")
 
 func (s *Service) stopJob(jobID string) error {
 	s.mu.Lock()
@@ -271,14 +277,24 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
+func writeOperatorError(w http.ResponseWriter, status int, err error) {
+	if opErr, ok := asOperatorError(err); ok {
+		writeJSON(w, status, operatorErrorResponse{
+			Error: opErr.payload(),
+		})
+		return
+	}
+	writeJSONError(w, status, err.Error())
+}
+
 var errRequestBodyTooLarge = errors.New("request body exceeds maximum size")
 
 func writeDecodeJSONError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errRequestBodyTooLarge) {
-		writeJSONError(w, http.StatusRequestEntityTooLarge, err.Error())
+		writeOperatorError(w, http.StatusRequestEntityTooLarge, classifyDecodeJSONError(err))
 		return
 	}
-	writeJSONError(w, http.StatusBadRequest, err.Error())
+	writeOperatorError(w, http.StatusBadRequest, classifyDecodeJSONError(err))
 }
 
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, destination any) error {

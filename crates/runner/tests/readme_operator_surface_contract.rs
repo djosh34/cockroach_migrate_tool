@@ -205,7 +205,12 @@ fn readme_verify_quick_start_documents_the_http_job_flow() {
         "\"status\":\"succeeded\"",
         "\"status\":\"failed\"",
         "\"status\":\"stopping\"",
-        "\"error\":\"json: unknown field \\\"filters\\\"\"",
+        "\"category\":\"request_validation\"",
+        "\"code\":\"unknown_field\"",
+        "\"category\":\"source_access\"",
+        "\"code\":\"connection_failed\"",
+        "\"category\":\"mismatch\"",
+        "\"code\":\"mismatch_detected\"",
     ] {
         assert!(
             verify.contains(required_snippet),

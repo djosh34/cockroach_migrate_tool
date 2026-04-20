@@ -110,7 +110,7 @@ fn verify_image_reports_selected_table_mismatches_through_the_real_http_contract
     harness.assert_runner_alive();
     drop(destination_failure);
 
-    audit.assert_finished_successfully();
+    audit.assert_finished_with_mismatch();
     audit.assert_detects_selected_table_mismatch();
 }
 
