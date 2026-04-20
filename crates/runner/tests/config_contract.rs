@@ -2,6 +2,7 @@ use std::{fs, path::PathBuf};
 
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
+use serde_json::Value;
 
 #[path = "support/runner_public_contract.rs"]
 mod runner_public_contract_support;
@@ -36,6 +37,61 @@ fn validate_config_accepts_a_minimal_valid_yaml_file() {
     assert!(
         !stdout.contains("verify="),
         "validate-config stdout must not print a removed verify summary",
+    );
+}
+
+#[test]
+fn validate_config_supports_json_operator_logs() {
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    let assert = command
+        .args(["validate-config", "--log-format", "json", "--config"])
+        .arg(fixture_path("valid-runner-config.yml"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("validate-config stdout should be utf-8");
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("validate-config stderr should be utf-8");
+
+    assert!(
+        stdout.is_empty(),
+        "json logging mode must keep validate-config stdout empty, got: {stdout:?}",
+    );
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "json logging mode must emit exactly one log line, got stderr: {stderr:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(lines[0]).expect("validate-config stderr must be valid JSON");
+    let json_object = payload
+        .as_object()
+        .expect("validate-config stderr json must be an object");
+
+    for key in ["timestamp", "level", "service", "event", "message"] {
+        assert!(
+            json_object.contains_key(key),
+            "validate-config json log must include `{key}`: {payload}",
+        );
+    }
+
+    assert_eq!(
+        json_object.get("service").and_then(Value::as_str),
+        Some("runner"),
+        "validate-config json log must identify the runner service",
+    );
+    assert_eq!(
+        json_object.get("event").and_then(Value::as_str),
+        Some("config.validated"),
+        "validate-config json log must expose the validation success event",
+    );
+    assert!(
+        !stderr.contains("config valid:"),
+        "json logging mode must not fall back to the legacy plain-text summary: {stderr:?}",
     );
 }
 

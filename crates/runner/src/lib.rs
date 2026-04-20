@@ -13,6 +13,7 @@ mod webhook_runtime;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use operator_log::{LogEvent, LogFormat};
 
 use config::LoadedRunnerConfig;
 pub use error::RunnerError;
@@ -27,6 +28,8 @@ use webhook_runtime::serve as serve_webhook_runtime;
     about = "CockroachDB to PostgreSQL destination runner"
 )]
 pub struct Cli {
+    #[arg(long, value_enum, global = true, default_value_t = LogFormat::Text)]
+    log_format: LogFormat,
     #[command(subcommand)]
     command: Command,
 }
@@ -43,7 +46,10 @@ enum Command {
     },
 }
 
-pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
+pub async fn execute<F>(cli: Cli, mut emit_event: F) -> Result<Option<CommandOutput>, RunnerError>
+where
+    F: FnMut(LogEvent<'static>),
+{
     match cli.command {
         Command::ValidateConfig { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
@@ -54,6 +60,11 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
             let startup_plan = RunnerStartupPlan::from_config(config.config())?;
+            emit_event(LogEvent::info(
+                "runner",
+                "runtime.starting",
+                "runner runtime starting",
+            ));
             let helper_plans = bootstrap_postgres(&startup_plan).await?;
             let runtime = RunnerRuntimePlan::from_startup_plan(startup_plan, helper_plans)?;
             let runtime = std::sync::Arc::new(runtime);
@@ -74,14 +85,26 @@ pub async fn execute(cli: Cli) -> Result<Option<CommandOutput>, RunnerError> {
     }
 }
 
+impl Cli {
+    pub fn log_format(&self) -> LogFormat {
+        self.log_format
+    }
+}
+
 pub enum CommandOutput {
     Validated(ValidatedConfig),
 }
 
-impl std::fmt::Display for CommandOutput {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl CommandOutput {
+    pub fn event(&self) -> LogEvent<'static> {
         match self {
-            Self::Validated(config) => config.fmt(f),
+            Self::Validated(config) => config.event(),
+        }
+    }
+
+    pub fn text_output(&self) -> String {
+        match self {
+            Self::Validated(config) => config.text_output(),
         }
     }
 }
@@ -106,12 +129,19 @@ impl From<&LoadedRunnerConfig> for ValidatedConfig {
     }
 }
 
-impl std::fmt::Display for ValidatedConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
+impl ValidatedConfig {
+    fn text_output(&self) -> String {
+        format!(
             "config valid: config={} mappings={} webhook={} tls={}",
             self.config_path, self.mappings, self.webhook_bind_addr, self.webhook_tls_files
         )
+    }
+
+    fn event(&self) -> LogEvent<'static> {
+        LogEvent::info("runner", "config.validated", "runner config validated")
+            .with_field("config", &self.config_path)
+            .with_field("mappings", self.mappings)
+            .with_field("webhook", self.webhook_bind_addr.to_string())
+            .with_field("tls", &self.webhook_tls_files)
     }
 }

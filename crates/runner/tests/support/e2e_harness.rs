@@ -1803,9 +1803,7 @@ fn parse_changefeed_cursor(output: &str) -> String {
         .map(str::trim)
         .rfind(|line| !line.is_empty() && *line != "changefeed_cursor")
         .unwrap_or_else(|| {
-            panic!(
-                "cluster_logical_timestamp output should include a cursor row, got:\n{output}"
-            )
+            panic!("cluster_logical_timestamp output should include a cursor row, got:\n{output}")
         })
         .to_owned()
 }

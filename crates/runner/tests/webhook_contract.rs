@@ -562,7 +562,10 @@ fn run_metrics_bound_webhook_outcomes_without_leaking_error_text_or_mapping_ids(
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );
-    assert_eq!(internal_error_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        internal_error_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 
     let metrics_body = metrics_body(&client, bind_port);
     assert!(
@@ -630,15 +633,13 @@ fn run_exposes_webhook_apply_duration_and_attempt_metrics() {
         "metrics should expose cumulative webhook apply duration:\n{metrics_body}",
     );
     assert!(
-        metrics_body.contains(
-            "# TYPE cockroach_migration_tool_webhook_apply_requests_total counter"
-        ),
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_webhook_apply_requests_total counter"),
         "metrics should expose webhook apply request totals:\n{metrics_body}",
     );
     assert!(
-        metrics_body.contains(
-            "# TYPE cockroach_migration_tool_webhook_apply_last_duration_seconds gauge"
-        ),
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_webhook_apply_last_duration_seconds gauge"),
         "metrics should expose the latest webhook apply duration:\n{metrics_body}",
     );
     assert!(
@@ -695,12 +696,14 @@ fn run_exposes_webhook_apply_failure_and_latest_outcome_metrics() {
         &client,
         &partially_invalid_row_batch_body("demo_a", "customers"),
     );
-    assert_eq!(internal_error_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        internal_error_response.status(),
+        StatusCode::INTERNAL_SERVER_ERROR
+    );
 
     let metrics_body = metrics_body(&client, bind_port);
     assert!(
-        metrics_body
-            .contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
+        metrics_body.contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
         "metrics should expose cumulative apply failure counters:\n{metrics_body}",
     );
     assert!(
@@ -710,9 +713,8 @@ fn run_exposes_webhook_apply_failure_and_latest_outcome_metrics() {
         "metrics should expose bounded webhook apply failure labels:\n{metrics_body}",
     );
     assert!(
-        metrics_body.contains(
-            "# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"
-        ),
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"),
         "metrics should expose latest apply outcome timestamps:\n{metrics_body}",
     );
     assert!(
@@ -1232,7 +1234,11 @@ fn run_routes_quoted_source_table_names_to_the_configured_mapping_table() {
     let bind_port = pick_unused_port();
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
-    postgres.write_runner_config_with_tables(&config_path, bind_port, &[r#"public."CustomerEvents""#]);
+    postgres.write_runner_config_with_tables(
+        &config_path,
+        bind_port,
+        &[r#"public."CustomerEvents""#],
+    );
 
     let client = https_client();
     let mut runner = RunnerProcess::start(&config_path);

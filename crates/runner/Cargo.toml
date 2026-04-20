@@ -16,6 +16,7 @@ http-body-util.workspace = true
 hyper.workspace = true
 hyper-util.workspace = true
 ingest-contract = { path = "../ingest-contract" }
+operator-log = { path = "../operator-log" }
 rustls.workspace = true
 rustls-pemfile.workspace = true
 serde.workspace = true

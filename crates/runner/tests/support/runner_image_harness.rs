@@ -296,6 +296,11 @@ fn pick_unused_port() -> u16 {
 }
 
 fn run_command_capture(command: &mut Command, context: &str) -> String {
+    let (stdout, _) = run_command_output(command, context);
+    stdout
+}
+
+fn run_command_output(command: &mut Command, context: &str) -> (String, String) {
     let output = command
         .output()
         .unwrap_or_else(|error| panic!("{context} should start: {error}"));
@@ -305,7 +310,10 @@ fn run_command_capture(command: &mut Command, context: &str) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("command stdout should be utf-8")
+    (
+        String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
+        String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
+    )
 }
 
 fn cleanup_if_present(probe: &mut Command, cleanup: &mut Command, context: &str) {

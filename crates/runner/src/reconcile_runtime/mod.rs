@@ -62,12 +62,12 @@ async fn run_reconcile_pass(
     let endpoint = mapping.destination().endpoint_label();
     let database = mapping.destination().database().to_owned();
     let mut postgres = PgConnection::connect_with(&mapping.destination().connect_options())
-            .await
-            .map_err(|source| RunnerReconcileRuntimeError::Connect {
-                mapping_id: mapping.mapping_id().to_owned(),
-                endpoint,
-                source,
-            })?;
+        .await
+        .map_err(|source| RunnerReconcileRuntimeError::Connect {
+            mapping_id: mapping.mapping_id().to_owned(),
+            endpoint,
+            source,
+        })?;
     let mut transaction =
         postgres
             .begin()

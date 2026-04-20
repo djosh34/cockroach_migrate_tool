@@ -29,7 +29,10 @@ pub(super) fn load(path: &Path) -> Result<BootstrapConfig, BootstrapConfigError>
     validate(raw, path.parent().unwrap_or_else(|| Path::new(".")))
 }
 
-fn validate(raw: RawBootstrapConfig, config_dir: &Path) -> Result<BootstrapConfig, BootstrapConfigError> {
+fn validate(
+    raw: RawBootstrapConfig,
+    config_dir: &Path,
+) -> Result<BootstrapConfig, BootstrapConfigError> {
     let mappings = validate_mappings(raw.mappings)?;
     Ok(BootstrapConfig {
         cockroach_url: validate_text(raw.cockroach.url, "cockroach.url")?,

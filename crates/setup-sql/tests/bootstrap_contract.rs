@@ -1,4 +1,4 @@
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
@@ -109,14 +109,64 @@ fn emit_cockroach_sql_defaults_to_text_and_supports_simple_json_output() {
         "demo_a json payload should keep the explicit cursor handoff in the changefeed SQL",
     );
     assert!(
-        demo_a_sql.contains(
-            "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"
-        ),
+        demo_a_sql
+            .contains("CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders"),
         "demo_a json payload should contain the changefeed SQL string",
     );
     assert!(
         !demo_a_sql.contains("#!/usr/bin/env bash"),
         "json output must stay SQL-only and must not reintroduce shell artifacts",
+    );
+}
+
+#[test]
+fn emit_cockroach_sql_supports_json_operator_logs_without_mixing_payload_output() {
+    let mut command = Command::cargo_bin("setup-sql").expect("setup-sql binary should exist");
+    let assert = command
+        .args(["emit-cockroach-sql", "--log-format", "json", "--config"])
+        .arg(fixture_path("valid-cockroach-setup-config.yml"))
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("emit-cockroach-sql stdout should be utf-8");
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("emit-cockroach-sql stderr should be utf-8");
+
+    assert!(
+        stdout.starts_with("-- Source bootstrap SQL\n"),
+        "emit-cockroach-sql must keep stdout reserved for the SQL payload, got: {stdout:?}",
+    );
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "json logging mode must emit exactly one stderr log line, got: {stderr:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(lines[0]).expect("emit-cockroach-sql stderr must be valid JSON");
+    let json_object = payload
+        .as_object()
+        .expect("emit-cockroach-sql stderr json must be an object");
+
+    for key in ["timestamp", "level", "service", "event", "message"] {
+        assert!(
+            json_object.contains_key(key),
+            "emit-cockroach-sql json log must include `{key}`: {payload}",
+        );
+    }
+
+    assert_eq!(
+        json_object.get("service").and_then(Value::as_str),
+        Some("setup-sql"),
+        "emit-cockroach-sql json log must identify the setup-sql service",
+    );
+    assert_eq!(
+        json_object.get("event").and_then(Value::as_str),
+        Some("sql.emitted"),
+        "emit-cockroach-sql json log must identify the SQL emission event",
     );
 }
 
@@ -133,6 +183,75 @@ fn emit_cockroach_sql_rejects_invalid_mapping_config() {
             "invalid config field `mappings[].id`",
         ))
         .stderr(predicate::str::contains("must be unique"));
+}
+
+#[test]
+fn emit_cockroach_sql_reports_invalid_config_as_a_json_error_event() {
+    let mut command = Command::cargo_bin("setup-sql").expect("setup-sql binary should exist");
+    let assert = command
+        .args(["emit-cockroach-sql", "--log-format", "json", "--config"])
+        .arg(fixture_path("invalid-cockroach-setup-config.yml"))
+        .assert()
+        .failure();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("emit-cockroach-sql stdout should be utf-8");
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("emit-cockroach-sql stderr should be utf-8");
+
+    assert!(
+        stdout.is_empty(),
+        "invalid config must not emit SQL payload on stdout, got: {stdout:?}",
+    );
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "json logging mode must emit exactly one stderr log line for invalid config, got: {stderr:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(lines[0]).expect("emit-cockroach-sql stderr must be valid JSON");
+    let json_object = payload
+        .as_object()
+        .expect("emit-cockroach-sql stderr json must be an object");
+
+    for key in ["timestamp", "level", "service", "event", "message"] {
+        assert!(
+            json_object.contains_key(key),
+            "emit-cockroach-sql json error log must include `{key}`: {payload}",
+        );
+    }
+
+    assert_eq!(
+        json_object.get("level").and_then(Value::as_str),
+        Some("error"),
+        "invalid config must log at error level",
+    );
+    assert_eq!(
+        json_object.get("service").and_then(Value::as_str),
+        Some("setup-sql"),
+        "invalid config json log must identify the setup-sql service",
+    );
+    assert_eq!(
+        json_object.get("event").and_then(Value::as_str),
+        Some("command.failed"),
+        "invalid config must surface the command failure event",
+    );
+
+    let message = json_object
+        .get("message")
+        .and_then(Value::as_str)
+        .expect("invalid config json error must expose the error message");
+    assert!(
+        message.contains("invalid config field `mappings[].id`"),
+        "invalid config json error must retain the field-level validation detail, got: {message:?}",
+    );
+    assert!(
+        message.contains("must be unique"),
+        "invalid config json error must retain the explicit failure reason, got: {message:?}",
+    );
 }
 
 #[test]
@@ -186,9 +305,7 @@ fn emit_postgres_grants_outputs_sql_only_text_and_json_from_minimal_destination_
         .and_then(Value::as_str)
         .expect("app_a sql should be a string");
     assert!(
-        app_a_sql.contains(
-            "GRANT CONNECT, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";"
-        ),
+        app_a_sql.contains("GRANT CONNECT, CREATE ON DATABASE \"app_a\" TO \"migration_user_a\";"),
         "app_a json payload should contain the explicit database grant SQL",
     );
     assert!(

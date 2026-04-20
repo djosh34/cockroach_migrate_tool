@@ -419,7 +419,6 @@ impl RunnerProcess {
             .send()
             .expect("ingest request should complete")
     }
-
 }
 
 impl Drop for RunnerProcess {
@@ -704,9 +703,8 @@ fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
         "metrics should expose cumulative reconcile duration:\n{metrics_body}",
     );
     assert!(
-        metrics_body.contains(
-            "# TYPE cockroach_migration_tool_reconcile_apply_attempts_total counter"
-        ),
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_reconcile_apply_attempts_total counter"),
         "metrics should expose reconcile attempt counters:\n{metrics_body}",
     );
     assert!(
@@ -1339,14 +1337,12 @@ fn run_records_reconcile_failure_metrics_without_exiting_runner() {
     runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
 
     assert!(
-        metrics_body
-            .contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
+        metrics_body.contains("# TYPE cockroach_migration_tool_apply_failures_total counter"),
         "metrics should expose cumulative apply failure counters:\n{metrics_body}",
     );
     assert!(
-        metrics_body.contains(
-            "# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"
-        ),
+        metrics_body
+            .contains("# TYPE cockroach_migration_tool_apply_last_outcome_unixtime_seconds gauge"),
         "metrics should expose latest apply outcome timestamps:\n{metrics_body}",
     );
     assert!(

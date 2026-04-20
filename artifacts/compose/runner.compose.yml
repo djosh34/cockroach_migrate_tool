@@ -12,6 +12,8 @@ services:
         target: /config/certs/server.key
     command:
       - run
+      - --log-format
+      - json
       - --config
       - /config/runner.yml
 

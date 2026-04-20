@@ -3,6 +3,7 @@ mod verify_docker_contract_support;
 #[path = "support/verify_image_artifact_harness.rs"]
 mod verify_image_artifact_harness_support;
 
+use serde_json::Value;
 use verify_docker_contract_support::VerifyDockerContract;
 use verify_image_artifact_harness_support::VerifyImageArtifactHarness;
 
@@ -50,4 +51,45 @@ fn verify_image_dockerfile_separates_go_module_and_source_cache_layers() {
     let contract = VerifyDockerContract::load();
 
     contract.assert_dockerfile_separates_go_module_and_source_cache_layers();
+}
+
+#[test]
+fn verify_image_validate_config_supports_json_operator_logs() {
+    let harness = VerifyImageArtifactHarness::start();
+    let (stdout, stderr) = harness.validate_config_json_logs();
+
+    assert!(
+        stdout.is_empty(),
+        "verify image json logging mode must keep validate-config stdout empty, got: {stdout:?}",
+    );
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "verify image json logging mode must emit exactly one log line, got: {stderr:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(lines[0]).expect("verify image stderr log should be valid json");
+    let json_object = payload
+        .as_object()
+        .expect("verify image stderr log should be a json object");
+
+    for key in ["timestamp", "level", "service", "event", "message"] {
+        assert!(
+            json_object.contains_key(key),
+            "verify image json log must include `{key}`: {payload}",
+        );
+    }
+    assert_eq!(
+        json_object.get("service").and_then(Value::as_str),
+        Some("verify"),
+        "verify image json log must identify the verify service",
+    );
+    assert_eq!(
+        json_object.get("event").and_then(Value::as_str),
+        Some("config.validated"),
+        "verify image json log must expose the validation success event",
+    );
 }

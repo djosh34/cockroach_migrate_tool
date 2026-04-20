@@ -10,6 +10,8 @@ services:
         target: /config/ca.crt
     command:
       - emit-cockroach-sql
+      - --log-format
+      - json
       - --config
       - /config/cockroach-setup.yml
 

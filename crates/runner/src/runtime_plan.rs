@@ -26,7 +26,9 @@ impl RunnerStartupPlan {
         for mapping in config.mappings() {
             let mapping_plan = ConfiguredMappingPlan::from_config(mapping);
             grouped_mappings
-                .entry(DestinationDatabaseKey::from_target(mapping_plan.destination()))
+                .entry(DestinationDatabaseKey::from_target(
+                    mapping_plan.destination(),
+                ))
                 .or_default()
                 .push(mapping_plan.clone());
             mappings.insert(mapping_plan.mapping_id().to_owned(), mapping_plan);
@@ -163,10 +165,7 @@ impl DestinationGroupPlan {
             }
         }
 
-        Ok(Self {
-            target,
-            mappings,
-        })
+        Ok(Self { target, mappings })
     }
 
     pub(crate) fn target(&self) -> &PostgresTargetConfig {
@@ -363,13 +362,12 @@ fn build_reconcile_tables(
     table_order
         .iter()
         .map(|table_name| {
-            helper_tables
-                .get(table_name)
-                .cloned()
-                .ok_or_else(|| RunnerRuntimePlanError::MissingReconcileTable {
+            helper_tables.get(table_name).cloned().ok_or_else(|| {
+                RunnerRuntimePlanError::MissingReconcileTable {
                     mapping_id: mapping_id.to_owned(),
                     table: table_name.label(),
-                })
+                }
+            })
         })
         .collect()
 }

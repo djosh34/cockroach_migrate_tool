@@ -47,6 +47,9 @@ func walk(c *cobra.Command, f func(*cobra.Command)) {
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		if verifyservicecmd.IsLoggedCommandError(err) {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

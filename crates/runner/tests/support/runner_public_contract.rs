@@ -117,17 +117,15 @@ impl RunnerPublicContract {
 #[allow(dead_code)]
 fn read_runner_source(relative_path: &str) -> String {
     let path = runner_manifest_dir().join(relative_path);
-    fs::read_to_string(&path).unwrap_or_else(|error| {
-        panic!("runner contract should read `{}`: {error}", path.display())
-    })
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("runner contract should read `{}`: {error}", path.display()))
 }
 
 #[allow(dead_code)]
 fn read_runner_test_file(relative_path: &str) -> String {
     let path = runner_manifest_dir().join("tests").join(relative_path);
-    fs::read_to_string(&path).unwrap_or_else(|error| {
-        panic!("runner contract should read `{}`: {error}", path.display())
-    })
+    fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("runner contract should read `{}`: {error}", path.display()))
 }
 
 #[allow(dead_code)]

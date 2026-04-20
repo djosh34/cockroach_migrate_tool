@@ -1,15 +1,11 @@
-use std::{
-    collections::BTreeSet,
-    fs,
-    path::Path,
-};
+use std::{collections::BTreeSet, fs, path::Path};
 
 use serde::Deserialize;
 
 use super::{
     PostgresGrantsConfig,
-    postgres_grants::PostgresGrantMapping,
     postgres_grants::PostgresGrantDestination,
+    postgres_grants::PostgresGrantMapping,
     table_name::{TableName, parse_schema_qualified_table_name, validate_text},
 };
 use crate::error::BootstrapConfigError;
@@ -64,10 +60,7 @@ fn validate_destination(
 ) -> Result<PostgresGrantDestination, BootstrapConfigError> {
     Ok(PostgresGrantDestination {
         database: validate_text(raw.database, "mappings[].destination.database")?,
-        runtime_role: validate_text(
-            raw.runtime_role,
-            "mappings[].destination.runtime_role",
-        )?,
+        runtime_role: validate_text(raw.runtime_role, "mappings[].destination.runtime_role")?,
         tables: validate_tables(raw.tables)?,
     })
 }

@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     process::Command,
     sync::atomic::{AtomicU64, Ordering},
     time::{SystemTime, UNIX_EPOCH},
@@ -49,6 +50,34 @@ impl VerifyImageArtifactHarness {
         run_command_capture(
             Command::new("docker").args(["run", "--rm", &self.image_tag, "--help"]),
             "docker run verify image --help",
+        )
+    }
+
+    pub fn validate_config_json_logs(&self) -> (String, String) {
+        let fixture_mount = format!(
+            "{}:/work/testdata:ro",
+            verify_slice_root()
+                .join("verifyservice")
+                .join("testdata")
+                .display()
+        );
+        run_command_output(
+            Command::new("docker").args([
+                "run",
+                "--rm",
+                "--entrypoint",
+                "/usr/local/bin/molt",
+                "-v",
+                &fixture_mount,
+                &self.image_tag,
+                "verify-service",
+                "validate-config",
+                "--log-format",
+                "json",
+                "--config",
+                "/work/testdata/valid-https-mtls.yml",
+            ]),
+            "docker run verify image validate-config --log-format json",
         )
     }
 
@@ -140,6 +169,11 @@ fn unique_suffix() -> String {
 }
 
 fn run_command_capture(command: &mut Command, context: &str) -> String {
+    let (stdout, _) = run_command_output(command, context);
+    stdout
+}
+
+fn run_command_output(command: &mut Command, context: &str) -> (String, String) {
     let output = command
         .output()
         .unwrap_or_else(|error| panic!("{context} should start: {error}"));
@@ -150,9 +184,18 @@ fn run_command_capture(command: &mut Command, context: &str) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("command stdout should be utf-8")
+    (
+        String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
+        String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
+    )
 }
 
 fn shell_escape(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
+}
+
+fn verify_slice_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("cockroachdb_molt/molt")
 }

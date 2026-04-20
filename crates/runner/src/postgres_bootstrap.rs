@@ -44,12 +44,12 @@ async fn bootstrap_destination_group(
         .first()
         .unwrap_or_else(|| panic!("destination group should contain at least one mapping"));
     let mut postgres = PgConnection::connect_with(&destination_group.target().connect_options())
-            .await
-            .map_err(|source| RunnerBootstrapError::Connect {
-                mapping_id: first_mapping.mapping_id().to_owned(),
-                endpoint: destination_group.target().endpoint_label(),
-                source,
-            })?;
+        .await
+        .map_err(|source| RunnerBootstrapError::Connect {
+            mapping_id: first_mapping.mapping_id().to_owned(),
+            endpoint: destination_group.target().endpoint_label(),
+            source,
+        })?;
     bootstrap_destination_scaffold(&mut postgres, first_mapping, destination_group.target())
         .await?;
 

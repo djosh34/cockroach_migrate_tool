@@ -42,9 +42,7 @@ impl SourceBootstrapImageContract {
             .split("FROM ")
             .find(|stage| stage.starts_with("scratch"))
             .unwrap_or_else(|| {
-                panic!(
-                    "setup-sql image Dockerfile must define a `FROM scratch` runtime stage"
-                )
+                panic!("setup-sql image Dockerfile must define a `FROM scratch` runtime stage")
             });
         let runtime_commands = runtime_stage
             .lines()
@@ -84,9 +82,7 @@ impl SourceBootstrapImageContract {
         );
         assert_eq!(
             copy_commands,
-            vec![
-                "COPY --from=builder /setup-sql/setup-sql /usr/local/bin/setup-sql",
-            ],
+            vec!["COPY --from=builder /setup-sql/setup-sql /usr/local/bin/setup-sql",],
             "setup-sql image runtime stage must copy only the compiled setup-sql binary",
         );
         assert!(
@@ -114,8 +110,7 @@ impl SourceBootstrapImageContract {
             &self.dockerfile_text,
             RustWorkspaceImageCacheExpectation {
                 dockerfile_label: "setup-sql image Dockerfile",
-                build_command:
-                    "cargo build --locked --release --target \"${RUST_TARGET}\" -p setup-sql --bin setup-sql",
+                build_command: "cargo build --locked --release --target \"${RUST_TARGET}\" -p setup-sql --bin setup-sql",
             },
         );
     }

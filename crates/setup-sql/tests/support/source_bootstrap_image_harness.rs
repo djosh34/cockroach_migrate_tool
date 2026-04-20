@@ -91,6 +91,29 @@ impl SourceBootstrapImageHarness {
         )
     }
 
+    pub fn emit_cockroach_sql_json_logs(
+        &self,
+        mounted_dir: &Path,
+        config_path: &str,
+    ) -> (String, String) {
+        let work_mount = format!("{}:/work:ro", mounted_dir.display());
+        run_command_output(
+            Command::new("docker").args([
+                "run",
+                "--rm",
+                "-v",
+                &work_mount,
+                &self.image_tag,
+                "emit-cockroach-sql",
+                "--log-format",
+                "json",
+                "--config",
+                config_path,
+            ]),
+            "docker run setup-sql emit-cockroach-sql --log-format json",
+        )
+    }
+
     fn build_image(&self) {
         run_command_capture(
             Command::new("docker").args(SourceBootstrapImageContract::docker_build_image_args(
@@ -126,10 +149,7 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 fn fresh_temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "setup-sql-image-contract-{}",
-        unique_suffix()
-    ));
+    let dir = std::env::temp_dir().join(format!("setup-sql-image-contract-{}", unique_suffix()));
     fs::create_dir_all(&dir).expect("setup-sql image temp dir should be created");
     dir
 }
@@ -149,6 +169,11 @@ fn unique_suffix() -> String {
 }
 
 fn run_command_capture(command: &mut Command, context: &str) -> String {
+    let (stdout, _) = run_command_output(command, context);
+    stdout
+}
+
+fn run_command_output(command: &mut Command, context: &str) -> (String, String) {
     let output = command
         .output()
         .unwrap_or_else(|error| panic!("{context} should start: {error}"));
@@ -158,5 +183,8 @@ fn run_command_capture(command: &mut Command, context: &str) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    String::from_utf8(output.stdout).expect("command stdout should be utf-8")
+    (
+        String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
+        String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
+    )
 }

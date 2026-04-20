@@ -19,6 +19,8 @@ The supported novice-user path starts from pulling published images only. This f
 
 The one-time setup flow stays explicit. Pull the published `setup-sql` image, emit the required SQL, review it, then apply it yourself with a CockroachDB or PostgreSQL client. The runtime image never absorbs one-time setup powers.
 
+The supported operator-facing structured logging path is `--log-format json` on every shipped image. In JSON mode, operator logs are emitted as one JSON object per line on stderr. Payload-bearing commands keep stdout reserved for artifacts only.
+
 Example Cockroach setup config:
 
 ```yaml
@@ -54,6 +56,7 @@ docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${SETUP_SQL_IMAGE}" \
   emit-cockroach-sql \
+  --log-format json \
   --config /config/cockroach-setup.yml > cockroach-bootstrap.sql
 ```
 
@@ -94,6 +97,7 @@ docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${SETUP_SQL_IMAGE}" \
   emit-postgres-grants \
+  --log-format json \
   --config /config/postgres-grants.yml > postgres-grants.sql
 ```
 
@@ -160,7 +164,7 @@ mappings:
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${RUNNER_IMAGE}" \
-  validate-config --config /config/runner.yml
+  validate-config --log-format json --config /config/runner.yml
 ```
 
 4. Before starting the runtime, use the `setup-sql` quick start above to emit the PostgreSQL grants, review them, and apply the emitted PostgreSQL grant SQL before starting the runtime. These grants stay manual and explicit; no superuser role is assumed.
@@ -172,7 +176,7 @@ docker run --rm \
   -p 8443:8443 \
   -v "$(pwd)/config:/config:ro" \
   "${RUNNER_IMAGE}" \
-  run --config /config/runner.yml
+  run --log-format json --config /config/runner.yml
 ```
 
 After startup, the runtime serves:
@@ -207,6 +211,8 @@ services:
         target: /config/ca.crt
     command:
       - emit-cockroach-sql
+      - --log-format
+      - json
       - --config
       - /config/cockroach-setup.yml
 
@@ -223,7 +229,7 @@ Render the SQL artifacts directly through Docker Compose:
 
 ```bash
 docker compose -f setup-sql.compose.yml run --rm setup-sql > cockroach-bootstrap.sql
-docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --config /config/postgres-grants.yml > postgres-grants.sql
+docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --log-format json --config /config/postgres-grants.yml > postgres-grants.sql
 ```
 
 ## Runner Docker Compose
@@ -253,6 +259,8 @@ services:
         target: /config/certs/server.key
     command:
       - run
+      - --log-format
+      - json
       - --config
       - /config/runner.yml
 
@@ -268,7 +276,7 @@ configs:
 Validate the mounted config and then start the runtime:
 
 ```bash
-docker compose -f runner.compose.yml run --rm runner validate-config --config /config/runner.yml
+docker compose -f runner.compose.yml run --rm runner validate-config --log-format json --config /config/runner.yml
 docker compose -f runner.compose.yml up runner
 ```
 
@@ -306,6 +314,8 @@ services:
       - source: verify-server-key
         target: /config/certs/server.key
     command:
+      - --log-format
+      - json
       - --config
       - /config/verify-service.yml
 

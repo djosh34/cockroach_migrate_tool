@@ -4,8 +4,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{helper_plan::HelperShadowTablePlan, tracking_state::ReconcilePhase};
 use crate::runtime_plan::MappingRuntimePlan;
+use crate::{helper_plan::HelperShadowTablePlan, tracking_state::ReconcilePhase};
 
 const METRIC_PREFIX: &str = "cockroach_migration_tool_";
 
@@ -146,7 +146,9 @@ impl RunnerMetrics {
             ));
         }
 
-        lines.push(format!("# TYPE {METRIC_PREFIX}apply_failures_total counter"));
+        lines.push(format!(
+            "# TYPE {METRIC_PREFIX}apply_failures_total counter"
+        ));
         for (labels, value) in &state.apply_failures_total {
             lines.push(format!(
                 "{METRIC_PREFIX}apply_failures_total{} {}",
@@ -376,10 +378,7 @@ struct WebhookLastRequestLabels {
 
 impl WebhookLastRequestLabels {
     fn render(&self) -> String {
-        format!(
-            "{{destination_database=\"{}\"}}",
-            self.destination_database,
-        )
+        format!("{{destination_database=\"{}\"}}", self.destination_database,)
     }
 }
 

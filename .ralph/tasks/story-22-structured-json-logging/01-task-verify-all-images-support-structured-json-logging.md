@@ -1,4 +1,4 @@
-## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>not_started</status> <passes>false</passes>
+## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -22,7 +22,7 @@ Out of scope:
 - introducing high-cardinality or unstable log fields that make downstream processing brittle
 
 Decisions already made:
-- this must be a separate new story at the end of the backlog
+- this must remain a dedicated story for structured JSON logging across all shipped images
 - the goal is structured JSON logging for all shipped images, not only the runner
 - a partial solution where some images stay plain-text-only is not acceptable for the supported operator path
 - the logging contract should be consistent enough that operators do not need different parsing logic per image
@@ -36,16 +36,18 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD identifies every shipped image and verifies structured JSON logging support for each one
-- [ ] Any shipped image that lacks structured JSON logging support is upgraded so the gap is removed rather than merely reported
-- [ ] The task proves logs are valid line-delimited JSON objects for both normal operation and failure cases
-- [ ] The task proves errors remain explicit, structured, and unswallowed in JSON logging mode
-- [ ] The task defines and tests one supported operator-facing activation path for JSON logging across all images
-- [ ] The task keeps the logging contract consistent enough that operators do not need per-image parser exceptions
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if every shipped image supports the structured JSON logging path cleanly
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD identifies every shipped image and verifies structured JSON logging support for each one
+- [x] Any shipped image that lacks structured JSON logging support is upgraded so the gap is removed rather than merely reported
+- [x] The task proves logs are valid line-delimited JSON objects for both normal operation and failure cases
+- [x] The task proves errors remain explicit, structured, and unswallowed in JSON logging mode
+- [x] The task defines and tests one supported operator-facing activation path for JSON logging across all images
+- [x] The task keeps the logging contract consistent enough that operators do not need per-image parser exceptions
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if every shipped image supports the structured JSON logging path cleanly
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging_plans/2026-04-20-all-images-structured-json-logging-plan.md</plan>

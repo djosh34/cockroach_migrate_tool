@@ -19,6 +19,8 @@ services:
       - source: verify-server-key
         target: /config/certs/server.key
     command:
+      - --log-format
+      - json
       - --config
       - /config/verify-service.yml
 

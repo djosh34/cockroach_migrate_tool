@@ -215,8 +215,7 @@ impl RunnerDockerContract {
             &dockerfile,
             RustWorkspaceImageCacheExpectation {
                 dockerfile_label: "runner image Dockerfile",
-                build_command:
-                    "cargo build --locked --release --target \"${RUST_TARGET}\" -p runner --bin runner",
+                build_command: "cargo build --locked --release --target \"${RUST_TARGET}\" -p runner --bin runner",
             },
         );
     }

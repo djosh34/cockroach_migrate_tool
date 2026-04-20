@@ -10,6 +10,7 @@ use std::{
 
 use predicates::prelude::{PredicateBooleanExt, predicate};
 use reqwest::{Certificate, blocking::Client};
+use serde_json::Value;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -355,14 +356,47 @@ struct RunnerProcess {
 
 impl RunnerProcess {
     fn start(config_path: &Path) -> Self {
+        Self::start_with_args(config_path, &[])
+    }
+
+    fn start_json(config_path: &Path) -> Self {
+        Self::start_with_args(config_path, &["--log-format", "json"])
+    }
+
+    fn start_with_args(config_path: &Path, extra_args: &[&str]) -> Self {
         let child = Command::new(env!("CARGO_BIN_EXE_runner"))
-            .args(["run", "--config"])
+            .arg("run")
+            .args(extra_args)
+            .arg("--config")
             .arg(config_path)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("runner should start");
         Self { child }
+    }
+
+    fn read_stderr_line(&mut self) -> String {
+        let stderr = self
+            .child
+            .stderr
+            .as_mut()
+            .expect("runner stderr pipe should exist");
+        let mut bytes = Vec::new();
+
+        loop {
+            let mut byte = [0_u8; 1];
+            let read = stderr
+                .read(&mut byte)
+                .expect("runner stderr should be readable");
+            assert_ne!(read, 0, "runner stderr closed before emitting a log line");
+            bytes.push(byte[0]);
+            if byte[0] == b'\n' {
+                break;
+            }
+        }
+
+        String::from_utf8(bytes).expect("runner stderr line should be utf-8")
     }
 
     fn assert_healthy(&mut self, url: &str, client: &Client) {
@@ -401,6 +435,14 @@ impl RunnerProcess {
     }
 
     fn assert_exits_failure(mut self, stderr_predicate: impl predicates::Predicate<str>) {
+        let (stdout, stderr) = self.wait_for_failed_exit_logs();
+        assert!(
+            stderr_predicate.eval(&stderr),
+            "runner stderr did not match expectation\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+    }
+
+    fn wait_for_failed_exit_logs(&mut self) -> (String, String) {
         for _ in 0..50 {
             if let Some(status) = self
                 .child
@@ -426,12 +468,7 @@ impl RunnerProcess {
                     .expect("runner stderr pipe should exist")
                     .read_to_string(&mut stderr)
                     .expect("runner stderr should be readable");
-
-                assert!(
-                    stderr_predicate.eval(&stderr),
-                    "runner stderr did not match expectation\nstdout:\n{stdout}\nstderr:\n{stderr}"
-                );
-                return;
+                return (stdout, stderr);
             }
 
             thread::sleep(Duration::from_millis(100));
@@ -507,6 +544,56 @@ fn run_bootstraps_helper_schema_and_tracking_tables_in_destination_database() {
             "SELECT string_agg(table_name, ',' ORDER BY table_name)\nFROM information_schema.tables\nWHERE table_schema = '_cockroach_migration_tool';",
         ),
         "app-a__public__customers,stream_state,table_sync_state"
+    );
+}
+
+#[test]
+fn run_supports_json_operator_logs_for_runtime_startup() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port);
+    let mut runner = RunnerProcess::start_json(&config_path);
+
+    let startup_log = runner.read_stderr_line();
+    let payload: Value =
+        serde_json::from_str(startup_log.trim()).expect("runner startup log should be valid json");
+    let json_object = payload
+        .as_object()
+        .expect("runner startup log should be a json object");
+
+    for key in ["timestamp", "level", "service", "event", "message"] {
+        assert!(
+            json_object.contains_key(key),
+            "runner startup json log must include `{key}`: {payload}",
+        );
+    }
+
+    assert_eq!(
+        json_object.get("service").and_then(Value::as_str),
+        Some("runner"),
+        "runner startup json log must identify the runner service",
+    );
+    assert_eq!(
+        json_object.get("event").and_then(Value::as_str),
+        Some("runtime.starting"),
+        "runner startup json log must expose the runtime startup event",
+    );
+    runner.assert_healthy(
+        &format!("https://localhost:{bind_port}/healthz"),
+        &https_client(),
     );
 }
 
@@ -920,6 +1007,84 @@ fn run_fails_loudly_when_a_mapped_destination_table_is_missing() {
     RunnerProcess::start(&config_path).assert_exits_failure(predicate::str::contains(
         "postgres bootstrap: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
     ));
+}
+
+#[test]
+fn run_reports_startup_failures_as_json_error_events() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(
+        &config_path,
+        pick_unused_port(),
+        &["public.missing_table"],
+    );
+
+    let mut runner = RunnerProcess::start_json(&config_path);
+    let (stdout, stderr) = runner.wait_for_failed_exit_logs();
+
+    assert!(
+        stdout.is_empty(),
+        "json logging mode must keep startup failure stdout empty, got: {stdout:?}",
+    );
+
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert!(
+        lines.len() >= 2,
+        "runner json startup failure should log both startup and failure events, got: {stderr:?}",
+    );
+
+    let mut saw_startup = false;
+    let mut saw_failure = false;
+    for line in lines {
+        let payload: Value =
+            serde_json::from_str(line).expect("runner startup failure logs must stay valid json");
+        let json_object = payload
+            .as_object()
+            .expect("runner startup failure log must be a json object");
+        for key in ["timestamp", "level", "service", "event", "message"] {
+            assert!(
+                json_object.contains_key(key),
+                "runner startup failure json log must include `{key}`: {payload}",
+            );
+        }
+        assert_eq!(
+            json_object.get("service").and_then(Value::as_str),
+            Some("runner"),
+            "runner startup failure json log must identify the runner service",
+        );
+        match json_object.get("event").and_then(Value::as_str) {
+            Some("runtime.starting") => saw_startup = true,
+            Some("command.failed") => {
+                saw_failure = true;
+                let message = json_object
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .expect("runner failure event must expose the failure message");
+                assert!(
+                    message.contains("missing mapped destination table"),
+                    "runner failure event must retain the explicit startup failure detail, got: {message:?}",
+                );
+            }
+            Some(other) => panic!("unexpected runner json startup event `{other}`"),
+            None => panic!("runner startup failure log must include a string event field"),
+        }
+    }
+
+    assert!(
+        saw_startup,
+        "runner json startup failure must log the startup event"
+    );
+    assert!(
+        saw_failure,
+        "runner json startup failure must log the failure event"
+    );
 }
 
 #[test]
