@@ -371,6 +371,10 @@ jobs:
           }
 
           env_file_count=0
+          declare -A scan_target_refs=()
+          declare -A scan_target_repositories=()
+          declare -A scan_target_statuses=()
+          all_scan_targets=()
           while IFS= read -r env_file; do
             env_file_count=$((env_file_count + 1))
             unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
@@ -428,81 +432,110 @@ jobs:
             append_summary "- Scan target digests:"
             for scan_target in "${scan_targets[@]}"; do
               append_summary "  - \`${scan_target}\`"
-            done
-
-            for scan_target in "${scan_targets[@]}"; do
-              printf 'waiting for Quay scan on %s via %s\n' "${platform_image_ref}" "${scan_target}"
-              scan_status=""
-              security_response=""
-              for attempt in $(seq 1 60); do
-                run_quay_api \
-                  "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${scan_target}/security?vulnerabilities=true" \
-                  "loading security status for ${platform_image_ref} (${scan_target})"
-                security_response="${QUAY_API_RESPONSE}"
-                scan_status="$(jq -r '.status // empty' <<< "${security_response}")"
-                case "${scan_status}" in
-                  scanned)
-                    vulnerability_count="$(
-                      jq -er '[.. | .Vulnerabilities? | arrays | .[]] | length' <<< "${security_response}"
-                    )" || fail_gate \
-                      "unexpected_payload" \
-                      "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing vulnerability structure." \
-                      "$(jq '.' <<< "${security_response}")"
-                    if [[ "${vulnerability_count}" != "0" ]]; then
-                      findings_json="$(
-                        jq '
-                          {
-                            status,
-                            scan_target: $scan_target,
-                            findings: [.. | .Vulnerabilities? | arrays | .[] | {Name, Severity, FixedBy}]
-                          }
-                        ' \
-                          --arg scan_target "${scan_target}" \
-                          <<< "${security_response}"
-                      )"
-                      fail_gate \
-                        "policy_failure" \
-                        "Quay vulnerability policy failed for ${platform_image_ref}: ${vulnerability_count} findings on ${scan_target}." \
-                        "${findings_json}"
-                    fi
-                    append_summary "- Scan result for \`${scan_target}\`: passed with zero findings"
-                    printf 'Quay scan passed for %s via %s with zero findings\n' "${platform_image_ref}" "${scan_target}"
-                    break
-                    ;;
-                  queued|scanning|in_progress)
-                    printf 'Quay scan still pending for %s via %s (attempt %s, status=%s)\n' "${platform_image_ref}" "${scan_target}" "${attempt}" "${scan_status}"
-                    sleep 10
-                    ;;
-                  failed|error)
-                    fail_gate \
-                      "scanner_failure" \
-                      "Quay reported scanner failure for ${platform_image_ref} (${scan_target}) with status ${scan_status}." \
-                      "$(jq '.' <<< "${security_response}")"
-                    ;;
-                  "")
-                    fail_gate \
-                      "unexpected_payload" \
-                      "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing a status value." \
-                      "$(jq '.' <<< "${security_response}")"
-                    ;;
-                  *)
-                    fail_gate \
-                      "unexpected_payload" \
-                      "Quay scan for ${platform_image_ref} (${scan_target}) returned unexpected status ${scan_status}." \
-                      "$(jq '.' <<< "${security_response}")"
-                    ;;
-                esac
-              done
-              if [[ "${scan_status}" != "scanned" ]]; then
-                fail_gate \
-                  "timeout" \
-                  "Timed out waiting for Quay scan completion for ${platform_image_ref} (${scan_target}); last status was ${scan_status:-<empty>}." \
-                  "$(jq '.' <<< "${security_response}")"
+              if [[ -z "${scan_target_refs[${scan_target}]+x}" ]]; then
+                all_scan_targets+=("${scan_target}")
               fi
+              scan_target_refs["${scan_target}"]="${platform_image_ref}"
+              scan_target_repositories["${scan_target}"]="${quay_repository}"
+              scan_target_statuses["${scan_target}"]="pending"
             done
           done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)
           if [[ "${env_file_count}" -eq 0 ]]; then
             fail_gate "unexpected_payload" "No published image-ref artifacts were available for Quay security evaluation."
+          fi
+          if [[ "${#all_scan_targets[@]}" -eq 0 ]]; then
+            fail_gate "unexpected_payload" "No scan targets were collected from the published image-ref artifacts."
+          fi
+
+          for attempt in $(seq 1 60); do
+            pending_count=0
+            for scan_target in "${all_scan_targets[@]}"; do
+              if [[ "${scan_target_statuses[${scan_target}]}" == "scanned" ]]; then
+                continue
+              fi
+              platform_image_ref="${scan_target_refs[${scan_target}]}"
+              quay_repository="${scan_target_repositories[${scan_target}]}"
+              run_quay_api \
+                "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${scan_target}/security?vulnerabilities=true" \
+                "loading security status for ${platform_image_ref} (${scan_target})"
+              security_response="${QUAY_API_RESPONSE}"
+              scan_status="$(jq -r '.status // empty' <<< "${security_response}")"
+              case "${scan_status}" in
+                scanned)
+                  vulnerability_count="$(
+                    jq -er '[.. | .Vulnerabilities? | arrays | .[]] | length' <<< "${security_response}"
+                  )" || fail_gate \
+                    "unexpected_payload" \
+                    "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing vulnerability structure." \
+                    "$(jq '.' <<< "${security_response}")"
+                  if [[ "${vulnerability_count}" != "0" ]]; then
+                    findings_json="$(
+                      jq '
+                        {
+                          status,
+                          scan_target: $scan_target,
+                          findings: [.. | .Vulnerabilities? | arrays | .[] | {Name, Severity, FixedBy}]
+                        }
+                      ' \
+                        --arg scan_target "${scan_target}" \
+                        <<< "${security_response}"
+                    )"
+                    fail_gate \
+                      "policy_failure" \
+                      "Quay vulnerability policy failed for ${platform_image_ref}: ${vulnerability_count} findings on ${scan_target}." \
+                      "${findings_json}"
+                  fi
+                  scan_target_statuses["${scan_target}"]="scanned"
+                  append_summary "- Scan result for \`${scan_target}\`: passed with zero findings"
+                  printf 'Quay scan passed for %s via %s with zero findings\n' "${platform_image_ref}" "${scan_target}"
+                  ;;
+                queued|scanning|in_progress)
+                  scan_target_statuses["${scan_target}"]="${scan_status}"
+                  pending_count=$((pending_count + 1))
+                  printf 'Quay scan still pending for %s via %s (attempt %s, status=%s)\n' "${platform_image_ref}" "${scan_target}" "${attempt}" "${scan_status}"
+                  ;;
+                failed|error)
+                  fail_gate \
+                    "scanner_failure" \
+                    "Quay reported scanner failure for ${platform_image_ref} (${scan_target}) with status ${scan_status}." \
+                    "$(jq '.' <<< "${security_response}")"
+                  ;;
+                "")
+                  fail_gate \
+                    "unexpected_payload" \
+                    "Quay scan payload for ${platform_image_ref} (${scan_target}) was missing a status value." \
+                    "$(jq '.' <<< "${security_response}")"
+                  ;;
+                *)
+                  fail_gate \
+                    "unexpected_payload" \
+                    "Quay scan for ${platform_image_ref} (${scan_target}) returned unexpected status ${scan_status}." \
+                    "$(jq '.' <<< "${security_response}")"
+                  ;;
+              esac
+            done
+            if [[ "${pending_count}" -eq 0 ]]; then
+              break
+            fi
+            sleep 10
+          done
+
+          timeout_payload="$(
+            for scan_target in "${all_scan_targets[@]}"; do
+              if [[ "${scan_target_statuses[${scan_target}]}" != "scanned" ]]; then
+                jq -n \
+                  --arg platform_image_ref "${scan_target_refs[${scan_target}]}" \
+                  --arg scan_target "${scan_target}" \
+                  --arg status "${scan_target_statuses[${scan_target}]}" \
+                  '{platform_image_ref: $platform_image_ref, scan_target: $scan_target, status: $status}'
+              fi
+            done | jq -s '{pending_targets: .}'
+          )"
+          if [[ "${timeout_payload}" != '{"pending_targets":[]}' ]]; then
+            fail_gate \
+              "timeout" \
+              "Timed out waiting for Quay scan completion across the published Quay refs." \
+              "${timeout_payload}"
           fi
           append_summary ""
           append_summary "Gate outcome: \`passed\`"
