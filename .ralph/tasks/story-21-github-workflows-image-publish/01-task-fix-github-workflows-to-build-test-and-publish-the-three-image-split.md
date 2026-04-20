@@ -1,4 +1,4 @@
-## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>not_started</status> <passes>false</passes>
+## Task: Fix GitHub workflows to build, test, and publish the three-image split in the right order <status>completed</status> <passes>true</passes>
 
 <blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
 
@@ -55,22 +55,30 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers workflow behavior for build, test, and publish across the three-image split
-- [ ] GitHub workflows publish the verify, SQL-emitter, and runner images in a form the novice-user flow can consume directly from the registry
-- [ ] The workflows build and publish both `arm64` and `amd64` images
-- [ ] Workflow definitions manually install required dependencies where practical and avoid importing untrusted third-party actions
-- [ ] The task is not complete until authenticated GitHub workflow log inspection has been used to confirm the real image-building runs succeed
-- [ ] Automated image publish runs trigger only on pushes to `main`, not on pull requests, issues, other branches, or external contribution paths
-- [ ] Published image tags use the exact full commit SHA and do not rely on a floating `latest` tag for this workflow
-- [ ] Workflow concurrency cancels the previous in-progress `main` publish run when a newer push arrives
-- [ ] No image is pushed before its required tests pass successfully
-- [ ] Release tagging remains a manual owner-controlled path and is not automatically performed by the publish workflow
-- [ ] Workflow design proves publish secrets are unavailable to untrusted events and verifies masking/redaction works correctly in logs
-- [ ] Downstream checks fail if the registry-only user path is not backed by published images from CI
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers workflow behavior for build, test, and publish across the three-image split
+- [x] GitHub workflows publish the verify, SQL-emitter, and runner images in a form the novice-user flow can consume directly from the registry
+- [x] The workflows build and publish both `arm64` and `amd64` images
+- [x] Workflow definitions manually install required dependencies where practical and avoid importing untrusted third-party actions
+- [x] The task is not complete until authenticated GitHub workflow log inspection has been used to confirm the real image-building runs succeed
+- [x] Automated image publish runs trigger only on pushes to `main`, not on pull requests, issues, other branches, or external contribution paths
+- [x] Published image tags use the exact full commit SHA and do not rely on a floating `latest` tag for this workflow
+- [x] Workflow concurrency cancels the previous in-progress `main` publish run when a newer push arrives
+- [x] No image is pushed before its required tests pass successfully
+- [x] Release tagging remains a manual owner-controlled path and is not automatically performed by the publish workflow
+- [x] Workflow design proves publish secrets are unavailable to untrusted events and verifies masking/redaction works correctly in logs
+- [x] Downstream checks fail if the registry-only user path is not backed by published images from CI
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<outcome>
+- Verified the final split workflow locally through the repo-owned contract boundary and the required local gates: `make check`, `make lint`, and `make test` all passed on `main` at `5fcfee60d11ca39e52830c5b6d9707114882b5f0`.
+- Authenticated hosted inspection used `/home/joshazimullah.linux/github-api-curl` against `https://github.com/djosh34/cockroach_migrate_tool/actions/runs/24643444655`, which completed successfully from `2026-04-20T00:53:18Z` to `2026-04-20T01:10:07Z`.
+- The hosted run proved the intended ordering: `validate-fast` succeeded, `validate-long` succeeded, only then did the six `publish-image` matrix jobs start, and `publish-manifest` completed successfully afterward.
+- Hosted log inspection confirmed the redaction path is real, not assumed: every publish lane and `publish-manifest` logged `derived registry auth (masked): ***`, and the native-runner assertion logs showed both `runner.arch=X64` and `runner.arch=ARM64` in the expected platform lanes.
+- The workflow now truthfully publishes the runner, setup-sql, and verify images through the registry-first contract, and the shared workflow/published-image support boundaries remained the cleanest code boundary after the final review.
+</outcome>
 
 <plan>.ralph/tasks/story-21-github-workflows-image-publish/01-task-fix-github-workflows-to-build-test-and-publish-the-three-image-split_plans/2026-04-19-three-image-main-publish-workflow-plan.md</plan>
