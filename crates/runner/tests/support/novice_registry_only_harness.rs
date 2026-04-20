@@ -24,7 +24,6 @@ pub struct NoviceRegistryOnlyHarness {
 }
 
 pub struct RunningRunner {
-    network_name: String,
     postgres_container_name: String,
     runner_container_name: String,
     host_port: u16,
@@ -96,17 +95,13 @@ impl NoviceRegistryOnlyHarness {
     }
 
     pub fn start_runner_readme_runtime(&self) -> RunningRunner {
-        let network_name = format!("cockroach-migrate-novice-net-{}", unique_suffix());
         let postgres_container_name =
             format!("cockroach-migrate-novice-postgres-{}", unique_suffix());
         let runner_container_name = format!("cockroach-migrate-novice-runner-{}", unique_suffix());
         let host_port = pick_unused_port();
+        let postgres_host_port = pick_unused_port();
         let config_mount = format!("{}:/config:ro", self.root_dir().join("config").display());
-
-        run_command_capture(
-            Command::new("docker").args(["network", "create", &network_name]),
-            "docker network create novice runner network",
-        );
+        self.write_runner_config("host.docker.internal", postgres_host_port);
 
         run_command_capture(
             Command::new("docker").args([
@@ -114,10 +109,8 @@ impl NoviceRegistryOnlyHarness {
                 "-d",
                 "--name",
                 &postgres_container_name,
-                "--network",
-                &network_name,
-                "--network-alias",
-                "postgres",
+                "-p",
+                &format!("{postgres_host_port}:5432"),
                 "-e",
                 "POSTGRES_USER=postgres",
                 "-e",
@@ -137,8 +130,8 @@ impl NoviceRegistryOnlyHarness {
                 "-d",
                 "--name",
                 &runner_container_name,
-                "--network",
-                &network_name,
+                "--add-host",
+                "host.docker.internal:host-gateway",
                 "-p",
                 &format!("127.0.0.1:{host_port}:8443"),
                 "-v",
@@ -154,7 +147,6 @@ impl NoviceRegistryOnlyHarness {
         );
 
         RunningRunner {
-            network_name,
             postgres_container_name,
             runner_container_name,
             host_port,
@@ -278,31 +270,7 @@ impl NoviceRegistryOnlyHarness {
             &runner_fixture("certs/server.key"),
             &certs_dir.join("server.key"),
         );
-        fs::write(
-            self.root_dir().join("config/runner.yml"),
-            r#"webhook:
-  bind_addr: 0.0.0.0:8443
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
-reconcile:
-  interval_secs: 30
-mappings:
-  - id: app-a
-    source:
-      database: demo_a
-      tables:
-        - public.customers
-        - public.orders
-    destination:
-      host: postgres
-      port: 5432
-      database: app_a
-      user: migration_user_a
-      password: runner-secret-a
-"#,
-        )
-        .expect("novice runner config should be written");
+        self.write_runner_config("host.docker.internal", 5432);
         copy_file(
             &repo_root().join("artifacts/compose/runner.compose.yml"),
             &self.root_dir().join("runner.compose.yml"),
@@ -376,6 +344,40 @@ verify:
     fn root_dir(&self) -> &Path {
         self.workspace.path()
     }
+
+    pub fn verify_compose_artifact_path(&self) -> PathBuf {
+        self.root_dir().join("verify.compose.yml")
+    }
+
+    fn write_runner_config(&self, destination_host: &str, destination_port: u16) {
+        fs::write(
+            self.root_dir().join("config/runner.yml"),
+            format!(
+                r#"webhook:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+        - public.orders
+    destination:
+      host: {destination_host}
+      port: {destination_port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+            ),
+        )
+        .expect("novice runner config should be written");
+    }
 }
 
 impl RunningRunner {
@@ -423,11 +425,6 @@ impl Drop for RunningRunner {
             Command::new("docker").args(["rm", "-f", &self.postgres_container_name]),
             "docker rm novice postgres container",
         );
-        cleanup_if_present(
-            Command::new("docker").args(["network", "inspect", &self.network_name]),
-            Command::new("docker").args(["network", "rm", &self.network_name]),
-            "docker network rm novice runner network",
-        );
     }
 }
 
@@ -468,11 +465,10 @@ impl RunningVerifyCompose {
             ),
         );
     }
-}
 
-impl Drop for RunningVerifyCompose {
-    fn drop(&mut self) {
-        let _ = Command::new("docker")
+    pub fn shutdown(&self) {
+        run_command_output(
+            Command::new("docker")
             .current_dir(&self.root_dir)
             .env("VERIFY_IMAGE", &self.verify_image)
             .env("VERIFY_HTTPS_PORT", self.verify_https_port.to_string())
@@ -484,8 +480,9 @@ impl Drop for RunningVerifyCompose {
                 "verify.compose.yml",
                 "down",
                 "--remove-orphans",
-            ])
-            .output();
+            ]),
+            "docker compose down verify",
+        );
     }
 }
 

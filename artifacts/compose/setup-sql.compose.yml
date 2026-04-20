@@ -1,6 +1,7 @@
 services:
   setup-sql:
     image: "${SETUP_SQL_IMAGE}"
+    network_mode: none
     configs:
       - source: cockroach-setup-config
         target: /config/cockroach-setup.yml

@@ -207,6 +207,7 @@ Save this as `setup-sql.compose.yml`:
 services:
   setup-sql:
     image: "${SETUP_SQL_IMAGE}"
+    network_mode: none
     configs:
       - source: cockroach-setup-config
         target: /config/cockroach-setup.yml
@@ -253,6 +254,7 @@ Save this as `runner.compose.yml`:
 services:
   runner:
     image: "${RUNNER_IMAGE}"
+    network_mode: bridge
     ports:
       - "${RUNNER_HTTPS_PORT:-8443}:8443"
     configs:
@@ -330,6 +332,7 @@ Save this as `verify.compose.yml`:
 services:
   verify:
     image: "${VERIFY_IMAGE}"
+    network_mode: bridge
     ports:
       - "${VERIFY_HTTPS_PORT:-9443}:8080"
     configs:

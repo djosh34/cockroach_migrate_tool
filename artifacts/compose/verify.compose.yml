@@ -1,6 +1,7 @@
 services:
   verify:
     image: "${VERIFY_IMAGE}"
+    network_mode: bridge
     ports:
       - "${VERIFY_HTTPS_PORT:-9443}:8080"
     configs:

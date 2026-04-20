@@ -1,4 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{
+    any::Any,
+    fs,
+    panic::{self, AssertUnwindSafe},
+    path::PathBuf,
+};
 
 use serde_yaml::Value;
 
@@ -43,6 +48,84 @@ fn copied_verify_compose_artifact_mounts_the_listener_client_ca_contract() {
                 && mount["target"].as_str() == Some("/config/certs/client-ca.crt")
         }),
         "verify compose artifact must mount the listener client CA at /config/certs/client-ca.crt",
+    );
+}
+
+#[test]
+fn copied_verify_compose_artifact_uses_the_shared_bridge_network_contract() {
+    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../artifacts/compose/verify.compose.yml");
+    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
+        panic!(
+            "verify compose artifact should be readable at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
+        panic!(
+            "verify compose artifact should stay valid yaml at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+
+    let network_mode = compose["services"]["verify"]["network_mode"].as_str().expect(
+        "verify compose artifact must declare an explicit Docker network contract for the single-service runtime",
+    );
+    assert_eq!(
+        network_mode, "bridge",
+        "verify compose artifact must reuse Docker's shared bridge network instead of allocating a project default network",
+    );
+}
+
+#[test]
+fn copied_setup_sql_compose_artifact_disables_project_network_allocation() {
+    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../artifacts/compose/setup-sql.compose.yml");
+    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
+        panic!(
+            "setup-sql compose artifact should be readable at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
+        panic!(
+            "setup-sql compose artifact should stay valid yaml at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+
+    let network_mode = compose["services"]["setup-sql"]["network_mode"].as_str().expect(
+        "setup-sql compose artifact must declare an explicit Docker network contract for the one-shot runtime",
+    );
+    assert_eq!(
+        network_mode, "none",
+        "setup-sql compose artifact must disable Docker networking instead of allocating a project default network",
+    );
+}
+
+#[test]
+fn copied_runner_compose_artifact_uses_the_shared_bridge_network_contract() {
+    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../artifacts/compose/runner.compose.yml");
+    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
+        panic!(
+            "runner compose artifact should be readable at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
+        panic!(
+            "runner compose artifact should stay valid yaml at `{}`: {error}",
+            artifact_path.display(),
+        )
+    });
+
+    let network_mode = compose["services"]["runner"]["network_mode"].as_str().expect(
+        "runner compose artifact must declare an explicit Docker network contract for the single-service runtime",
+    );
+    assert_eq!(
+        network_mode, "bridge",
+        "runner compose artifact must reuse Docker's shared bridge network instead of allocating a project default network",
     );
 }
 
@@ -190,4 +273,55 @@ fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
 
     let verify_runtime = harness.start_verify_compose_runtime();
     verify_runtime.wait_until_running();
+    verify_runtime.shutdown();
+}
+
+#[test]
+fn verify_compose_runtime_shutdown_reports_cleanup_failures() {
+    let harness = NoviceRegistryOnlyHarness::start();
+    let verify_runtime = harness.start_verify_compose_runtime();
+    verify_runtime.wait_until_running();
+
+    let compose_path = harness.verify_compose_artifact_path();
+    let hidden_path = compose_path.with_extension("yml.hidden");
+    fs::rename(&compose_path, &hidden_path).unwrap_or_else(|error| {
+        panic!(
+            "verify compose artifact should be movable at `{}`: {error}",
+            compose_path.display(),
+        )
+    });
+
+    let shutdown_result =
+        panic::catch_unwind(AssertUnwindSafe(|| verify_runtime.shutdown()));
+
+    fs::rename(&hidden_path, &compose_path).unwrap_or_else(|error| {
+        panic!(
+            "verify compose artifact should be restorable at `{}`: {error}",
+            compose_path.display(),
+        )
+    });
+
+    let panic_payload =
+        shutdown_result.expect_err("verify compose shutdown must fail loudly when cleanup cannot start");
+    let panic_message = panic_message(panic_payload);
+    assert!(
+        panic_message.contains("docker compose down verify"),
+        "shutdown panic must identify the cleanup command; got `{panic_message}`",
+    );
+    assert!(
+        panic_message.contains("verify.compose.yml"),
+        "shutdown panic must include the compose artifact path context; got `{panic_message}`",
+    );
+
+    verify_runtime.shutdown();
+}
+
+fn panic_message(payload: Box<dyn Any + Send>) -> String {
+    match payload.downcast::<String>() {
+        Ok(message) => *message,
+        Err(payload) => match payload.downcast::<&'static str>() {
+            Ok(message) => (*message).to_owned(),
+            Err(_) => "non-string panic payload".to_owned(),
+        },
+    }
 }

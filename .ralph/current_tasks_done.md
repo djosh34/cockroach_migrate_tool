@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 11:44:47 AM CEST 2026
+Generated: Mon Apr 20 12:13:08 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 
@@ -9,6 +9,17 @@ Generated: Mon Apr 20 11:44:47 AM CEST 2026
 
 <description>
 Story 24 execution is blocked because the README cannot currently serve as the only operator document for the secure public-image migration flow.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-verify-compose-exhausts-docker-address-pools.md`
+
+```
+## Bug: README public-image verify compose verification exhausts Docker address pools <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+Story 24 verification found a blocking defect before the README-only public-image flow could be completed.
 ```
 
 ==============

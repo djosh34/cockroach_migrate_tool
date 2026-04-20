@@ -1,6 +1,7 @@
 services:
   runner:
     image: "${RUNNER_IMAGE}"
+    network_mode: bridge
     ports:
       - "${RUNNER_HTTPS_PORT:-8443}:8443"
     configs:
