@@ -1,4 +1,4 @@
-## Task: Audit full end-to-end coverage for duplicate CDC delivery, recreated feeds, and source-destination schema mismatch, then add any missing cases to the full e2e suite <status>not_started</status> <passes>false</passes>
+## Task: Audit full end-to-end coverage for duplicate CDC delivery, recreated feeds, and source-destination schema mismatch, then add any missing cases to the full e2e suite <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -39,19 +39,19 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD audits existing full e2e coverage for duplicate CDC delivery, recreated-feed replay, and source-destination schema mismatch
-- [ ] If any of those scenarios are not already covered well enough, the task adds them to the full e2e suite instead of leaving gaps
-- [ ] The task proves what happens when two CDC feeds for the same source database push to the same destination URL concurrently, including repeated duplicate logical data delivery
-- [ ] The task proves what happens when a CDC feed is stopped and recreated with `initial_scan = 'yes'` so historical rows are replayed
-- [ ] The task proves whether schema mismatch creates bounded operator-usable failure or dangerous retry amplification against the destination database
-- [ ] The task proves runner ingest errors for these scenarios are logged clearly and correctly
-- [ ] The task records explicit conclusions for each scenario: harmless, bounded-but-needs-operator-action, or defective
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if the audit is complete, all missing e2e coverage has been added, and no newly discovered issue is left without a bug task
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD audits existing full e2e coverage for duplicate CDC delivery, recreated-feed replay, and source-destination schema mismatch
+- [x] If any of those scenarios are not already covered well enough, the task adds them to the full e2e suite instead of leaving gaps
+- [x] The task proves what happens when two CDC feeds for the same source database push to the same destination URL concurrently, including repeated duplicate logical data delivery
+- [x] The task proves what happens when a CDC feed is stopped and recreated with `initial_scan = 'yes'` so historical rows are replayed
+- [x] The task proves whether schema mismatch creates bounded operator-usable failure or dangerous retry amplification against the destination database
+- [x] The task proves runner ingest errors for these scenarios are logged clearly and correctly
+- [x] The task records explicit conclusions for each scenario: harmless, bounded-but-needs-operator-action, or defective
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if the audit is complete, all missing e2e coverage has been added, and no newly discovered issue is left without a bug task
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch_plans/2026-04-20-duplicate-cdc-schema-mismatch-e2e-plan.md</plan>
