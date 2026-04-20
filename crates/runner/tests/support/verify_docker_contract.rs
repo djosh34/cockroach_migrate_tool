@@ -91,33 +91,6 @@ impl VerifyDockerContract {
         );
     }
 
-    pub fn assert_verify_help_output(&self, help_output: &str) {
-        for required_marker in [
-            "Run the dedicated verify-service HTTP API.",
-            "--config string",
-        ] {
-            assert!(
-                help_output.contains(required_marker),
-                "verify image help output must include `{required_marker}`",
-            );
-        }
-        for forbidden_marker in [
-            "validate-config",
-            "--rows",
-            "--table-splits",
-            "--source",
-            "--target",
-            "render-postgres-setup",
-            "\n  fetch",
-            "Use \"molt [command] --help\"",
-        ] {
-            assert!(
-                !help_output.contains(forbidden_marker),
-                "verify image help output must not expose unrelated command surface marker `{forbidden_marker}`",
-            );
-        }
-    }
-
     pub fn assert_runtime_filesystem_is_minimal(&self, exported_paths: &[String]) {
         let actual_paths = exported_paths.iter().cloned().collect::<BTreeSet<_>>();
         let expected_paths = BTreeSet::from([

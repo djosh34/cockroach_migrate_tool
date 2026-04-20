@@ -321,6 +321,27 @@ func TestValidateConfigHelpStaysConfigOnly(t *testing.T) {
 	require.Empty(t, stderr.String())
 }
 
+func TestVerifyServiceHelpStaysAtOneActionLevel(t *testing.T) {
+	cmd := rootcmd.NewRootCmd()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{"verify-service", "--help"})
+
+	err := cmd.Execute()
+	require.NoError(t, err, stderr.String())
+
+	helpOutput := stdout.String()
+	require.Contains(t, helpOutput, "Commands for validating and running the dedicated verify service configuration.")
+	require.Contains(t, helpOutput, "run             Run the dedicated verify-service HTTP API.")
+	require.Contains(t, helpOutput, "validate-config Validate the dedicated verify-service config file.")
+	require.Contains(t, helpOutput, "Use \"molt verify-service [command] --help\" for more information about a command.")
+	require.NotContains(t, helpOutput, "fetch")
+	require.NotContains(t, helpOutput, "export")
+	require.Empty(t, stderr.String())
+}
+
 func TestRunHelpStaysConfigOnly(t *testing.T) {
 	cmd := rootcmd.NewRootCmd()
 	stdout := new(bytes.Buffer)

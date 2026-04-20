@@ -1,4 +1,4 @@
-## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>not_started</status> <passes>false</passes>
+## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -29,14 +29,16 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers command-shape simplicity and `--help` behavior across the supported user-facing commands
-- [ ] The task fails if the supported CLI surface grows unnecessary nested action levels for novice-user flows
-- [ ] The task proves `--help` works on every supported command or subcommand used by the README path
-- [ ] The task proves the help output is consistent with the README examples and sufficient for a novice operator
-- [ ] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
-- [ ] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers command-shape simplicity and `--help` behavior across the supported user-facing commands
+- [x] The task fails if the supported CLI surface grows unnecessary nested action levels for novice-user flows
+- [x] The task proves `--help` works on every supported command or subcommand used by the README path
+- [x] The task proves the help output is consistent with the README examples and sufficient for a novice operator
+- [x] Every issue found during verification immediately results in a new bug task created via `add-bug`, and the workflow asks for a task switch to that bug
+- [x] `<passes>true</passes>` is allowed only if the verification completes perfectly with no new bug task required
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-24-readme-only-novice-e2e/03-task-verify-cli-command-complexity-stays-low-and-help-works-everywhere_plans/2026-04-20-cli-help-simplicity-plan.md</plan>

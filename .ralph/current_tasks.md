@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 12:46:44 PM CEST 2026
+Generated: Mon Apr 20 01:01:27 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Audit full end-to-end coverage for duplicate CDC delivery, recreated feeds, and source-destination schema mismatch, then add any missing cases to the full e2e suite <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-24-readme-only-novice-e2e/03-task-verify-cli-command-complexity-stays-low-and-help-works-everywhere.md`
-
-```
-## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

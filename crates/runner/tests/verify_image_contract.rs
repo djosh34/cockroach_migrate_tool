@@ -1,8 +1,11 @@
+#[path = "support/operator_cli_surface.rs"]
+mod operator_cli_surface_support;
 #[path = "support/verify_docker_contract.rs"]
 mod verify_docker_contract_support;
 #[path = "support/verify_image_artifact_harness.rs"]
 mod verify_image_artifact_harness_support;
 
+use operator_cli_surface_support::OperatorCliSurface;
 use serde_json::Value;
 use verify_docker_contract_support::VerifyDockerContract;
 use verify_image_artifact_harness_support::VerifyImageArtifactHarness;
@@ -28,7 +31,7 @@ fn verify_image_exposes_only_the_verify_command_surface() {
     let contract = VerifyDockerContract::load();
 
     contract.assert_image_entrypoint_is_direct_verify_surface(&harness.image_entrypoint_json());
-    contract.assert_verify_help_output(&harness.help_output());
+    OperatorCliSurface::verify_service_image().assert_root_help_output(&harness.help_output());
 }
 
 #[test]

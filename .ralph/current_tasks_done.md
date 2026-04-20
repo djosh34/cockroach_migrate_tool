@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 12:46:44 PM CEST 2026
+Generated: Mon Apr 20 01:01:27 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 
@@ -900,6 +900,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify the README stays short, user-facing, and driven by inline config examples instead of project philosophy <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-24-readme-only-novice-e2e/03-task-verify-cli-command-complexity-stays-low-and-help-works-everywhere.md`
+
+```
+## Task: Verify CLI command complexity stays low and `--help` works everywhere a user would expect it <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
