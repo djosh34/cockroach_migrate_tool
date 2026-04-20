@@ -1,0 +1,135 @@
+name: promote-image-tags
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version tag to publish to GHCR
+        required: true
+        type: string
+      set_latest:
+        description: Also publish the GHCR latest tag
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  RUNNER_IMAGE_REPOSITORY: ${{ vars.RUNNER_IMAGE_REPOSITORY }}
+  SETUP_SQL_IMAGE_REPOSITORY: ${{ vars.SETUP_SQL_IMAGE_REPOSITORY }}
+  VERIFY_IMAGE_REPOSITORY: ${{ vars.VERIFY_IMAGE_REPOSITORY }}
+
+jobs:
+  promote-release-tags:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REQUESTED_VERSION: ${{ inputs.version }}
+      SET_LATEST: ${{ inputs.set_latest }}
+    steps:
+      - name: Validate dispatch ref
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/master"
+
+      - name: Install promotion dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Validate promotion inputs
+        run: |
+          set -euo pipefail
+          version="${REQUESTED_VERSION}"
+          : "${version:?missing required version input}"
+          if [[ "${version}" == "latest" ]]; then
+            printf 'version input must not be latest because set_latest controls that tag\n' >&2
+            exit 1
+          fi
+          if [[ ! "${version}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+            printf 'version input must match ^[A-Za-z0-9][A-Za-z0-9._-]*$: %s\n' "${version}" >&2
+            exit 1
+          fi
+          case "${SET_LATEST}" in
+            true|false)
+              ;;
+            *)
+              printf 'set_latest must resolve to true or false, got %s\n' "${SET_LATEST}" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Mask derived GHCR publish credentials
+        env:
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${GHCR_PASSWORD}" | base64 -w0)"
+          echo "::add-mask::${derived_registry_auth}"
+          printf 'GHCR publish auth (masked): %s\n' "${derived_registry_auth}"
+
+      - name: Login to GHCR
+        env:
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_PASSWORD}" | docker login "${{ env.GHCR_REGISTRY }}" --username "${{ github.actor }}" --password-stdin
+
+      - name: Promote published GHCR images
+        run: |
+          set -euo pipefail
+
+          promote_tag() {
+            local source_ref="$1"
+            local target_ref="$2"
+            skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${source_ref}" >/dev/null
+            skopeo copy \
+              --all \
+              --src-authfile "${HOME}/.docker/config.json" \
+              --dest-authfile "${HOME}/.docker/config.json" \
+              "docker://${source_ref}" \
+              "docker://${target_ref}"
+            skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${target_ref}" >/dev/null
+          }
+
+          image_targets=(
+            "runner:RUNNER_IMAGE_REPOSITORY"
+            "setup-sql:SETUP_SQL_IMAGE_REPOSITORY"
+            "verify:VERIFY_IMAGE_REPOSITORY"
+          )
+
+          {
+            echo "## GHCR Release Promotion"
+            echo
+            echo "| Image | Source commit tag | Version tag | Latest tag |"
+            echo "| --- | --- | --- | --- |"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          for image_target in "${image_targets[@]}"; do
+            IFS=: read -r image_id repository_env <<< "${image_target}"
+            image_repository="$(printenv "${repository_env}")"
+            : "${image_repository:?missing ${repository_env} GitHub repository variable}"
+            source_ref="${GHCR_REGISTRY}/${image_repository}:${GITHUB_SHA}"
+            version_ref="${GHCR_REGISTRY}/${image_repository}:${REQUESTED_VERSION}"
+
+            promote_tag "${source_ref}" "${version_ref}"
+
+            latest_summary="not requested"
+            if [[ "${SET_LATEST}" == "true" ]]; then
+              latest_ref="${GHCR_REGISTRY}/${image_repository}:latest"
+              promote_tag "${source_ref}" "${latest_ref}"
+              latest_summary="\`${latest_ref}\`"
+            fi
+
+            printf '| `%s` | `%s` | `%s` | %s |\n' \
+              "${image_id}" \
+              "${source_ref}" \
+              "${version_ref}" \
+              "${latest_summary}" >> "${GITHUB_STEP_SUMMARY}"
+          done
