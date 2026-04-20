@@ -1,4 +1,4 @@
-## Task: Simplify the verify HTTP contract and publish curl-first operator docs <status>not_started</status> <passes>false</passes>
+## Task: Simplify the verify HTTP contract and publish curl-first operator docs <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -47,13 +47,15 @@ Relevant files and boundaries:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD proves the verify HTTP start, poll, result, and stop contracts use the simplified request/response shapes
-- [ ] The start-job request body is flattened so operators do not have to navigate needless nested `enabled` wrappers or equivalent extra structure
-- [ ] The README or dedicated operator-facing doc includes copy-pasteable curl examples for start, poll, final result, and stop flows
-- [ ] Example success, failure, and validation-error JSON responses are documented and covered by tests
-- [ ] Registry-only novice-user verification coverage is updated so the verify HTTP docs are proven from the published-image operator path
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD proves the verify HTTP start, poll, result, and stop contracts use the simplified request/response shapes
+- [x] The start-job request body is flattened so operators do not have to navigate needless nested `enabled` wrappers or equivalent extra structure
+- [x] The README or dedicated operator-facing doc includes copy-pasteable curl examples for start, poll, final result, and stop flows
+- [x] Example success, failure, and validation-error JSON responses are documented and covered by tests
+- [x] Registry-only novice-user verification coverage is updated so the verify HTTP docs are proven from the published-image operator path
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-27-verify-operator-ux-reset/02-task-simplify-the-verify-http-contract-and-publish-curl-first-operator-docs_plans/2026-04-20-verify-http-contract-and-curl-first-docs-plan.md</plan>

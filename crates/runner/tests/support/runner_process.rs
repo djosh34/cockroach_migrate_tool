@@ -51,7 +51,6 @@ impl RunnerProcess {
             .wait()
             .expect("runner process should be waitable after kill");
     }
-
 }
 
 impl Drop for RunnerProcess {

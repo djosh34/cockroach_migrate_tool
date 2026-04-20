@@ -7,17 +7,10 @@ import (
 )
 
 type JobRequest struct {
-	Filters JobFilters `json:"filters"`
-}
-
-type JobFilters struct {
-	Include NameFilters `json:"include"`
-	Exclude NameFilters `json:"exclude"`
-}
-
-type NameFilters struct {
-	Schema string `json:"schema,omitempty"`
-	Table  string `json:"table,omitempty"`
+	IncludeSchema string `json:"include_schema,omitempty"`
+	IncludeTable  string `json:"include_table,omitempty"`
+	ExcludeSchema string `json:"exclude_schema,omitempty"`
+	ExcludeTable  string `json:"exclude_table,omitempty"`
 }
 
 type RunRequest struct {
@@ -26,10 +19,10 @@ type RunRequest struct {
 
 func (r JobRequest) Compile() (RunRequest, error) {
 	filterConfig := utils.FilterConfig{
-		SchemaFilter:        emptyDefaultsTo(r.Filters.Include.Schema, utils.DefaultFilterString),
-		TableFilter:         emptyDefaultsTo(r.Filters.Include.Table, utils.DefaultFilterString),
-		ExcludeSchemaFilter: r.Filters.Exclude.Schema,
-		ExcludeTableFilter:  r.Filters.Exclude.Table,
+		SchemaFilter:        emptyDefaultsTo(r.IncludeSchema, utils.DefaultFilterString),
+		TableFilter:         emptyDefaultsTo(r.IncludeTable, utils.DefaultFilterString),
+		ExcludeSchemaFilter: r.ExcludeSchema,
+		ExcludeTableFilter:  r.ExcludeTable,
 	}
 	if err := validateFilters(filterConfig); err != nil {
 		return RunRequest{}, err

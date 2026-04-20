@@ -799,7 +799,7 @@ func TestPostTablesRawRejectsInvalidIdentifiers(t *testing.T) {
 	require.Equal(t, "schema must be a simple SQL identifier", payload.Error)
 }
 
-func TestPostStopWithoutJobIDStopsTheActiveJob(t *testing.T) {
+func TestPostJobStopStopsTheActiveJob(t *testing.T) {
 	t.Parallel()
 
 	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
@@ -819,12 +819,24 @@ func TestPostStopWithoutJobIDStopsTheActiveJob(t *testing.T) {
 	})
 	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
 
-	stopResponse, err := http.Post(server.URL+"/stop", "application/json", bytes.NewBufferString(`{}`))
+	stopResponse, err := http.Post(
+		server.URL+"/jobs/job-000001/stop",
+		"application/json",
+		bytes.NewBufferString(`{}`),
+	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = stopResponse.Body.Close()
 	})
 	require.Equal(t, http.StatusOK, stopResponse.StatusCode)
+
+	var payload struct {
+		JobID  string `json:"job_id"`
+		Status string `json:"status"`
+	}
+	require.NoError(t, json.NewDecoder(stopResponse.Body).Decode(&payload))
+	require.Equal(t, "job-000001", payload.JobID)
+	require.Equal(t, "stopping", payload.Status)
 
 	require.Eventually(t, func() bool {
 		getResponse, err := http.Get(server.URL + "/jobs/job-000001")
@@ -903,7 +915,7 @@ func TestGetJobReturnsOnlySafeStatusFieldsAfterFailure(t *testing.T) {
 	}, 2*time.Second, 20*time.Millisecond)
 }
 
-func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
+func TestPostJobsPassesFlatScopedFiltersToTheVerifyRunner(t *testing.T) {
 	t.Parallel()
 
 	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
@@ -920,16 +932,10 @@ func TestPostJobsPassesScopedFiltersToTheVerifyRunner(t *testing.T) {
 		server.URL+"/jobs",
 		"application/json",
 		bytes.NewBufferString(`{
-			"filters": {
-				"include": {
-					"schema": "^public$|tmp;curl attacker",
-					"table": "accounts;$(touch /tmp/pwned)|orders"
-				},
-				"exclude": {
-					"schema": "audit|tmp;rm -rf /",
-					"table": "^tmp_"
-				}
-			}
+			"include_schema": "^public$|tmp;curl attacker",
+			"include_table": "accounts;$(touch /tmp/pwned)|orders",
+			"exclude_schema": "audit|tmp;rm -rf /",
+			"exclude_table": "^tmp_"
 		}`),
 	)
 	require.NoError(t, err)
@@ -1004,11 +1010,7 @@ func TestPostJobsRejectsConnectionLikeRequestFields(t *testing.T) {
 		server.URL+"/jobs",
 		"application/json",
 		bytes.NewBufferString(`{
-			"filters": {
-				"include": {
-					"schema": "^public$"
-				}
-			},
+			"include_schema": "^public$",
 			"verify": {
 				"source": {
 					"url": "postgres://attacker/override",
@@ -1058,11 +1060,7 @@ func TestPostJobsRejectsUnknownTopLevelFields(t *testing.T) {
 		server.URL+"/jobs",
 		"application/json",
 		bytes.NewBufferString(`{
-			"filters": {
-				"include": {
-					"schema": "^public$"
-				}
-			},
+			"include_schema": "^public$",
 			"command": "sh -c 'curl attacker'"
 		}`),
 	)
@@ -1160,7 +1158,7 @@ func TestPostJobsRejectsOversizedRequestBody(t *testing.T) {
 	}
 }
 
-func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
+func TestPostJobStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	t.Parallel()
 
 	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
@@ -1171,14 +1169,10 @@ func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 	server := httptest.NewServer(service.Handler())
 	t.Cleanup(server.Close)
 
-	hostileJobID := `job-999999;$(touch /tmp/pwned) "quoted"`
-	stopRequestBody, err := json.Marshal(map[string]string{"job_id": hostileJobID})
-	require.NoError(t, err)
-
 	response, err := http.Post(
-		server.URL+"/stop",
+		server.URL+"/jobs/"+url.PathEscape(`job-999999;$(touch /tmp/pwned) "quoted"`)+"/stop",
 		"application/json",
-		bytes.NewBuffer(stopRequestBody),
+		bytes.NewBufferString(`{}`),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -1187,7 +1181,7 @@ func TestPostStopWithUnknownJobIDReturnsNotFound(t *testing.T) {
 
 	require.Equal(t, http.StatusNotFound, response.StatusCode)
 
-	getResponse, err := http.Get(server.URL + "/jobs/" + url.PathEscape(hostileJobID))
+	getResponse, err := http.Get(server.URL + "/jobs/" + url.PathEscape(`job-999999;$(touch /tmp/pwned) "quoted"`))
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_ = getResponse.Body.Close()

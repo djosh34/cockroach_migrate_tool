@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 08:31:19 PM CEST 2026
+Generated: Mon Apr 20 08:47:45 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -1001,6 +1001,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Reset verify-service config to operator-chosen security and remove redundant TLS knobs <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-27-verify-operator-ux-reset/02-task-simplify-the-verify-http-contract-and-publish-curl-first-operator-docs.md`
+
+```
+## Task: Simplify the verify HTTP contract and publish curl-first operator docs <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

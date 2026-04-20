@@ -11,16 +11,10 @@ func TestJobRequestCompileBuildsTypedRunRequest(t *testing.T) {
 	t.Parallel()
 
 	runRequest, err := (JobRequest{
-		Filters: JobFilters{
-			Include: NameFilters{
-				Schema: "^public$",
-				Table:  "accounts;$(touch /tmp/pwned)|orders",
-			},
-			Exclude: NameFilters{
-				Schema: "audit|tmp;rm -rf /",
-				Table:  "^tmp_",
-			},
-		},
+		IncludeSchema: "^public$",
+		IncludeTable:  "accounts;$(touch /tmp/pwned)|orders",
+		ExcludeSchema: "audit|tmp;rm -rf /",
+		ExcludeTable:  "^tmp_",
 	}).Compile()
 	require.NoError(t, err)
 	require.Equal(t, utils.FilterConfig{
@@ -35,11 +29,7 @@ func TestJobRequestCompileRejectsInvalidRegex(t *testing.T) {
 	t.Parallel()
 
 	_, err := (JobRequest{
-		Filters: JobFilters{
-			Include: NameFilters{
-				Schema: "[",
-			},
-		},
+		IncludeSchema: "[",
 	}).Compile()
 	require.Error(t, err)
 }

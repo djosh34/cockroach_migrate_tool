@@ -9,6 +9,8 @@ use std::{
 };
 
 use reqwest::{Certificate, Identity, blocking::Client};
+use serde::Deserialize;
+use serde_json::json;
 use tempfile::TempDir;
 
 use crate::published_image_refs_support::{
@@ -43,6 +45,17 @@ pub struct RunningVerifyCompose {
     project_name: String,
     verify_image: String,
     verify_https_port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyComposeJobResponse {
+    pub job_id: String,
+    pub status: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VerifyComposeErrorResponse {
+    pub error: String,
 }
 
 impl NoviceRegistryOnlyHarness {
@@ -574,6 +587,128 @@ impl RunningVerifyCompose {
         );
     }
 
+    pub fn start_job_with_flat_filters(
+        &self,
+        include_schema: &str,
+        include_table: &str,
+    ) -> VerifyComposeJobResponse {
+        let response = self
+            .client()
+            .post(format!("https://localhost:{}/jobs", self.verify_https_port))
+            .header("content-type", "application/json")
+            .body(
+                json!({
+                    "include_schema": include_schema,
+                    "include_table": include_table,
+                })
+                .to_string(),
+            )
+            .send()
+            .unwrap_or_else(|error| panic!("verify compose POST /jobs should succeed: {error}"));
+        let status = response.status();
+        let body = response
+            .text()
+            .unwrap_or_else(|error| panic!("verify compose start response should read: {error}"));
+        assert_eq!(
+            status,
+            reqwest::StatusCode::ACCEPTED,
+            "verify compose POST /jobs should accept the flat contract\nbody:\n{}\n{}",
+            body,
+            compose_logs(
+                &self.root_dir,
+                &self.project_name,
+                "verify.compose.yml",
+                "verify"
+            ),
+        );
+        parse_json(&body, "verify compose start response")
+    }
+
+    pub fn start_job_with_legacy_filters_error(&self) -> VerifyComposeErrorResponse {
+        let response = self
+            .client()
+            .post(format!("https://localhost:{}/jobs", self.verify_https_port))
+            .header("content-type", "application/json")
+            .body(
+                json!({
+                    "filters": {
+                        "include": {
+                            "schema": "^public$",
+                        }
+                    }
+                })
+                .to_string(),
+            )
+            .send()
+            .unwrap_or_else(|error| {
+                panic!("verify compose POST /jobs legacy request should return a validation error: {error}")
+            });
+        let status = response.status();
+        let body = response.text().unwrap_or_else(|error| {
+            panic!("verify compose validation-error response should read: {error}")
+        });
+        assert_eq!(
+            status,
+            reqwest::StatusCode::BAD_REQUEST,
+            "verify compose legacy request should fail validation\nbody:\n{}\n{}",
+            body,
+            compose_logs(
+                &self.root_dir,
+                &self.project_name,
+                "verify.compose.yml",
+                "verify"
+            ),
+        );
+        parse_json(&body, "verify compose validation-error response")
+    }
+
+    pub fn wait_for_terminal_job(&self, job_id: &str) -> VerifyComposeJobResponse {
+        for _ in 0..30 {
+            let response = self
+                .client()
+                .get(format!(
+                    "https://localhost:{}/jobs/{job_id}",
+                    self.verify_https_port
+                ))
+                .send()
+                .unwrap_or_else(|error| {
+                    panic!("verify compose GET /jobs/{job_id} should succeed: {error}")
+                });
+            let status = response.status();
+            let body = response
+                .text()
+                .unwrap_or_else(|error| panic!("verify compose job response should read: {error}"));
+            assert_eq!(
+                status,
+                reqwest::StatusCode::OK,
+                "verify compose GET /jobs/{job_id} should return job status\nbody:\n{}\n{}",
+                body,
+                compose_logs(
+                    &self.root_dir,
+                    &self.project_name,
+                    "verify.compose.yml",
+                    "verify"
+                ),
+            );
+            let payload: VerifyComposeJobResponse =
+                parse_json(&body, "verify compose job response");
+            if payload.status != "running" {
+                return payload;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        panic!(
+            "verify compose job `{job_id}` did not reach a terminal state\n{}",
+            compose_logs(
+                &self.root_dir,
+                &self.project_name,
+                "verify.compose.yml",
+                "verify"
+            ),
+        );
+    }
+
     fn client(&self) -> Client {
         let certs_dir = self.root_dir.join("config/certs");
         let trusted_server_ca = fs::read(certs_dir.join("source-ca.crt"))
@@ -590,6 +725,14 @@ impl RunningVerifyCompose {
             .build()
             .expect("verify compose client should build")
     }
+}
+
+fn parse_json<T>(raw: &str, description: &str) -> T
+where
+    T: for<'de> Deserialize<'de>,
+{
+    serde_json::from_str(raw)
+        .unwrap_or_else(|error| panic!("{description} should be valid json: {error}\nraw:\n{raw}"))
 }
 
 fn copy_file(from: &Path, to: &Path) {

@@ -138,7 +138,9 @@ impl VerifyImageArtifactHarness {
             .embedded_module_version(module)
             .unwrap_or_else(|| panic!("verify image must embed module `{module}`"));
         let current_version = parse_go_semver(&current_version).unwrap_or_else(|| {
-            panic!("embedded module `{module}` should use a semver version, found `{current_version}`")
+            panic!(
+                "embedded module `{module}` should use a semver version, found `{current_version}`"
+            )
         });
         let minimum_version = parse_go_semver(minimum_version).unwrap_or_else(|| {
             panic!("minimum version floor should be valid semver, found `{minimum_version}`")
@@ -161,7 +163,9 @@ impl VerifyImageArtifactHarness {
             return;
         };
         let current_version = parse_go_semver(&current_version).unwrap_or_else(|| {
-            panic!("embedded module `{module}` should use a semver version, found `{current_version}`")
+            panic!(
+                "embedded module `{module}` should use a semver version, found `{current_version}`"
+            )
         });
         let minimum_version = parse_go_semver(minimum_version).unwrap_or_else(|| {
             panic!("minimum version floor should be valid semver, found `{minimum_version}`")
@@ -240,7 +244,8 @@ struct ExtractedVerifyBinary {
 
 impl ExtractedVerifyBinary {
     fn from_image(image_tag: &str) -> Self {
-        let temp_dir = std::env::temp_dir().join(format!("verify-image-artifact-{}", unique_suffix()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("verify-image-artifact-{}", unique_suffix()));
         fs::create_dir_all(&temp_dir).unwrap_or_else(|error| {
             panic!(
                 "temporary directory `{}` should be creatable: {error}",

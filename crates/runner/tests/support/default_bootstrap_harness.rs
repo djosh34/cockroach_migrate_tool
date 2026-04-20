@@ -518,7 +518,8 @@ impl DefaultBootstrapHarness {
         self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
             .assert_selected_tables_match();
         let baseline = self.customer_tracking_progress();
-        let destination_failure = self.fail_destination_customer_email_write(1, RECONCILE_FAILURE_EMAIL);
+        let destination_failure =
+            self.fail_destination_customer_email_write(1, RECONCILE_FAILURE_EMAIL);
         self.update_source_customer_email(1, RECONCILE_FAILURE_EMAIL);
         let expected_helper_snapshot = format!("1:{RECONCILE_FAILURE_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);

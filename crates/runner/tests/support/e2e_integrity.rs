@@ -414,7 +414,8 @@ impl ReconcileTransactionFailureAudit {
             "reconcile transaction failure audit should end fully reconciled without a stored error: {:?}",
             self
         );
-        self.recovery_verify_correctness.assert_selected_tables_match();
+        self.recovery_verify_correctness
+            .assert_selected_tables_match();
     }
 }
 

@@ -210,6 +210,42 @@ fn verify_compose_runtime_serves_the_https_api_with_readme_owned_mtls_material()
 }
 
 #[test]
+fn verify_readme_http_flow_uses_the_flat_start_contract_and_surfaces_failures() {
+    let harness = NoviceRegistryOnlyHarness::start();
+    let verify_runtime = harness.start_verify_compose_runtime();
+    verify_runtime.wait_until_running();
+
+    let start = verify_runtime.start_job_with_flat_filters("^public$", "^(accounts|orders)$");
+    assert_eq!(
+        start.status, "running",
+        "verify README flow should accept the flat start contract through the published image",
+    );
+    assert!(
+        start.job_id.starts_with("job-"),
+        "verify README flow should return a concrete job id, got `{}`",
+        start.job_id,
+    );
+
+    let terminal = verify_runtime.wait_for_terminal_job(&start.job_id);
+    assert_eq!(
+        terminal.job_id, start.job_id,
+        "verify README polling flow should keep the same job id across responses",
+    );
+    assert_eq!(
+        terminal.status, "failed",
+        "verify README flow should surface the published-image failure response when the copied config points at unreachable databases",
+    );
+
+    let validation_error = verify_runtime.start_job_with_legacy_filters_error();
+    assert_eq!(
+        validation_error.error, r#"json: unknown field "filters""#,
+        "verify README flow should reject the removed nested filter contract with the documented validation error",
+    );
+
+    verify_runtime.shutdown();
+}
+
+#[test]
 fn runner_readme_runtime_distinguishes_authentication_and_connectivity_failures() {
     let harness = NoviceRegistryOnlyHarness::start();
     let postgres = harness.start_runner_destination_postgres();

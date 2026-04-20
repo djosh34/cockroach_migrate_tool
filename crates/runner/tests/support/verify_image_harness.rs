@@ -222,12 +222,8 @@ impl RunningVerifyImage {
             .header("content-type", "application/json")
             .body(
                 json!({
-                    "filters": {
-                        "include": {
-                            "schema": run.include_schema_pattern,
-                            "table": run.include_table_pattern,
-                        }
-                    }
+                    "include_schema": run.include_schema_pattern,
+                    "include_table": run.include_table_pattern,
                 })
                 .to_string(),
             )

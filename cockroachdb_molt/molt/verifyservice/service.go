@@ -66,8 +66,8 @@ func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /jobs", s.handlePostJobs)
 	mux.HandleFunc("GET /jobs/{job_id}", s.handleGetJob)
+	mux.HandleFunc("POST /jobs/{job_id}/stop", s.handlePostJobStop)
 	mux.HandleFunc("POST /tables/raw", s.handlePostTablesRaw)
-	mux.HandleFunc("POST /stop", s.handlePostStop)
 	mux.Handle("GET /metrics", newMetricsHandler(s))
 	return mux
 }
@@ -166,35 +166,29 @@ func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, jobResponse)
 }
 
-func (s *Service) handlePostStop(w http.ResponseWriter, r *http.Request) {
-	var request struct {
-		JobID string `json:"job_id"`
-	}
+func (s *Service) handlePostJobStop(w http.ResponseWriter, r *http.Request) {
+	var request struct{}
 	if err := decodeJSONBody(w, r, &request); err != nil {
 		writeDecodeJSONError(w, err)
 		return
 	}
 
-	var stoppedJobIDs []string
-	var err error
-	if request.JobID == "" {
-		stoppedJobIDs = s.stopAllJobs()
-	} else {
-		stoppedJobIDs, err = s.stopJob(request.JobID)
-		if err != nil {
-			if errors.Is(err, errJobNotFound) {
-				writeJSONError(w, http.StatusNotFound, err.Error())
-				return
-			}
-			writeJSONError(w, http.StatusInternalServerError, err.Error())
+	jobID := r.PathValue("job_id")
+	if err := s.stopJob(jobID); err != nil {
+		if errors.Is(err, errJobNotFound) {
+			writeJSONError(w, http.StatusNotFound, err.Error())
 			return
 		}
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	writeJSON(w, http.StatusOK, struct {
-		StoppedJobIDs []string `json:"stopped_job_ids"`
+		JobID  string `json:"job_id"`
+		Status string `json:"status"`
 	}{
-		StoppedJobIDs: stoppedJobIDs,
+		JobID:  jobID,
+		Status: "stopping",
 	})
 }
 
@@ -240,34 +234,18 @@ func (s *Service) getJobResponse(jobID string) (any, bool) {
 
 var errJobNotFound = errors.New("job not found")
 
-func (s *Service) stopAllJobs() []string {
-	s.mu.Lock()
-	cancel := s.activeCancelLocked()
-	activeJobID := ""
-	if s.activeJob != nil {
-		activeJobID = s.activeJob.id
-	}
-	s.mu.Unlock()
-
-	if cancel == nil || activeJobID == "" {
-		return nil
-	}
-	cancel()
-	return []string{activeJobID}
-}
-
-func (s *Service) stopJob(jobID string) ([]string, error) {
+func (s *Service) stopJob(jobID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if s.activeJob == nil || s.activeJob.id != jobID {
-		return nil, errJobNotFound
+		return errJobNotFound
 	}
 	if s.activeJob.cancel == nil {
-		return nil, errJobNotFound
+		return errJobNotFound
 	}
 	s.activeJob.cancel()
-	return []string{jobID}, nil
+	return nil
 }
 
 func (s *Service) activeCancelLocked() context.CancelFunc {

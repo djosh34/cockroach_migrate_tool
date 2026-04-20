@@ -36,16 +36,10 @@ func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t 
 	require.NoError(t, err)
 
 	request, err := (JobRequest{
-		Filters: JobFilters{
-			Include: NameFilters{
-				Schema: "^public$",
-				Table:  "accounts;$(touch /tmp/pwned)|orders",
-			},
-			Exclude: NameFilters{
-				Schema: "audit|tmp;rm -rf /",
-				Table:  "^tmp_",
-			},
-		},
+		IncludeSchema: "^public$",
+		IncludeTable:  "accounts;$(touch /tmp/pwned)|orders",
+		ExcludeSchema: "audit|tmp;rm -rf /",
+		ExcludeTable:  "^tmp_",
 	}).Compile()
 	require.NoError(t, err)
 

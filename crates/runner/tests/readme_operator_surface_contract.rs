@@ -189,3 +189,27 @@ fn readme_operator_surface_materializes_the_inline_operator_workspace() {
         );
     }
 }
+
+#[test]
+fn readme_verify_quick_start_documents_the_http_job_flow() {
+    let readme = ReadmeOperatorSurface::load();
+    let verify = readme.section("## Verify Quick Start");
+
+    for required_snippet in [
+        "\"include_schema\":\"^public$\"",
+        "\"include_table\":\"^(accounts|orders)$\"",
+        "POST /jobs",
+        "GET /jobs/${JOB_ID}",
+        "POST /jobs/${JOB_ID}/stop",
+        "\"status\":\"running\"",
+        "\"status\":\"succeeded\"",
+        "\"status\":\"failed\"",
+        "\"status\":\"stopping\"",
+        "\"error\":\"json: unknown field \\\"filters\\\"\"",
+    ] {
+        assert!(
+            verify.contains(required_snippet),
+            "README verify quick start should document `{required_snippet}`",
+        );
+    }
+}

@@ -332,6 +332,85 @@ Optional args:
 
 - `--log-format json` for structured stderr logs
 
+Drive the verify HTTP API with curl after the process is listening:
+
+- `POST /jobs` starts one verify job with flat filter fields.
+- `GET /jobs/${JOB_ID}` polls the running job and later returns the final result.
+- `POST /jobs/${JOB_ID}/stop` requests cancellation for the active job.
+
+The examples below assume the listener is serving HTTPS on `localhost:9443` and client auth uses the same `config/certs/source-client.crt` plus `config/certs/source-client.key` pair you mounted for the runtime. Reuse the `job_id` from the start response as `JOB_ID` before polling or stopping.
+
+```bash
+export VERIFY_API="https://localhost:9443"
+```
+
+Start a verify job with flat filters:
+
+```bash
+curl --silent --show-error --insecure \
+  --cert config/certs/source-client.crt \
+  --key config/certs/source-client.key \
+  -H 'content-type: application/json' \
+  -d '{"include_schema":"^public$","include_table":"^(accounts|orders)$"}' \
+  "${VERIFY_API}/jobs"
+```
+
+Accepted response:
+
+```json
+{"job_id":"job-000001","status":"running"}
+```
+
+Poll the job:
+
+```bash
+curl --silent --show-error --insecure \
+  --cert config/certs/source-client.crt \
+  --key config/certs/source-client.key \
+  "${VERIFY_API}/jobs/${JOB_ID}"
+```
+
+Running response:
+
+```json
+{"job_id":"job-000001","status":"running"}
+```
+
+Successful final response:
+
+```json
+{"job_id":"job-000001","status":"succeeded","result":{"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":7,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"mismatch_tables":[],"table_definition_mismatches":[]}}
+```
+
+Stop a running job:
+
+```bash
+curl --silent --show-error --insecure \
+  --cert config/certs/source-client.crt \
+  --key config/certs/source-client.key \
+  -H 'content-type: application/json' \
+  -d '{}' \
+  "${VERIFY_API}/jobs/${JOB_ID}/stop"
+```
+
+Stop response:
+
+```json
+{"job_id":"job-000001","status":"stopping"}
+```
+
+Failed final response:
+
+```json
+{"job_id":"job-000001","status":"failed"}
+```
+
+Validation error response:
+
+```json
+{"error":"json: unknown field \"filters\""}
+```
+
 If you prefer Compose, use the same image contract with Docker Compose.
 
 Save this as `verify.compose.yml`:
