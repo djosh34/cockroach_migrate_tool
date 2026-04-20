@@ -2,6 +2,8 @@
 
 Run the published `setup-sql`, `runner`, and `verify` images with inline configs only. No repository checkout, local Rust install, or local image build is required.
 
+Automated publication pushes commit-SHA tags for the canonical GHCR packages `cockroach-migrate-setup-sql`, `cockroach-migrate-runner`, and `cockroach-migrate-verify`. Repository owners can later promote those already-published GHCR images to a version tag, and optionally `latest`, with the manual GitHub Actions workflow `promote-image-tags`.
+
 ## Setup SQL Quick Start
 
 Pull the published `setup-sql` image, render the SQL you need, review it, and apply it yourself. The one-time setup flow stays separate from the long-running runtime.
@@ -157,6 +159,8 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 ## Runner Quick Start
 
 Pull the published runner image and create `config/certs/server.crt`, `config/certs/server.key`, `config/certs/destination-ca.crt`, `config/certs/destination-client.crt`, and `config/certs/destination-client.key`.
+
+The runner does not connect to CockroachDB. In `mappings[].source`, `database` and `tables` are only the source identifiers the runner expects inside incoming webhook payloads so it can reject misrouted events and map them to the correct PostgreSQL target.
 
 ```bash
 export GITHUB_OWNER=<github-owner>

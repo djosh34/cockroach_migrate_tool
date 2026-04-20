@@ -12,11 +12,11 @@ env:
   GHCR_REGISTRY: ghcr.io
   QUAY_REGISTRY: quay.io
   QUAY_ORGANIZATION: ${{ vars.QUAY_ORGANIZATION }}
-  RUNNER_IMAGE_REPOSITORY: ${{ vars.RUNNER_IMAGE_REPOSITORY }}
-  SETUP_SQL_IMAGE_REPOSITORY: ${{ vars.SETUP_SQL_IMAGE_REPOSITORY }}
-  VERIFY_IMAGE_REPOSITORY: ${{ vars.VERIFY_IMAGE_REPOSITORY }}
 
 jobs:
+  image-catalog:
+    uses: ./.github/workflows/image-catalog.yml
+
   validate-fast:
     runs-on: ubuntu-latest
     steps:
@@ -126,42 +126,11 @@ jobs:
           key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
 
   publish-image:
+    needs: image-catalog
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
-      matrix:
-        image:
-          - image_id: runner
-            repository_env: RUNNER_IMAGE_REPOSITORY
-            dockerfile: ./Dockerfile
-            context: .
-            manifest_key: runner_image_ref
-            artifact_name: published-image-runner
-            cache_scope: publish-image-runner
-            build_kind: rust-workspace-musl
-          - image_id: setup-sql
-            repository_env: SETUP_SQL_IMAGE_REPOSITORY
-            dockerfile: ./crates/setup-sql/Dockerfile
-            context: .
-            manifest_key: setup_sql_image_ref
-            artifact_name: published-image-setup-sql
-            cache_scope: publish-image-setup-sql
-            build_kind: rust-workspace-musl
-          - image_id: verify
-            repository_env: VERIFY_IMAGE_REPOSITORY
-            dockerfile: ./cockroachdb_molt/molt/Dockerfile
-            context: ./cockroachdb_molt/molt
-            manifest_key: verify_image_ref
-            artifact_name: published-image-verify
-            cache_scope: publish-image-verify
-            build_kind: verify-go
-        platform:
-          - platform: linux/amd64
-            runner: ubuntu-24.04
-            platform_tag_suffix: amd64
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-            platform_tag_suffix: arm64
+      matrix: ${{ fromJson(needs.image-catalog.outputs.publish_image_matrix) }}
     runs-on: ${{ matrix.platform.runner }}
     env:
       PUBLISHED_IMAGE_REF_FILE: ${{ github.workspace }}/published-image-refs/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env
@@ -236,8 +205,7 @@ jobs:
         run: |
           set -euo pipefail
           : "${QUAY_ORGANIZATION:?missing QUAY_ORGANIZATION GitHub repository variable}"
-          image_repository="$(printenv "${{ matrix.image.repository_env }}")"
-          : "${image_repository:?missing ${{ matrix.image.repository_env }} GitHub repository variable}"
+          image_repository="${{ matrix.image.image_repository }}"
           quay_repository="${QUAY_ORGANIZATION}/${image_repository}"
           final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
           platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
@@ -751,6 +719,7 @@ jobs:
 
   workflow-summary:
     needs:
+      - image-catalog
       - validate-fast
       - validate-long
       - publish-image

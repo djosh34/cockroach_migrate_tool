@@ -18,17 +18,19 @@ permissions:
 
 env:
   GHCR_REGISTRY: ghcr.io
-  RUNNER_IMAGE_REPOSITORY: ${{ vars.RUNNER_IMAGE_REPOSITORY }}
-  SETUP_SQL_IMAGE_REPOSITORY: ${{ vars.SETUP_SQL_IMAGE_REPOSITORY }}
-  VERIFY_IMAGE_REPOSITORY: ${{ vars.VERIFY_IMAGE_REPOSITORY }}
 
 jobs:
+  image-catalog:
+    uses: ./.github/workflows/image-catalog.yml
+
   promote-release-tags:
+    needs: image-catalog
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
     env:
+      IMAGE_CATALOG_JSON: ${{ needs.image-catalog.outputs.release_image_catalog }}
       REQUESTED_VERSION: ${{ inputs.version }}
       SET_LATEST: ${{ inputs.set_latest }}
     steps:
@@ -41,7 +43,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes skopeo
+          sudo apt-get install --yes jq skopeo
 
       - name: Validate promotion inputs
         run: |
@@ -98,11 +100,7 @@ jobs:
             skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${target_ref}" >/dev/null
           }
 
-          image_targets=(
-            "runner:RUNNER_IMAGE_REPOSITORY"
-            "setup-sql:SETUP_SQL_IMAGE_REPOSITORY"
-            "verify:VERIFY_IMAGE_REPOSITORY"
-          )
+          jq -e 'length > 0' <<< "${IMAGE_CATALOG_JSON}" >/dev/null
 
           {
             echo "## GHCR Release Promotion"
@@ -111,10 +109,11 @@ jobs:
             echo "| --- | --- | --- | --- |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          for image_target in "${image_targets[@]}"; do
-            IFS=: read -r image_id repository_env <<< "${image_target}"
-            image_repository="$(printenv "${repository_env}")"
-            : "${image_repository:?missing ${repository_env} GitHub repository variable}"
+          while IFS= read -r image_target; do
+            image_id="$(jq -r '.image_id' <<< "${image_target}")"
+            image_repository="$(jq -r '.image_repository' <<< "${image_target}")"
+            : "${image_id:?missing image_id in image catalog}"
+            : "${image_repository:?missing image_repository in image catalog}"
             source_ref="${GHCR_REGISTRY}/${image_repository}:${GITHUB_SHA}"
             version_ref="${GHCR_REGISTRY}/${image_repository}:${REQUESTED_VERSION}"
 
@@ -132,4 +131,4 @@ jobs:
               "${source_ref}" \
               "${version_ref}" \
               "${latest_summary}" >> "${GITHUB_STEP_SUMMARY}"
-          done
+          done < <(jq -cr '.[]' <<< "${IMAGE_CATALOG_JSON}")

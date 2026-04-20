@@ -1,0 +1,84 @@
+name: image-catalog
+
+on:
+  workflow_call:
+    outputs:
+      publish_image_matrix:
+        description: Publish-image matrix for the canonical image catalog
+        value: ${{ jobs.catalog.outputs.publish_image_matrix }}
+      release_image_catalog:
+        description: Release-promotion catalog for the canonical image set
+        value: ${{ jobs.catalog.outputs.release_image_catalog }}
+
+jobs:
+  catalog:
+    runs-on: ubuntu-24.04
+    outputs:
+      publish_image_matrix: ${{ steps.emit-catalog.outputs.publish_image_matrix }}
+      release_image_catalog: ${{ steps.emit-catalog.outputs.release_image_catalog }}
+    steps:
+      - name: Emit canonical image catalog
+        id: emit-catalog
+        run: |
+          set -euo pipefail
+          release_image_catalog="$(cat <<'EOF'
+          [
+            {
+              "image_id": "runner",
+              "image_repository": "cockroach-migrate-runner",
+              "dockerfile": "./Dockerfile",
+              "context": ".",
+              "manifest_key": "runner_image_ref",
+              "artifact_name": "published-image-runner",
+              "cache_scope": "publish-image-runner",
+              "build_kind": "rust-workspace-musl"
+            },
+            {
+              "image_id": "setup-sql",
+              "image_repository": "cockroach-migrate-setup-sql",
+              "dockerfile": "./crates/setup-sql/Dockerfile",
+              "context": ".",
+              "manifest_key": "setup_sql_image_ref",
+              "artifact_name": "published-image-setup-sql",
+              "cache_scope": "publish-image-setup-sql",
+              "build_kind": "rust-workspace-musl"
+            },
+            {
+              "image_id": "verify",
+              "image_repository": "cockroach-migrate-verify",
+              "dockerfile": "./cockroachdb_molt/molt/Dockerfile",
+              "context": "./cockroachdb_molt/molt",
+              "manifest_key": "verify_image_ref",
+              "artifact_name": "published-image-verify",
+              "cache_scope": "publish-image-verify",
+              "build_kind": "verify-go"
+            }
+          ]
+          EOF
+          )"
+          publish_image_matrix="$(cat <<EOF
+          {
+            "image": ${release_image_catalog},
+            "platform": [
+              {
+                "platform": "linux/amd64",
+                "runner": "ubuntu-24.04",
+                "platform_tag_suffix": "amd64"
+              },
+              {
+                "platform": "linux/arm64",
+                "runner": "ubuntu-24.04-arm",
+                "platform_tag_suffix": "arm64"
+              }
+            ]
+          }
+          EOF
+          )"
+          {
+            echo "release_image_catalog<<EOF"
+            echo "${release_image_catalog}"
+            echo "EOF"
+            echo "publish_image_matrix<<EOF"
+            echo "${publish_image_matrix}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
