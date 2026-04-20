@@ -45,47 +45,52 @@ struct TestPostgres {
 
 impl TestPostgres {
     fn start() -> Self {
-        let data_dir = tempfile::tempdir().expect("postgres data dir should be created");
-        let port = pick_unused_port();
+        for _ in 0..10 {
+            let data_dir = tempfile::tempdir().expect("postgres data dir should be created");
+            let port = pick_unused_port();
 
-        run_command(
-            Command::new("initdb")
+            run_command(
+                Command::new("initdb")
+                    .args([
+                        "--auth-local=trust",
+                        "--auth-host=trust",
+                        "--username=postgres",
+                        "--pgdata",
+                    ])
+                    .arg(data_dir.path()),
+                "initdb",
+            );
+
+            let process = Command::new("postgres")
+                .args(["-D"])
+                .arg(data_dir.path())
                 .args([
-                    "--auth-local=trust",
-                    "--auth-host=trust",
-                    "--username=postgres",
-                    "--pgdata",
+                    "-F",
+                    "-h",
+                    "127.0.0.1",
+                    "-k",
+                    &data_dir.path().display().to_string(),
+                    "-p",
+                    &port.to_string(),
+                    "-c",
+                    "logging_collector=off",
                 ])
-                .arg(data_dir.path()),
-            "initdb",
-        );
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("postgres should start");
 
-        let process = Command::new("postgres")
-            .args(["-D"])
-            .arg(data_dir.path())
-            .args([
-                "-F",
-                "-h",
-                "127.0.0.1",
-                "-k",
-                &data_dir.path().display().to_string(),
-                "-p",
-                &port.to_string(),
-                "-c",
-                "logging_collector=off",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("postgres should start");
+            let mut instance = Self {
+                _data_dir: data_dir,
+                process,
+                port,
+            };
+            if instance.wait_until_ready() {
+                return instance;
+            }
+        }
 
-        let instance = Self {
-            _data_dir: data_dir,
-            process,
-            port,
-        };
-        instance.wait_until_ready();
-        instance
+        panic!("postgres test cluster could not claim a stable TCP port");
     }
 
     fn exec(&self, database: &str, sql: &str) {
@@ -147,8 +152,17 @@ impl TestPostgres {
             .to_owned()
     }
 
-    fn wait_until_ready(&self) {
+    fn wait_until_ready(&mut self) -> bool {
         for _ in 0..50 {
+            if self
+                .process
+                .try_wait()
+                .expect("postgres process status should be readable")
+                .is_some()
+            {
+                return false;
+            }
+
             let status = Command::new("pg_isready")
                 .args([
                     "-h",
@@ -161,12 +175,39 @@ impl TestPostgres {
                 .status()
                 .expect("pg_isready should start");
             if status.success() {
-                return;
+                return self.server_data_directory_matches_expected();
             }
             thread::sleep(Duration::from_millis(100));
         }
 
-        panic!("postgres did not become ready on port {}", self.port);
+        false
+    }
+
+    fn server_data_directory_matches_expected(&self) -> bool {
+        let output = Command::new("psql")
+            .env("PGPASSWORD", "")
+            .args([
+                "-h",
+                "127.0.0.1",
+                "-p",
+                &self.port.to_string(),
+                "-U",
+                "postgres",
+                "-d",
+                "postgres",
+                "-t",
+                "-A",
+                "-c",
+                "SHOW data_directory;",
+            ])
+            .output()
+            .expect("psql should confirm the postgres data directory");
+
+        output.status.success()
+            && String::from_utf8(output.stdout)
+                .expect("postgres data directory should be utf-8")
+                .trim()
+                == self._data_dir.path().display().to_string()
     }
 
     fn write_runner_config(

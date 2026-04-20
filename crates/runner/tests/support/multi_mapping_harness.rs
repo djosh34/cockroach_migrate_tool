@@ -282,14 +282,14 @@ impl MultiMappingHarness {
 
     pub fn assert_explicit_source_bootstrap_commands(&self) {
         let audit = self.source_command_audit();
-        audit.assert_bootstrap_command_count(4);
+        audit.assert_bootstrap_command_count(6);
         audit.assert_bootstrap_contains(
             "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
-            "bootstrap should issue one rangefeed enable, one start cursor, and one changefeed per mapping",
+            "bootstrap should issue the explicit rangefeed enable through the audited Cockroach client",
         );
         audit.assert_bootstrap_contains(
             "SELECT cluster_logical_timestamp() AS changefeed_cursor;",
-            "bootstrap should capture the start cursor explicitly",
+            "bootstrap should capture the start cursor explicitly for each mapping bootstrap block",
         );
         audit.assert_bootstrap_contains(
             "CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.order_items",
@@ -306,7 +306,7 @@ impl MultiMappingHarness {
     }
 
     fn source_command_audit(&self) -> SourceCommandAudit {
-        SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 4)
+        SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 6)
     }
 
     pub fn assert_helper_state_is_mapping_scoped(&self) {

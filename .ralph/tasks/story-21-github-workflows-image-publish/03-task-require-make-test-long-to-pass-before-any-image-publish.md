@@ -1,4 +1,4 @@
-## Task: Require `make test-long` to pass before any image publish or release path can proceed <status>not_started</status> <passes>false</passes>
+## Task: Require `make test-long` to pass before any image publish or release path can proceed <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -30,14 +30,24 @@ Decisions already made:
 
 </description>
 
+<outcome>
+- Replaced the mixed `validate` pre-publish boundary in `.github/workflows/publish-images.yml` with explicit `validate-fast` and `validate-long` jobs, and made `publish-image` wait on both before any image publication can start.
+- Made the fast boundary visibly run `make check`, `make lint`, and `make test`, and made the long boundary visibly run `make test-long`, so the publish graph now shows the full required suite instead of hiding the long lane behind implicit shell behavior.
+- Refactored `GithubWorkflowContract` so validation topology, permission isolation, cache reuse, install steps, and README safety documentation all have one honest owner for the new fast/long gate.
+- Updated the CI publish safety documentation to describe the explicit fast/long validation gate without leaking contributor-only validation command guidance into the operator quick-start path.
+- Fixed two unrelated but real test-boundary issues discovered while proving the required gates: a Postgres test-harness port-ownership race in the default suite and stale long-lane harness assumptions around fully reconciled tracking state and multi-mapping bootstrap command counts.
+</outcome>
+
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the workflow contract that blocks all image publication until `make test-long` passes
-- [ ] GitHub Actions requires `make check`, `make lint`, `make test`, and `make test-long` to succeed before any runner, verify, or SQL-emitter image is published
-- [ ] Workflow contract tests fail loudly if later edits skip, weaken, or bypass the `make test-long` gate
-- [ ] The long-lane requirement is visible in the workflow dependency graph rather than hidden behind implicit shell behavior
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers the workflow contract that blocks all image publication until `make test-long` passes
+- [x] GitHub Actions requires `make check`, `make lint`, `make test`, and `make test-long` to succeed before any runner, verify, or SQL-emitter image is published
+- [x] Workflow contract tests fail loudly if later edits skip, weaken, or bypass the `make test-long` gate
+- [x] The long-lane requirement is visible in the workflow dependency graph rather than hidden behind implicit shell behavior
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-21-github-workflows-image-publish/03-task-require-make-test-long-to-pass-before-any-image-publish_plans/2026-04-20-test-long-publish-gate-plan.md</plan>

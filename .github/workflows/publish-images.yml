@@ -19,7 +19,7 @@ env:
   VERIFY_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-verify
 
 jobs:
-  validate:
+  validate-fast:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -32,16 +32,16 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-          key: validate-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          key: validate-fast-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            validate-cargo-registry-${{ runner.os }}-rust-1.93.0-
+            validate-fast-cargo-registry-${{ runner.os }}-rust-1.93.0-
       - name: Restore Cargo target cache
         uses: actions/cache/restore@v4
         with:
           path: target
-          key: validate-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          key: validate-fast-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            validate-target-${{ runner.os }}-rust-1.93.0-
+            validate-fast-target-${{ runner.os }}-rust-1.93.0-
       - name: Install Rust toolchain
         run: |
           set -euo pipefail
@@ -52,10 +52,11 @@ jobs:
           echo "${postgres_bin_dir}" >> "${GITHUB_PATH}"
           rustup toolchain install 1.93.0 --profile minimal --component clippy
           rustup default 1.93.0
-      - name: Validate repository
+      - name: Validate fast repository lanes
         run: |
           set -euo pipefail
           make check
+          make lint
           make test
       - name: Save Cargo registry cache
         if: always()
@@ -65,16 +66,71 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/registry/index
             ~/.cargo/git/db
-          key: validate-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          key: validate-fast-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
       - name: Save Cargo target cache
         if: always()
         uses: actions/cache/save@v4
         with:
           path: target
-          key: validate-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          key: validate-fast-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+
+  validate-long:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: Restore Cargo registry cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: validate-long-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            validate-long-cargo-registry-${{ runner.os }}-rust-1.93.0-
+      - name: Restore Cargo target cache
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            validate-long-target-${{ runner.os }}-rust-1.93.0-
+      - name: Install Rust toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes postgresql
+          postgres_bin_dir="$(dirname "$(find /usr/lib/postgresql -path '*/bin/initdb' | sort | tail -n1)")"
+          test -n "${postgres_bin_dir}"
+          echo "${postgres_bin_dir}" >> "${GITHUB_PATH}"
+          rustup toolchain install 1.93.0 --profile minimal --component clippy
+          rustup default 1.93.0
+      - name: Validate ultra-long repository lane
+        run: |
+          set -euo pipefail
+          make test-long
+      - name: Save Cargo registry cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+          key: validate-long-cargo-registry-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
+      - name: Save Cargo target cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: validate-long-target-${{ runner.os }}-rust-1.93.0-${{ hashFiles('Cargo.lock') }}
 
   publish-image:
-    needs: validate
+    needs:
+      - validate-fast
+      - validate-long
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false

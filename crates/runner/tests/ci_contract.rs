@@ -58,7 +58,7 @@ fn ci_publish_safety_model_is_documented_for_reviewers() {
 fn publish_images_workflow_runs_required_repository_validation_before_publishing() {
     let workflow = GithubWorkflowContract::load_publish_images();
 
-    workflow.assert_runs_validation_commands(&["make check", "make test"]);
+    workflow.assert_has_explicit_pre_publish_validation_lanes();
 }
 
 #[test]

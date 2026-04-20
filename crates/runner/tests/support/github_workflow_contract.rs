@@ -11,6 +11,11 @@ pub struct GithubWorkflowContract {
     document: Value,
 }
 
+const FAST_VALIDATION_JOB_NAME: &str = "validate-fast";
+const LONG_VALIDATION_JOB_NAME: &str = "validate-long";
+const FAST_VALIDATION_COMMANDS: [&str; 3] = ["make check", "make lint", "make test"];
+const LONG_VALIDATION_COMMANDS: [&str; 1] = ["make test-long"];
+
 impl GithubWorkflowContract {
     pub fn load_publish_images() -> Self {
         let workflow_path = repo_root().join(".github/workflows/publish-images.yml");
@@ -120,10 +125,12 @@ impl GithubWorkflowContract {
             "publish-image job should be the only job with package publish permission",
         );
 
-        assert!(
-            self.job_permissions("validate").is_none(),
-            "validate job must not elevate permissions",
-        );
+        for job_name in [FAST_VALIDATION_JOB_NAME, LONG_VALIDATION_JOB_NAME] {
+            assert!(
+                self.job_permissions(job_name).is_none(),
+                "job `{job_name}` must not elevate permissions",
+            );
+        }
 
         let manifest_permissions = self.job_permissions("publish-manifest");
         let manifest_permissions =
@@ -143,7 +150,11 @@ impl GithubWorkflowContract {
             "publish-manifest job should have package publish permission to push the canonical multi-arch manifest",
         );
 
-        for job_name in ["validate", "publish-image"] {
+        for job_name in [
+            FAST_VALIDATION_JOB_NAME,
+            LONG_VALIDATION_JOB_NAME,
+            "publish-image",
+        ] {
             let checkout_step = self.step_using_prefix(self.job(job_name), "actions/checkout");
             let checkout_inputs = self.step_inputs(checkout_step, "actions/checkout");
             assert_eq!(
@@ -155,15 +166,17 @@ impl GithubWorkflowContract {
             );
         }
 
-        let validate_scripts = self.job_run_scripts("validate").join("\n");
-        assert!(
-            !validate_scripts.contains("GITHUB_TOKEN"),
-            "validate job must not touch publish credentials",
-        );
-        assert!(
-            !validate_scripts.contains("docker login"),
-            "validate job must not log in to the registry",
-        );
+        for job_name in [FAST_VALIDATION_JOB_NAME, LONG_VALIDATION_JOB_NAME] {
+            let validation_scripts = self.job_run_scripts(job_name).join("\n");
+            assert!(
+                !validation_scripts.contains("GITHUB_TOKEN"),
+                "job `{job_name}` must not touch publish credentials",
+            );
+            assert!(
+                !validation_scripts.contains("docker login"),
+                "job `{job_name}` must not log in to the registry",
+            );
+        }
     }
 
     pub fn assert_publish_is_explicitly_gated_to_the_trusted_main_push_commit(&self) {
@@ -182,8 +195,8 @@ impl GithubWorkflowContract {
         );
         assert_eq!(
             self.job_needs_names("publish-image"),
-            vec!["validate"],
-            "publish-image job must wait for validation to pass",
+            vec![FAST_VALIDATION_JOB_NAME, LONG_VALIDATION_JOB_NAME],
+            "publish-image job must wait for both validation boundaries to pass",
         );
 
         let manifest_job = self.job("publish-manifest");
@@ -225,7 +238,8 @@ impl GithubWorkflowContract {
             "Random pull requests, forks, `pull_request_target`, manual dispatch, reusable workflow calls, scheduled runs, tag pushes, issue-triggered events, and release events do not trigger the protected image-publish workflow.",
             "The `publish-image` and `publish-manifest` jobs still carry an explicit `if:` gate that requires a `push` event on `refs/heads/main`, so widening workflow triggers later does not silently open the release path.",
             "Only the `publish-image` and `publish-manifest` jobs get `packages: write`, checkout disables credential persistence where source is fetched, derived registry credentials are masked before any diagnostic output, and the canonical published images are tagged only with `${{ github.sha }}` from the validated commit.",
-            "Validation restores and saves Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.",
+            "Image publication is blocked on explicit `validate-fast` and `validate-long` jobs, so both the default repository validation boundary and the ultra-long lane must pass before any publish step can start.",
+            "Both validation jobs restore and save Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.",
         ] {
             assert!(
                 self.readme_text.contains(required_line),
@@ -234,120 +248,51 @@ impl GithubWorkflowContract {
         }
     }
 
-    pub fn assert_runs_validation_commands(&self, expected_commands: &[&str]) {
-        let validate_job = self.job("validate");
-        let validate_scripts = self
-            .steps(validate_job)
-            .iter()
-            .filter_map(Value::as_mapping)
-            .filter_map(|step| step.get(Value::String("run".to_owned())))
-            .map(value_as_str)
-            .collect::<Vec<_>>();
+    pub fn assert_has_explicit_pre_publish_validation_lanes(&self) {
+        assert!(
+            !self.jobs().contains_key(Value::String("validate".to_owned())),
+            "workflow must not keep the old mixed `validate` job around",
+        );
 
-        for expected_command in expected_commands {
-            assert!(
-                validate_scripts.iter().any(|script| {
-                    script.lines().any(|line| line.trim() == *expected_command)
-                }),
-                "validate job must run `{expected_command}`",
-            );
+        for (job_name, commands) in [
+            (FAST_VALIDATION_JOB_NAME, FAST_VALIDATION_COMMANDS.as_slice()),
+            (LONG_VALIDATION_JOB_NAME, LONG_VALIDATION_COMMANDS.as_slice()),
+        ] {
+            let job = self.job(job_name);
+            let job_scripts = self
+                .steps(job)
+                .iter()
+                .filter_map(Value::as_mapping)
+                .filter_map(|step| step.get(Value::String("run".to_owned())))
+                .map(value_as_str)
+                .collect::<Vec<_>>();
+
+            for expected_command in commands {
+                assert!(
+                    job_scripts.iter().any(|script| {
+                        script.lines().any(|line| line.trim() == *expected_command)
+                    }),
+                    "job `{job_name}` must run `{expected_command}` before publishing",
+                );
+            }
         }
 
-        assert!(
-            !validate_scripts.iter().any(|script| script.contains("make test-long")),
-            "workflow must not run `make test-long` for this task",
-        );
+        let publish_needs = self.job_needs_names("publish-image");
+        for required_job in [FAST_VALIDATION_JOB_NAME, LONG_VALIDATION_JOB_NAME] {
+            assert!(
+                publish_needs.contains(&required_job),
+                "publish-image job must wait for `{required_job}` before publishing",
+            );
+        }
     }
 
     pub fn assert_validation_reuses_host_rust_caches(&self) {
-        let restore_registry = self.step_inputs(
-            self.step_named(self.job("validate"), "Restore Cargo registry cache"),
-            "Restore Cargo registry cache",
-        );
-        let restore_target = self.step_inputs(
-            self.step_named(self.job("validate"), "Restore Cargo target cache"),
-            "Restore Cargo target cache",
-        );
-        let save_registry = self.step_inputs(
-            self.step_named(self.job("validate"), "Save Cargo registry cache"),
-            "Save Cargo registry cache",
-        );
-        let save_target = self.step_inputs(
-            self.step_named(self.job("validate"), "Save Cargo target cache"),
-            "Save Cargo target cache",
-        );
-
-        for (step_name, inputs, expected_uses) in [
-            (
-                "Restore Cargo registry cache",
-                restore_registry,
-                "actions/cache/restore",
-            ),
-            (
-                "Restore Cargo target cache",
-                restore_target,
-                "actions/cache/restore",
-            ),
-            ("Save Cargo registry cache", save_registry, "actions/cache/save"),
-            ("Save Cargo target cache", save_target, "actions/cache/save"),
+        for (job_name, cache_prefix) in [
+            (FAST_VALIDATION_JOB_NAME, "validate-fast"),
+            (LONG_VALIDATION_JOB_NAME, "validate-long"),
         ] {
-            let step = self.step_named(self.job("validate"), step_name);
-            let uses = step
-                .get(Value::String("uses".to_owned()))
-                .map(value_as_str)
-                .expect("cache step should declare a cache action");
-            assert!(
-                uses.starts_with(expected_uses),
-                "`{step_name}` should use `{expected_uses}`",
-            );
-            assert!(
-                inputs.contains_key(Value::String("key".to_owned())),
-                "`{step_name}` should declare an explicit cache key",
-            );
+            self.assert_validation_job_reuses_host_rust_caches(job_name, cache_prefix);
         }
-
-        assert_eq!(
-            restore_registry
-                .get(Value::String("path".to_owned()))
-                .map(value_as_str),
-            Some("~/.cargo/registry/cache\n~/.cargo/registry/index\n~/.cargo/git/db\n"),
-            "validation should restore the Cargo registry and git dependency caches",
-        );
-        assert_eq!(
-            restore_target
-                .get(Value::String("path".to_owned()))
-                .map(value_as_str),
-            Some("target"),
-            "validation should restore the shared workspace target cache",
-        );
-        assert_eq!(
-            save_registry
-                .get(Value::String("path".to_owned()))
-                .map(value_as_str),
-            Some("~/.cargo/registry/cache\n~/.cargo/registry/index\n~/.cargo/git/db\n"),
-            "validation should save the Cargo registry and git dependency caches",
-        );
-        assert_eq!(
-            save_target
-                .get(Value::String("path".to_owned()))
-                .map(value_as_str),
-            Some("target"),
-            "validation should save the shared workspace target cache",
-        );
-        assert!(
-            restore_registry
-                .get(Value::String("key".to_owned()))
-                .map(value_as_str)
-                .is_some_and(|key| key.contains("validate-cargo-registry")),
-            "validation registry cache key should stay explicit and stable",
-        );
-        assert!(
-            restore_target
-                .get(Value::String("key".to_owned()))
-                .map(value_as_str)
-                .is_some_and(|key| key.contains("validate-target")),
-            "validation target cache key should stay explicit and stable",
-        );
     }
 
     pub fn assert_cancels_older_main_runs_when_new_pushes_arrive(&self) {
@@ -523,30 +468,32 @@ impl GithubWorkflowContract {
     }
 
     pub fn assert_installs_publish_dependencies_via_direct_shell_steps(&self) {
-        let validate_install = self.step_run_script(
-            self.step_named(self.job("validate"), "Install Rust toolchain"),
-            "Install Rust toolchain",
-        );
-        assert!(
-            validate_install.contains("rustup toolchain install 1.93.0"),
-            "validation should install the pinned Rust toolchain directly via shell",
-        );
-        assert!(
-            validate_install.contains("rustup default 1.93.0"),
-            "validation should activate the pinned Rust toolchain directly via shell",
-        );
-        assert!(
-            validate_install.contains("sudo apt-get install --yes postgresql"),
-            "validation should install PostgreSQL tooling needed by the contract tests",
-        );
-        assert!(
-            validate_install.contains("find /usr/lib/postgresql"),
-            "validation should discover the installed PostgreSQL bin directory explicitly",
-        );
-        assert!(
-            validate_install.contains("GITHUB_PATH"),
-            "validation should add PostgreSQL binaries to PATH for later test steps",
-        );
+        for job_name in [FAST_VALIDATION_JOB_NAME, LONG_VALIDATION_JOB_NAME] {
+            let validate_install = self.step_run_script(
+                self.step_named(self.job(job_name), "Install Rust toolchain"),
+                "Install Rust toolchain",
+            );
+            assert!(
+                validate_install.contains("rustup toolchain install 1.93.0"),
+                "job `{job_name}` should install the pinned Rust toolchain directly via shell",
+            );
+            assert!(
+                validate_install.contains("rustup default 1.93.0"),
+                "job `{job_name}` should activate the pinned Rust toolchain directly via shell",
+            );
+            assert!(
+                validate_install.contains("sudo apt-get install --yes postgresql"),
+                "job `{job_name}` should install PostgreSQL tooling needed by the contract tests",
+            );
+            assert!(
+                validate_install.contains("find /usr/lib/postgresql"),
+                "job `{job_name}` should discover the installed PostgreSQL bin directory explicitly",
+            );
+            assert!(
+                validate_install.contains("GITHUB_PATH"),
+                "job `{job_name}` should add PostgreSQL binaries to PATH for later test steps",
+            );
+        }
 
         let publish_install = self.step_run_script(
             self.step_named(self.job("publish-image"), "Install publish dependencies"),
@@ -972,13 +919,18 @@ impl GithubWorkflowContract {
             .expect("workflow `on.push` should be a mapping")
     }
 
-    fn job(&self, name: &str) -> &Mapping {
+    fn jobs(&self) -> &Mapping {
         self.document
             .as_mapping()
             .expect("workflow document should be a mapping")
             .get(Value::String("jobs".to_owned()))
             .and_then(Value::as_mapping)
-            .and_then(|jobs| jobs.get(Value::String(name.to_owned())))
+            .expect("workflow should define a jobs mapping")
+    }
+
+    fn job(&self, name: &str) -> &Mapping {
+        self.jobs()
+            .get(Value::String(name.to_owned()))
             .and_then(Value::as_mapping)
             .unwrap_or_else(|| panic!("workflow should define a `{name}` job"))
     }
@@ -1011,6 +963,97 @@ impl GithubWorkflowContract {
             .filter_map(|step| step.get(Value::String("run".to_owned())))
             .map(value_as_str)
             .collect()
+    }
+
+    fn assert_validation_job_reuses_host_rust_caches(&self, job_name: &str, cache_prefix: &str) {
+        let restore_registry = self.step_inputs(
+            self.step_named(self.job(job_name), "Restore Cargo registry cache"),
+            "Restore Cargo registry cache",
+        );
+        let restore_target = self.step_inputs(
+            self.step_named(self.job(job_name), "Restore Cargo target cache"),
+            "Restore Cargo target cache",
+        );
+        let save_registry = self.step_inputs(
+            self.step_named(self.job(job_name), "Save Cargo registry cache"),
+            "Save Cargo registry cache",
+        );
+        let save_target = self.step_inputs(
+            self.step_named(self.job(job_name), "Save Cargo target cache"),
+            "Save Cargo target cache",
+        );
+
+        for (step_name, inputs, expected_uses) in [
+            (
+                "Restore Cargo registry cache",
+                restore_registry,
+                "actions/cache/restore",
+            ),
+            (
+                "Restore Cargo target cache",
+                restore_target,
+                "actions/cache/restore",
+            ),
+            ("Save Cargo registry cache", save_registry, "actions/cache/save"),
+            ("Save Cargo target cache", save_target, "actions/cache/save"),
+        ] {
+            let step = self.step_named(self.job(job_name), step_name);
+            let uses = step
+                .get(Value::String("uses".to_owned()))
+                .map(value_as_str)
+                .expect("cache step should declare a cache action");
+            assert!(
+                uses.starts_with(expected_uses),
+                "`{step_name}` in `{job_name}` should use `{expected_uses}`",
+            );
+            assert!(
+                inputs.contains_key(Value::String("key".to_owned())),
+                "`{step_name}` in `{job_name}` should declare an explicit cache key",
+            );
+        }
+
+        assert_eq!(
+            restore_registry
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("~/.cargo/registry/cache\n~/.cargo/registry/index\n~/.cargo/git/db\n"),
+            "job `{job_name}` should restore the Cargo registry and git dependency caches",
+        );
+        assert_eq!(
+            restore_target
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("target"),
+            "job `{job_name}` should restore the shared workspace target cache",
+        );
+        assert_eq!(
+            save_registry
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("~/.cargo/registry/cache\n~/.cargo/registry/index\n~/.cargo/git/db\n"),
+            "job `{job_name}` should save the Cargo registry and git dependency caches",
+        );
+        assert_eq!(
+            save_target
+                .get(Value::String("path".to_owned()))
+                .map(value_as_str),
+            Some("target"),
+            "job `{job_name}` should save the shared workspace target cache",
+        );
+        assert!(
+            restore_registry
+                .get(Value::String("key".to_owned()))
+                .map(value_as_str)
+                .is_some_and(|key| key.contains(&format!("{cache_prefix}-cargo-registry"))),
+            "job `{job_name}` registry cache key should stay explicit and stable",
+        );
+        assert!(
+            restore_target
+                .get(Value::String("key".to_owned()))
+                .map(value_as_str)
+                .is_some_and(|key| key.contains(&format!("{cache_prefix}-target"))),
+            "job `{job_name}` target cache key should stay explicit and stable",
+        );
     }
 
     fn publish_matrix_entries(&self) -> &[Value] {

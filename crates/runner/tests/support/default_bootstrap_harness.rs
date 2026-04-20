@@ -189,10 +189,21 @@ impl DefaultBootstrapHarness {
         &self,
         verify_image: &VerifyImageHarness,
     ) -> VerifyCorrectnessAudit {
-        self.inner.wait_for_selected_tables_to_match_via_image(
+        let audit = self.inner.wait_for_selected_tables_to_match_via_image(
             verify_image,
             "default selected tables should converge through the verify image",
-        )
+        );
+        self.wait_for_customer_tracking_progress(
+            "default selected tables should not be treated as converged until customer tracking is fully reconciled",
+            |progress| {
+                progress.stream.latest_received_resolved_watermark
+                    == progress.stream.latest_reconciled_resolved_watermark
+                    && progress.table.last_successful_sync_watermark
+                        == progress.stream.latest_reconciled_resolved_watermark
+                    && progress.table.last_error.is_none()
+            },
+        );
+        audit
     }
 
     pub fn assert_selected_tables_match_via_verify_image_stable(

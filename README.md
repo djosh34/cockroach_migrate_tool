@@ -190,4 +190,6 @@ The `publish-image` and `publish-manifest` jobs still carry an explicit `if:` ga
 
 Only the `publish-image` and `publish-manifest` jobs get `packages: write`, checkout disables credential persistence where source is fetched, derived registry credentials are masked before any diagnostic output, and the canonical published images are tagged only with `${{ github.sha }}` from the validated commit.
 
-Validation restores and saves Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.
+Image publication is blocked on explicit `validate-fast` and `validate-long` jobs, so both the default repository validation boundary and the ultra-long lane must pass before any publish step can start.
+
+Both validation jobs restore and save Cargo registry and target caches before publish, each image is first pushed through native `linux/amd64` and `linux/arm64` lanes, and the manifest job recombines those per-platform refs into the canonical multi-arch `${{ github.sha }}` tags while emitting a published-image manifest for downstream consumers.
