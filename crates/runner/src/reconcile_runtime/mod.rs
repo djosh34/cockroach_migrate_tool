@@ -1,4 +1,5 @@
 mod delete;
+mod metrics_snapshot;
 mod upsert;
 
 use std::{
@@ -96,6 +97,7 @@ async fn run_reconcile_pass(
                     database,
                     source,
                 })?;
+            refresh_table_metrics(runtime, &mut postgres, mapping).await?;
             Ok(ReconcilePassOutcome::Succeeded)
         }
         Err(failure) => {
@@ -126,9 +128,21 @@ async fn run_reconcile_pass(
                 phase,
                 SystemTime::now(),
             );
+            refresh_table_metrics(runtime, &mut postgres, mapping).await?;
             Ok(ReconcilePassOutcome::ApplyFailedRecorded)
         }
     }
+}
+
+async fn refresh_table_metrics(
+    runtime: &RunnerRuntimePlan,
+    postgres: &mut PgConnection,
+    mapping: &MappingRuntimePlan,
+) -> Result<(), RunnerReconcileRuntimeError> {
+    let snapshots =
+        metrics_snapshot::load_mapping_table_metrics_snapshot(postgres, mapping).await?;
+    runtime.metrics().replace_table_metrics(mapping, snapshots);
+    Ok(())
 }
 
 async fn apply_reconcile_pass(

@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -11,6 +11,14 @@ const METRIC_PREFIX: &str = "cockroach_migration_tool_";
 
 pub(crate) struct RunnerMetrics {
     state: Mutex<RunnerMetricsState>,
+}
+
+pub(crate) struct TableMetricsSnapshot {
+    pub(crate) destination_table: String,
+    pub(crate) shadow_rows: u64,
+    pub(crate) real_rows: u64,
+    pub(crate) has_reconcile_error: bool,
+    pub(crate) last_success_unixtime_seconds: Option<f64>,
 }
 
 impl RunnerMetrics {
@@ -49,6 +57,51 @@ impl RunnerMetrics {
             },
             timestamp,
         );
+    }
+
+    pub(crate) fn replace_table_metrics(
+        &self,
+        mapping: &MappingRuntimePlan,
+        snapshots: Vec<TableMetricsSnapshot>,
+    ) {
+        let mut state = self
+            .state
+            .lock()
+            .expect("runner metrics mutex should not be poisoned");
+        clear_table_metrics_for_mapping(&mut state, mapping);
+
+        for snapshot in snapshots {
+            let labels = TableMetricLabels {
+                destination_database: mapping.destination().database().to_owned(),
+                destination_table: snapshot.destination_table,
+            };
+
+            state.table_rows.insert(
+                TableRowsMetricLabels {
+                    destination_database: labels.destination_database.clone(),
+                    destination_table: labels.destination_table.clone(),
+                    layer: MetricLayer::Shadow,
+                },
+                snapshot.shadow_rows,
+            );
+            state.table_rows.insert(
+                TableRowsMetricLabels {
+                    destination_database: labels.destination_database.clone(),
+                    destination_table: labels.destination_table.clone(),
+                    layer: MetricLayer::Real,
+                },
+                snapshot.real_rows,
+            );
+            state
+                .table_reconcile_error
+                .insert(labels.clone(), u64::from(snapshot.has_reconcile_error));
+
+            if let Some(last_success_unixtime_seconds) = snapshot.last_success_unixtime_seconds {
+                state
+                    .reconcile_last_success_unixtime_seconds
+                    .insert(labels, last_success_unixtime_seconds);
+            }
+        }
     }
 
     pub(crate) fn render(&self) -> String {
@@ -141,6 +194,35 @@ impl RunnerMetrics {
         for (labels, value) in &state.reconcile_apply_last_duration_seconds {
             lines.push(format!(
                 "{METRIC_PREFIX}reconcile_apply_last_duration_seconds{} {}",
+                labels.render(),
+                format_metric_value(*value),
+            ));
+        }
+
+        lines.push(format!("# TYPE {METRIC_PREFIX}table_rows gauge"));
+        for (labels, value) in &state.table_rows {
+            lines.push(format!(
+                "{METRIC_PREFIX}table_rows{} {}",
+                labels.render(),
+                value
+            ));
+        }
+
+        lines.push(format!("# TYPE {METRIC_PREFIX}table_reconcile_error gauge"));
+        for (labels, value) in &state.table_reconcile_error {
+            lines.push(format!(
+                "{METRIC_PREFIX}table_reconcile_error{} {}",
+                labels.render(),
+                value
+            ));
+        }
+
+        lines.push(format!(
+            "# TYPE {METRIC_PREFIX}reconcile_last_success_unixtime_seconds gauge"
+        ));
+        for (labels, value) in &state.reconcile_last_success_unixtime_seconds {
+            lines.push(format!(
+                "{METRIC_PREFIX}reconcile_last_success_unixtime_seconds{} {}",
                 labels.render(),
                 format_metric_value(*value),
             ));
@@ -317,6 +399,9 @@ struct RunnerMetricsState {
     reconcile_apply_duration_seconds_total: BTreeMap<PhaseMetricLabels, f64>,
     reconcile_apply_attempts_total: BTreeMap<PhaseMetricLabels, u64>,
     reconcile_apply_last_duration_seconds: BTreeMap<PhaseMetricLabels, f64>,
+    table_rows: BTreeMap<TableRowsMetricLabels, u64>,
+    table_reconcile_error: BTreeMap<TableMetricLabels, u64>,
+    reconcile_last_success_unixtime_seconds: BTreeMap<TableMetricLabels, f64>,
     apply_failures_total: BTreeMap<TableStageMetricLabels, u64>,
     apply_last_outcome_unixtime_seconds: BTreeMap<TableStageOutcomeMetricLabels, f64>,
 }
@@ -393,6 +478,39 @@ impl TableMetricLabels {
         format!(
             "{{destination_database=\"{}\",destination_table=\"{}\"}}",
             self.destination_database, self.destination_table,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MetricLayer {
+    Shadow,
+    Real,
+}
+
+impl MetricLayer {
+    fn as_label(self) -> &'static str {
+        match self {
+            Self::Shadow => "shadow",
+            Self::Real => "real",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct TableRowsMetricLabels {
+    destination_database: String,
+    destination_table: String,
+    layer: MetricLayer,
+}
+
+impl TableRowsMetricLabels {
+    fn render(&self) -> String {
+        format!(
+            "{{destination_database=\"{}\",destination_table=\"{}\",layer=\"{}\"}}",
+            self.destination_database,
+            self.destination_table,
+            self.layer.as_label(),
         )
     }
 }
@@ -507,6 +625,31 @@ fn record_apply_outcome(
         },
         unix_timestamp_seconds(recorded_at),
     );
+}
+
+fn clear_table_metrics_for_mapping(state: &mut RunnerMetricsState, mapping: &MappingRuntimePlan) {
+    let destination_database = mapping.destination().database().to_owned();
+    let destination_tables = mapping
+        .reconcile_upsert_tables()
+        .iter()
+        .chain(mapping.reconcile_delete_tables())
+        .map(|table| table.source_table().label())
+        .collect::<BTreeSet<_>>();
+
+    state.table_rows.retain(|labels, _| {
+        labels.destination_database != destination_database
+            || !destination_tables.contains(&labels.destination_table)
+    });
+    state.table_reconcile_error.retain(|labels, _| {
+        labels.destination_database != destination_database
+            || !destination_tables.contains(&labels.destination_table)
+    });
+    state
+        .reconcile_last_success_unixtime_seconds
+        .retain(|labels, _| {
+            labels.destination_database != destination_database
+                || !destination_tables.contains(&labels.destination_table)
+        });
 }
 
 fn unix_timestamp_seconds(timestamp: SystemTime) -> f64 {

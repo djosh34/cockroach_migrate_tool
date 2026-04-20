@@ -266,6 +266,15 @@ pub enum RunnerReconcileRuntimeError {
         source: sqlx::Error,
     },
     #[error(
+        "failed to read reconcile metrics snapshot for mapping `{mapping_id}` in `{database}` table `{table}`: {source}"
+    )]
+    ReadMetricsSnapshot {
+        mapping_id: String,
+        database: String,
+        table: String,
+        source: sqlx::Error,
+    },
+    #[error(
         "failed to commit reconcile failure-tracking transaction for mapping `{mapping_id}` in `{database}`: {source}"
     )]
     CommitFailureTrackingTransaction {

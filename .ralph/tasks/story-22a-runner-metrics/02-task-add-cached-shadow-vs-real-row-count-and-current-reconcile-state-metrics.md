@@ -1,4 +1,4 @@
-## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>not_started</status> <passes>false</passes>
+## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -44,15 +44,17 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers the `cockroach_migration_tool_table_rows`, `cockroach_migration_tool_table_reconcile_error`, and `cockroach_migration_tool_reconcile_last_success_unixtime_seconds` metric families
-- [ ] Dashboards can compare `layer="shadow"` and `layer="real"` row counts for the same schema-qualified destination table directly
-- [ ] The `/metrics` endpoint does not execute an unbounded full row-count scan across all tables on every scrape
-- [ ] Operators can tell whether a table is currently in reconcile error and when it last reconciled successfully
-- [ ] All metric names use the `cockroach_migration_tool_` prefix and all `destination_table` labels are schema-qualified
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
+- [x] Red/green TDD covers the `cockroach_migration_tool_table_rows`, `cockroach_migration_tool_table_reconcile_error`, and `cockroach_migration_tool_reconcile_last_success_unixtime_seconds` metric families
+- [x] Dashboards can compare `layer="shadow"` and `layer="real"` row counts for the same schema-qualified destination table directly
+- [x] The `/metrics` endpoint does not execute an unbounded full row-count scan across all tables on every scrape
+- [x] Operators can tell whether a table is currently in reconcile error and when it last reconciled successfully
+- [x] All metric names use the `cockroach_migration_tool_` prefix and all `destination_table` labels are schema-qualified
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
 
 <blocked_by>.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md</blocked_by>
+
+<plan>.ralph/tasks/story-22a-runner-metrics/02-task-add-cached-shadow-vs-real-row-count-and-current-reconcile-state-metrics_plans/2026-04-20-cached-row-count-and-reconcile-state-metrics-plan.md</plan>

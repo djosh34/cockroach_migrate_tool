@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 10:14:11 CEST 2026
+Generated: Mon Apr 20 10:30:22 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -834,6 +834,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Expose low-cardinality runner activity, timing, and failure metrics at `/metrics` <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/02-task-add-cached-shadow-vs-real-row-count-and-current-reconcile-state-metrics.md`
+
+```
+## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

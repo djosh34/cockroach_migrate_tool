@@ -119,3 +119,4 @@
 .ralph/tasks/story-18-verify-http-image/11-task-add-config-gated-raw-source-and-destination-table-json-output-to-verify-http.md
 .ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md
 .ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md
+.ralph/tasks/story-22a-runner-metrics/02-task-add-cached-shadow-vs-real-row-count-and-current-reconcile-state-metrics.md

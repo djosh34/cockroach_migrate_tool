@@ -728,6 +728,213 @@ fn run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases() {
 }
 
 #[test]
+fn run_exposes_cached_table_rows_and_current_reconcile_state_metrics_after_success() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 1, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let watermark = "1776526353000000000.0000000000";
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "customer@example.com"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(email, '<null>') FROM public.customers WHERE id = 1;",
+        "customer@example.com",
+    );
+    assert_eventually_query_equals(
+        &postgres,
+        "app_a",
+        "SELECT COALESCE(last_successful_sync_watermark, '<null>') \
+         FROM _cockroach_migration_tool.table_sync_state \
+         WHERE mapping_id = 'app-a' AND source_table_name = 'public.customers';",
+        watermark,
+    );
+
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1",
+    );
+
+    assert!(
+        metrics_body.contains("# TYPE cockroach_migration_tool_table_rows gauge"),
+        "metrics should expose cached table row counts:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 1"
+        ),
+        "metrics should expose both shadow and real row-count layers:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains("# TYPE cockroach_migration_tool_table_reconcile_error gauge"),
+        "metrics should expose the current reconcile error gauge:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_reconcile_error{destination_database=\"app_a\",destination_table=\"public.customers\"} 0"
+        ),
+        "metrics should show a non-error state after successful reconcile:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "# TYPE cockroach_migration_tool_reconcile_last_success_unixtime_seconds gauge"
+        ),
+        "metrics should expose last-success timestamps:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_reconcile_last_success_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "metrics should expose schema-qualified last-success labels:\n{metrics_body}",
+    );
+}
+
+#[test]
+fn run_keeps_table_row_metrics_cached_between_scrapes() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let watermark = "1776526353000000000.0000000000";
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "customer@example.com"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 1",
+    );
+
+    postgres.exec(
+        "app_a",
+        "INSERT INTO public.customers (id, email) VALUES (2, 'db-only@example.com');",
+    );
+    assert_eq!(
+        postgres.query("app_a", "SELECT count(*)::text FROM public.customers;"),
+        "2"
+    );
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1"
+        ),
+        "cached shadow rows should stay stable across scrapes:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 1"
+        ),
+        "metrics scrape should not recount the real table immediately:\n{metrics_body}",
+    );
+}
+
+#[test]
+fn run_leaves_table_state_metric_samples_absent_before_first_refresh() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 30, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let metrics_body = metrics_body(&client, bind_port);
+    assert!(
+        metrics_body.contains("# TYPE cockroach_migration_tool_table_rows gauge"),
+        "metrics should always expose the table-row family type:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\""
+        ),
+        "table-row samples should stay absent until the first bounded refresh:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains(
+            "cockroach_migration_tool_table_reconcile_error{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "current reconcile error samples should stay absent until the first bounded refresh:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains(
+            "cockroach_migration_tool_reconcile_last_success_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "last-success samples should stay absent until the first bounded refresh:\n{metrics_body}",
+    );
+}
+
+#[test]
 fn run_reconciles_tables_in_dependency_order_not_config_order() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -1389,6 +1596,72 @@ fn run_records_reconcile_failure_metrics_without_exiting_runner() {
 }
 
 #[test]
+fn run_exposes_current_reconcile_error_and_count_drift_after_failed_reconcile() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "SET ROLE migration_user_a;
+         CREATE TABLE public.customers (
+             id bigint PRIMARY KEY,
+             email text NOT NULL CHECK (position('@' IN email) > 1)
+         );",
+    );
+
+    let bind_port = pick_unused_port();
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, bind_port, 2, &["public.customers"]);
+
+    let client = https_client();
+    let mut runner = RunnerProcess::start(&config_path);
+    runner.assert_healthy(&format!("https://localhost:{bind_port}/healthz"), &client);
+
+    let watermark = "1776526353000000000.0000000000";
+    let row_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &row_batch_body("demo_a", "customers", "invalid-email"),
+    );
+    assert_eq!(row_response.status(), StatusCode::OK);
+    let resolved_response = runner.post(
+        &format!("https://localhost:{bind_port}/ingest/app-a"),
+        &client,
+        &resolved_body(watermark),
+    );
+    assert_eq!(resolved_response.status(), StatusCode::OK);
+
+    let metrics_body = assert_eventually_metrics_contain(
+        &client,
+        bind_port,
+        "cockroach_migration_tool_table_reconcile_error{destination_database=\"app_a\",destination_table=\"public.customers\"} 1",
+    );
+
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1"
+        ),
+        "failed reconcile should still expose helper-side row counts:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 0"
+        ),
+        "failed reconcile should expose real-table drift without recounting on scrape:\n{metrics_body}",
+    );
+    assert!(
+        !metrics_body.contains(
+            "cockroach_migration_tool_reconcile_last_success_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "last-success should stay absent until a reconcile pass actually succeeds:\n{metrics_body}",
+    );
+}
+
+#[test]
 fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -1502,6 +1775,30 @@ fn run_clears_recorded_reconcile_error_after_a_successful_retry() {
             "cockroach_migration_tool_apply_last_outcome_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\",stage=\"reconcile_upsert\",outcome=\"error\"}"
         ),
         "metrics should preserve the last reconcile error timestamp across a later retry:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_reconcile_error{destination_database=\"app_a\",destination_table=\"public.customers\"} 0"
+        ),
+        "recovery should clear the current reconcile error gauge:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"shadow\"} 1"
+        ),
+        "recovery should keep the helper-side row count visible:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_table_rows{destination_database=\"app_a\",destination_table=\"public.customers\",layer=\"real\"} 1"
+        ),
+        "recovery should bring real and shadow row counts back together:\n{metrics_body}",
+    );
+    assert!(
+        metrics_body.contains(
+            "cockroach_migration_tool_reconcile_last_success_unixtime_seconds{destination_database=\"app_a\",destination_table=\"public.customers\"}"
+        ),
+        "recovery should expose a last-success timestamp for the table:\n{metrics_body}",
     );
 }
 
