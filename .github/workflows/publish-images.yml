@@ -246,6 +246,9 @@ jobs:
       - publish-image
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
+    env:
+      QUAY_SCAN_POLL_INTERVAL_SECONDS: "10"
+      QUAY_SCAN_TIMEOUT_SECONDS: "1800"
     steps:
       - name: Install Quay scan dependencies
         run: |
@@ -418,7 +421,20 @@ jobs:
             fail_gate "unexpected_payload" "No scan targets were collected from the published image-ref artifacts."
           fi
 
-          for attempt in $(seq 1 60); do
+          poll_interval_seconds="${QUAY_SCAN_POLL_INTERVAL_SECONDS}"
+          timeout_seconds="${QUAY_SCAN_TIMEOUT_SECONDS}"
+          if [[ ! "${poll_interval_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+            fail_gate "unexpected_payload" "QUAY_SCAN_POLL_INTERVAL_SECONDS must be a positive integer."
+          fi
+          if [[ ! "${timeout_seconds}" =~ ^[1-9][0-9]*$ ]]; then
+            fail_gate "unexpected_payload" "QUAY_SCAN_TIMEOUT_SECONDS must be a positive integer."
+          fi
+          max_attempts=$(( (timeout_seconds + poll_interval_seconds - 1) / poll_interval_seconds ))
+          append_summary ""
+          append_summary "- Quay scan poll interval: \`${poll_interval_seconds}s\`"
+          append_summary "- Quay scan timeout budget: \`${timeout_seconds}s\`"
+
+          for attempt in $(seq 1 "${max_attempts}"); do
             pending_count=0
             for scan_target in "${all_scan_targets[@]}"; do
               if [[ "${scan_target_statuses[${scan_target}]}" == "scanned" ]]; then
@@ -488,7 +504,7 @@ jobs:
             if [[ "${pending_count}" -eq 0 ]]; then
               break
             fi
-            sleep 10
+            sleep "${poll_interval_seconds}"
           done
 
           timeout_payload="$(
