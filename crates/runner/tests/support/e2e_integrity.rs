@@ -560,9 +560,9 @@ struct VerifyJobResult {
     #[serde(default)]
     table_summaries: Vec<VerifyTableSummary>,
     #[serde(default)]
-    mismatch_tables: Vec<VerifyTableRef>,
+    findings: Vec<VerifyFinding>,
     #[serde(default)]
-    table_definition_mismatches: Vec<VerifyTableDefinitionMismatch>,
+    mismatch_summary: VerifyMismatchSummary,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -572,14 +572,11 @@ struct VerifyJobFailure {
 
 impl VerifyJobResult {
     fn mismatched_tables(&self) -> BTreeSet<String> {
-        self.mismatch_tables
+        self.mismatch_summary
+            .affected_tables
             .iter()
             .map(VerifyTableRef::table_name)
-            .chain(
-                self.table_definition_mismatches
-                    .iter()
-                    .map(VerifyTableDefinitionMismatch::table_name),
-            )
+            .chain(self.findings.iter().map(VerifyFinding::table_name))
             .collect()
     }
 }
@@ -596,14 +593,22 @@ impl VerifyTableRef {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct VerifyTableDefinitionMismatch {
-    schema: String,
-    table: String,
-    message: String,
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
+struct VerifyMismatchSummary {
+    #[serde(default)]
+    has_mismatches: bool,
+    #[serde(default)]
+    affected_tables: Vec<VerifyTableRef>,
 }
 
-impl VerifyTableDefinitionMismatch {
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyFinding {
+    kind: String,
+    schema: String,
+    table: String,
+}
+
+impl VerifyFinding {
     fn table_name(&self) -> String {
         format!("{}.{}", self.schema, self.table)
     }

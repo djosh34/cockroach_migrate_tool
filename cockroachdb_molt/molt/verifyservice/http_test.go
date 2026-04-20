@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/molt/dbtable"
 	"github.com/cockroachdb/molt/utils"
 	"github.com/cockroachdb/molt/verify/inconsistency"
@@ -99,6 +100,87 @@ func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	}, payload)
 }
 
+func TestGetJobReturnsRichSuccessResultsAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	runner := reportingRunner(func(_ context.Context, reporter inconsistency.Reporter) error {
+		reporter.Report(inconsistency.SummaryReport{
+			Info: "accounts summary",
+			Stats: inconsistency.RowStats{
+				Schema:      "public",
+				Table:       "accounts",
+				NumVerified: 7,
+				NumSuccess:  7,
+			},
+		})
+		return nil
+	})
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
+		Runner:      runner,
+		IDGenerator: sequentialIDGenerator("job-000001"),
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	startResponse, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = startResponse.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, startResponse.StatusCode)
+
+	require.Eventually(t, func() bool {
+		getResponse, err := http.Get(server.URL + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = getResponse.Body.Close()
+		}()
+		if getResponse.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
+		if payload["status"] != "succeeded" {
+			return false
+		}
+
+		require.Equal(t, map[string]any{
+			"job_id": "job-000001",
+			"status": "succeeded",
+			"result": map[string]any{
+				"summary": map[string]any{
+					"tables_verified":  float64(1),
+					"tables_with_data": float64(1),
+					"has_mismatches":   false,
+				},
+				"table_summaries": []any{
+					map[string]any{
+						"schema":              "public",
+						"table":               "accounts",
+						"num_verified":        float64(7),
+						"num_success":         float64(7),
+						"num_missing":         float64(0),
+						"num_mismatch":        float64(0),
+						"num_column_mismatch": float64(0),
+						"num_extraneous":      float64(0),
+						"num_live_retry":      float64(0),
+					},
+				},
+				"findings": []any{},
+				"mismatch_summary": map[string]any{
+					"has_mismatches":  false,
+					"affected_tables": []any{},
+					"counts_by_kind":  map[string]any{},
+				},
+			},
+		}, payload)
+		return true
+	}, 2*time.Second, 20*time.Millisecond)
+}
+
 func TestGetJobReturnsStructuredResultsAfterCompletion(t *testing.T) {
 	t.Parallel()
 
@@ -107,11 +189,26 @@ func TestGetJobReturnsStructuredResultsAfterCompletion(t *testing.T) {
 		reporter.Report(inconsistency.SummaryReport{
 			Info: `table verification summary; $(echo accounts)`,
 			Stats: inconsistency.RowStats{
-				Schema:      "public",
-				Table:       "accounts",
-				NumVerified: 7,
-				NumMismatch: 1,
+				Schema:            "public",
+				Table:             "accounts",
+				NumVerified:       7,
+				NumSuccess:        6,
+				NumColumnMismatch: 1,
 			},
+		})
+		reporter.Report(inconsistency.MismatchingColumn{
+			Name: dbtable.Name{
+				Schema: "public",
+				Table:  "accounts",
+			},
+			PrimaryKeyColumns: []tree.Name{"id"},
+			PrimaryKeyValues:  tree.Datums{tree.NewDInt(101)},
+			MismatchingColumns: []tree.Name{
+				"balance",
+			},
+			TruthVals:  tree.Datums{tree.NewDInt(17)},
+			TargetVals: tree.Datums{tree.NewDInt(23)},
+			Info:       []string{"balance mismatch"},
 		})
 		return nil
 	})
@@ -164,26 +261,58 @@ func TestGetJobReturnsStructuredResultsAfterCompletion(t *testing.T) {
 				},
 			},
 			"result": map[string]any{
+				"summary": map[string]any{
+					"tables_verified":  float64(1),
+					"tables_with_data": float64(1),
+					"has_mismatches":   true,
+				},
 				"table_summaries": []any{
 					map[string]any{
 						"schema":              "public",
 						"table":               "accounts",
 						"num_verified":        float64(7),
-						"num_success":         float64(0),
+						"num_success":         float64(6),
 						"num_missing":         float64(0),
-						"num_mismatch":        float64(1),
-						"num_column_mismatch": float64(0),
+						"num_mismatch":        float64(0),
+						"num_column_mismatch": float64(1),
 						"num_extraneous":      float64(0),
 						"num_live_retry":      float64(0),
 					},
 				},
-				"mismatch_tables": []any{
+				"findings": []any{
 					map[string]any{
+						"kind":   "mismatching_column",
 						"schema": "public",
 						"table":  "accounts",
+						"primary_key": map[string]any{
+							"id": "101",
+						},
+						"mismatching_columns": []any{
+							"balance",
+						},
+						"source_values": map[string]any{
+							"balance": "17",
+						},
+						"destination_values": map[string]any{
+							"balance": "23",
+						},
+						"info": []any{
+							"balance mismatch",
+						},
 					},
 				},
-				"table_definition_mismatches": []any{},
+				"mismatch_summary": map[string]any{
+					"has_mismatches": true,
+					"affected_tables": []any{
+						map[string]any{
+							"schema": "public",
+							"table":  "accounts",
+						},
+					},
+					"counts_by_kind": map[string]any{
+						"mismatching_column": float64(1),
+					},
+				},
 			},
 		}, payload)
 		require.NotContains(t, string(body), "verification in progress")
@@ -261,6 +390,11 @@ func TestGetJobReturnsTableDefinitionMismatchDetailsAfterCompletion(t *testing.T
 				},
 			},
 			"result": map[string]any{
+				"summary": map[string]any{
+					"tables_verified":  float64(1),
+					"tables_with_data": float64(1),
+					"has_mismatches":   true,
+				},
 				"table_summaries": []any{
 					map[string]any{
 						"schema":              "public",
@@ -274,17 +408,24 @@ func TestGetJobReturnsTableDefinitionMismatchDetailsAfterCompletion(t *testing.T
 						"num_live_retry":      float64(0),
 					},
 				},
-				"mismatch_tables": []any{
+				"findings": []any{
 					map[string]any{
-						"schema": "public",
-						"table":  "orders",
-					},
-				},
-				"table_definition_mismatches": []any{
-					map[string]any{
+						"kind":    "mismatching_table_definition",
 						"schema":  "public",
 						"table":   "orders",
 						"message": "primary key mismatch",
+					},
+				},
+				"mismatch_summary": map[string]any{
+					"has_mismatches": true,
+					"affected_tables": []any{
+						map[string]any{
+							"schema": "public",
+							"table":  "orders",
+						},
+					},
+					"counts_by_kind": map[string]any{
+						"mismatching_table_definition": float64(1),
 					},
 				},
 			},
@@ -942,18 +1083,30 @@ func TestGetJobReturnsActionableFailureDetailsAfterFailure(t *testing.T) {
 				},
 			},
 			"result": map[string]any{
-				"table_summaries": []any{},
-				"mismatch_tables": []any{
-					map[string]any{
-						"schema": "public",
-						"table":  "accounts",
-					},
+				"summary": map[string]any{
+					"tables_verified":  float64(0),
+					"tables_with_data": float64(0),
+					"has_mismatches":   true,
 				},
-				"table_definition_mismatches": []any{
+				"table_summaries": []any{},
+				"findings": []any{
 					map[string]any{
+						"kind":    "mismatching_table_definition",
 						"schema":  "public",
 						"table":   "accounts",
 						"message": `primary key mismatch; $(touch /tmp/pwned) "quoted"`,
+					},
+				},
+				"mismatch_summary": map[string]any{
+					"has_mismatches": true,
+					"affected_tables": []any{
+						map[string]any{
+							"schema": "public",
+							"table":  "accounts",
+						},
+					},
+					"counts_by_kind": map[string]any{
+						"mismatching_table_definition": float64(1),
 					},
 				},
 			},

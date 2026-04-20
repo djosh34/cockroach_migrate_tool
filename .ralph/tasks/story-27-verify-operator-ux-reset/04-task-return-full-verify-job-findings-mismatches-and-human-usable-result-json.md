@@ -1,4 +1,4 @@
-## Task: Return full verify job findings, mismatches, and human-usable result JSON <status>not_started</status> <passes>false</passes>
+## Task: Return full verify job findings, mismatches, and human-usable result JSON <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -46,13 +46,15 @@ Relevant files and boundaries:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers success results, mismatch results, and infrastructure-failure results through the HTTP job JSON contract
-- [ ] Final job JSON includes structured findings that explain what was wrong rather than only a coarse `error` field
-- [ ] Mismatch-driven failures are clearly separated from transport/auth/config/process failures
-- [ ] The Rust verify-image harness and result-contract tests assert the richer HTTP result payload directly rather than depending on log scraping for core correctness details
-- [ ] Docs and curl examples show at least one useful mismatch result payload and one useful success result payload
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers success results, mismatch results, and infrastructure-failure results through the HTTP job JSON contract
+- [x] Final job JSON includes structured findings that explain what was wrong rather than only a coarse `error` field
+- [x] Mismatch-driven failures are clearly separated from transport/auth/config/process failures
+- [x] The Rust verify-image harness and result-contract tests assert the richer HTTP result payload directly rather than depending on log scraping for core correctness details
+- [x] Docs and curl examples show at least one useful mismatch result payload and one useful success result payload
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this task impacts ultra-long tests (or their selection): not applicable for this task, so `make test-long` was not run
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-27-verify-operator-ux-reset/04-task-return-full-verify-job-findings-mismatches-and-human-usable-result-json_plans/2026-04-20-verify-job-full-findings-result-plan.md</plan>

@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/molt/utils"
 	"github.com/cockroachdb/molt/verify/inconsistency"
 )
 
 type jobResult struct {
-	tableSummaries            map[tableKey]tableSummary
-	mismatchTables            map[tableKey]struct{}
-	tableDefinitionMismatches map[tableKey][]string
+	tableSummaries map[tableKey]tableSummary
+	mismatchTables map[tableKey]struct{}
+	findings       []jobFinding
 }
 
 type tableKey struct {
@@ -33,9 +34,45 @@ type tableSummary struct {
 }
 
 type jobResultView struct {
-	TableSummaries            []tableSummary                `json:"table_summaries"`
-	MismatchTables            []tableIdentityView           `json:"mismatch_tables"`
-	TableDefinitionMismatches []tableDefinitionMismatchView `json:"table_definition_mismatches"`
+	Summary         resultSummaryView   `json:"summary"`
+	TableSummaries  []tableSummary      `json:"table_summaries"`
+	Findings        []findingView       `json:"findings"`
+	MismatchSummary mismatchSummaryView `json:"mismatch_summary"`
+}
+
+type resultSummaryView struct {
+	TablesVerified int  `json:"tables_verified"`
+	TablesWithData int  `json:"tables_with_data"`
+	HasMismatches  bool `json:"has_mismatches"`
+}
+
+type findingView struct {
+	Kind               string            `json:"kind"`
+	Schema             string            `json:"schema"`
+	Table              string            `json:"table"`
+	PrimaryKey         map[string]string `json:"primary_key,omitempty"`
+	MismatchingColumns []string          `json:"mismatching_columns,omitempty"`
+	SourceValues       map[string]string `json:"source_values,omitempty"`
+	DestinationValues  map[string]string `json:"destination_values,omitempty"`
+	Info               []string          `json:"info,omitempty"`
+	Message            string            `json:"message,omitempty"`
+}
+
+type jobFinding struct {
+	kind               string
+	table              tableKey
+	primaryKey         map[string]string
+	mismatchingColumns []string
+	sourceValues       map[string]string
+	destinationValues  map[string]string
+	info               []string
+	message            string
+}
+
+type mismatchSummaryView struct {
+	HasMismatches  bool                `json:"has_mismatches"`
+	AffectedTables []tableIdentityView `json:"affected_tables"`
+	CountsByKind   map[string]int      `json:"counts_by_kind"`
 }
 
 type tableIdentityView struct {
@@ -43,17 +80,11 @@ type tableIdentityView struct {
 	Table  string `json:"table"`
 }
 
-type tableDefinitionMismatchView struct {
-	Schema  string `json:"schema"`
-	Table   string `json:"table"`
-	Message string `json:"message"`
-}
-
 func newJobResult() jobResult {
 	return jobResult{
-		tableSummaries:            make(map[tableKey]tableSummary),
-		mismatchTables:            make(map[tableKey]struct{}),
-		tableDefinitionMismatches: make(map[tableKey][]string),
+		tableSummaries: make(map[tableKey]tableSummary),
+		mismatchTables: make(map[tableKey]struct{}),
+		findings:       make([]jobFinding, 0),
 	}
 }
 
@@ -78,19 +109,65 @@ func (r *jobResult) recordReport(obj any) {
 	case inconsistency.MismatchingTableDefinition:
 		key := newTableKey(string(report.Schema), string(report.Table))
 		r.mismatchTables[key] = struct{}{}
-		r.tableDefinitionMismatches[key] = append(r.tableDefinitionMismatches[key], report.Info)
+		r.findings = append(r.findings, jobFinding{
+			kind:    "mismatching_table_definition",
+			table:   key,
+			message: report.Info,
+		})
 	case inconsistency.MismatchingRow:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:               "mismatching_row",
+			table:              key,
+			primaryKey:         renderDatumMap(report.PrimaryKeyColumns, report.PrimaryKeyValues),
+			mismatchingColumns: renderNames(report.MismatchingColumns),
+			sourceValues:       renderDatumMap(report.MismatchingColumns, report.TruthVals),
+			destinationValues:  renderDatumMap(report.MismatchingColumns, report.TargetVals),
+		})
 	case inconsistency.MismatchingColumn:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:               "mismatching_column",
+			table:              key,
+			primaryKey:         renderDatumMap(report.PrimaryKeyColumns, report.PrimaryKeyValues),
+			mismatchingColumns: renderNames(report.MismatchingColumns),
+			sourceValues:       renderDatumMap(report.MismatchingColumns, report.TruthVals),
+			destinationValues:  renderDatumMap(report.MismatchingColumns, report.TargetVals),
+			info:               append([]string(nil), report.Info...),
+		})
 	case inconsistency.MissingRow:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:         "missing_row",
+			table:        key,
+			primaryKey:   renderDatumMap(report.PrimaryKeyColumns, report.PrimaryKeyValues),
+			sourceValues: renderDatumMap(report.Columns, report.Values),
+		})
 	case inconsistency.ExtraneousRow:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:       "extraneous_row",
+			table:      key,
+			primaryKey: renderDatumMap(report.PrimaryKeyColumns, report.PrimaryKeyValues),
+		})
 	case utils.MissingTable:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:  "missing_table",
+			table: key,
+		})
 	case utils.ExtraneousTable:
-		r.mismatchTables[newTableKey(string(report.Schema), string(report.Table))] = struct{}{}
+		key := newTableKey(string(report.Schema), string(report.Table))
+		r.mismatchTables[key] = struct{}{}
+		r.findings = append(r.findings, jobFinding{
+			kind:  "extraneous_table",
+			table: key,
+		})
 	}
 }
 
@@ -110,12 +187,11 @@ func (s tableSummary) accumulate(other tableSummary) tableSummary {
 
 func (r jobResult) hasData() bool {
 	return len(r.tableSummaries) > 0 ||
-		len(r.mismatchTables) > 0 ||
-		len(r.tableDefinitionMismatches) > 0
+		len(r.findings) > 0
 }
 
 func (r jobResult) hasMismatch() bool {
-	return len(r.mismatchTables) > 0 || len(r.tableDefinitionMismatches) > 0
+	return len(r.mismatchTables) > 0
 }
 
 func (r jobResult) mismatchFailure() *operatorError {
@@ -139,9 +215,38 @@ func (r jobResult) mismatchFailure() *operatorError {
 
 func (r jobResult) response() *jobResultView {
 	return &jobResultView{
-		TableSummaries:            r.tableSummariesView(),
-		MismatchTables:            r.mismatchTablesView(),
-		TableDefinitionMismatches: r.tableDefinitionMismatchesView(),
+		Summary:         r.summaryView(),
+		TableSummaries:  r.tableSummariesView(),
+		Findings:        r.findingsView(),
+		MismatchSummary: r.mismatchSummaryView(),
+	}
+}
+
+func (r jobResult) summaryView() resultSummaryView {
+	return resultSummaryView{
+		TablesVerified: len(r.tableSummaries),
+		TablesWithData: len(r.tableSummaries),
+		HasMismatches:  r.hasMismatch(),
+	}
+}
+
+func (r jobResult) findingsView() []findingView {
+	findings := make([]findingView, 0, len(r.findings))
+	for _, finding := range r.findings {
+		findings = append(findings, finding.view())
+	}
+	return findings
+}
+
+func (r jobResult) mismatchSummaryView() mismatchSummaryView {
+	countsByKind := make(map[string]int)
+	for _, finding := range r.findings {
+		countsByKind[finding.kind]++
+	}
+	return mismatchSummaryView{
+		HasMismatches:  r.hasMismatch(),
+		AffectedTables: r.mismatchTablesView(),
+		CountsByKind:   countsByKind,
 	}
 }
 
@@ -173,26 +278,6 @@ func (r jobResult) mismatchTablesView() []tableIdentityView {
 	return tables
 }
 
-func (r jobResult) tableDefinitionMismatchesView() []tableDefinitionMismatchView {
-	keys := make([]tableKey, 0, len(r.tableDefinitionMismatches))
-	for key := range r.tableDefinitionMismatches {
-		keys = append(keys, key)
-	}
-	sortTableKeys(keys)
-
-	mismatches := make([]tableDefinitionMismatchView, 0)
-	for _, key := range keys {
-		for _, message := range r.tableDefinitionMismatches[key] {
-			mismatches = append(mismatches, tableDefinitionMismatchView{
-				Schema:  key.schema,
-				Table:   key.table,
-				Message: message,
-			})
-		}
-	}
-	return mismatches
-}
-
 func sortTableKeys(keys []tableKey) {
 	slices.SortFunc(keys, func(left tableKey, right tableKey) int {
 		if bySchema := cmp.Compare(left.schema, right.schema); bySchema != 0 {
@@ -204,6 +289,51 @@ func sortTableKeys(keys []tableKey) {
 
 func newTableKey(schema string, table string) tableKey {
 	return tableKey{schema: schema, table: table}
+}
+
+func (f jobFinding) view() findingView {
+	return findingView{
+		Kind:               f.kind,
+		Schema:             f.table.schema,
+		Table:              f.table.table,
+		PrimaryKey:         f.primaryKey,
+		MismatchingColumns: f.mismatchingColumns,
+		SourceValues:       f.sourceValues,
+		DestinationValues:  f.destinationValues,
+		Info:               f.info,
+		Message:            f.message,
+	}
+}
+
+func renderDatumMap(columns []tree.Name, values tree.Datums) map[string]string {
+	if len(columns) == 0 || len(values) == 0 {
+		return nil
+	}
+	rendered := make(map[string]string, min(len(columns), len(values)))
+	for index, column := range columns {
+		if index >= len(values) {
+			break
+		}
+		rendered[string(column)] = renderDatum(values[index])
+	}
+	return rendered
+}
+
+func renderNames(names []tree.Name) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	rendered := make([]string, 0, len(names))
+	for _, name := range names {
+		rendered = append(rendered, string(name))
+	}
+	return rendered
+}
+
+func renderDatum(datum tree.Datum) string {
+	formatContext := tree.NewFmtCtx(tree.FmtExport | tree.FmtParsableNumerics)
+	formatContext.FormatNode(datum)
+	return formatContext.CloseAndGetString()
 }
 
 func statsHaveMismatch(stats inconsistency.RowStats) bool {

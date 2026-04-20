@@ -376,10 +376,12 @@ Running response:
 {"job_id":"job-000001","status":"running"}
 ```
 
+For completed jobs, inspect `result.summary` first, then `result.mismatch_summary`, then `result.findings` for the concrete evidence behind any mismatch.
+
 Successful final response:
 
 ```json
-{"job_id":"job-000001","status":"succeeded","result":{"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":7,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"mismatch_tables":[],"table_definition_mismatches":[]}}
+{"job_id":"job-000001","status":"succeeded","result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":false},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":7,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[],"mismatch_summary":{"has_mismatches":false,"affected_tables":[],"counts_by_kind":{}}}}
 ```
 
 Stop a running job:
@@ -414,7 +416,7 @@ Validation error response:
 Mismatch final response:
 
 ```json
-{"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":1,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"mismatch_tables":[{"schema":"public","table":"accounts"}],"table_definition_mismatches":[]}}
+{"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":0,"num_column_mismatch":1,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_column","schema":"public","table":"accounts","primary_key":{"id":"101"},"mismatching_columns":["balance"],"source_values":{"balance":"17"},"destination_values":{"balance":"23"},"info":["balance mismatch"]}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"accounts"}],"counts_by_kind":{"mismatching_column":1}}}}
 ```
 
 If you prefer Compose, use the same image contract with Docker Compose.
