@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 20 07:41:13 AM CEST 2026
+Generated: Mon Apr 20 08:34:51 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-09-verification-cutover/04-task-return-structured-verify-results-via-http-json.md`
 
@@ -24,36 +24,13 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/06-task-publish-the-three-image-split-to-quay-with-strict-secret-redaction-and-master-only-access.md`
-
-```
-## Task: Publish the three-image split to Quay with strict secret redaction and `master`-only secret access <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md`
 
 ```
-## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>not_started</status> <passes>false</passes>
+## Task: Add a manual image-retag workflow that promotes already-published commit images to a requested version and optional `latest` <status>suspended</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/08-task-make-the-default-branch-push-publish-workflow-succeed-from-a-plain-git-push.md`
-
-```
-## Task: Make the default-branch publish workflow succeed from a plain `git push` <status>not_started</status> <passes>false</passes>
-
-<blocked_by>.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md</blocked_by>
-
-<description>
 ```
 
 ==============
@@ -143,3 +120,4 @@ Must use tdd skill to complete
 <description>
 Must use tdd skill to complete
 ```
+
