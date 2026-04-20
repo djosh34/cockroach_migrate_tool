@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 01:01:27 PM CEST 2026
+Generated: Mon Apr 20 01:35:15 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
 
@@ -20,6 +20,17 @@ Story 24 execution is blocked because the README cannot currently serve as the o
 
 <description>
 Story 24 verification found a blocking defect before the README-only public-image flow could be completed.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-schema-mismatch-reconcile-failure-missing-operator-stderr.md`
+
+```
+## Bug: Schema mismatch reconcile failure is persisted but not logged to stderr for operators <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+Schema mismatch verification in story 23 task 01 exposed a real operator-surface defect.
 ```
 
 ==============

@@ -10,7 +10,7 @@ mod tracking_state;
 mod validated_schema;
 mod webhook_runtime;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use clap::{Parser, Subcommand};
 use operator_log::{LogEvent, LogFormat};
@@ -21,6 +21,8 @@ use postgres_bootstrap::bootstrap_postgres;
 use reconcile_runtime::serve as serve_reconcile_runtime;
 use runtime_plan::{RunnerRuntimePlan, RunnerStartupPlan};
 use webhook_runtime::serve as serve_webhook_runtime;
+
+pub(crate) type RuntimeEventSink = Arc<dyn Fn(LogEvent<'static>) + Send + Sync>;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -46,10 +48,12 @@ enum Command {
     },
 }
 
-pub async fn execute<F>(cli: Cli, mut emit_event: F) -> Result<Option<CommandOutput>, RunnerError>
+pub async fn execute<F>(cli: Cli, emit_event: F) -> Result<Option<CommandOutput>, RunnerError>
 where
-    F: FnMut(LogEvent<'static>),
+    F: Fn(LogEvent<'static>) + Send + Sync + 'static,
 {
+    let emit_event: RuntimeEventSink = Arc::new(emit_event);
+
     match cli.command {
         Command::ValidateConfig { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
@@ -75,7 +79,7 @@ where
                         .map_err(RunnerError::from)
                 },
                 async {
-                    serve_reconcile_runtime(runtime.clone())
+                    serve_reconcile_runtime(runtime.clone(), emit_event.clone())
                         .await
                         .map_err(RunnerError::from)
                 }

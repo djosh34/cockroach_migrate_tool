@@ -23,10 +23,8 @@ fn main() -> ExitCode {
         }
     };
 
-    match runtime.block_on(runner::execute(cli, |event| {
-        if log_format.writes_json() {
-            write_stderr_event(event, log_format);
-        }
+    match runtime.block_on(runner::execute(cli, move |event| {
+        write_stderr_event(event, log_format);
     })) {
         Ok(Some(output)) => {
             if log_format.writes_json() {

@@ -119,6 +119,53 @@ fn e2e_suite_routes_default_correctness_through_the_verify_image_boundary() {
 }
 
 #[test]
+fn e2e_suite_routes_duplicate_feed_replay_and_schema_mismatch_through_typed_scenario_audits() {
+    let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
+    let default_harness = read_runner_test_file("tests/support/default_bootstrap_harness.rs");
+    let e2e_harness = read_runner_test_file("tests/support/e2e_harness.rs");
+    let integrity = read_runner_test_file("tests/support/e2e_integrity.rs");
+
+    assert!(
+        integrity.contains("pub enum ScenarioOutcome"),
+        "E2E integrity support should classify scenario outcomes through a typed enum",
+    );
+    for required_audit in [
+        "pub struct DuplicateFeedAudit",
+        "pub struct RecreatedFeedReplayAudit",
+        "pub struct SchemaMismatchAudit",
+    ] {
+        assert!(
+            integrity.contains(required_audit),
+            "E2E integrity support should define `{required_audit}` for long-lane scenario conclusions",
+        );
+    }
+    for required_method in [
+        "pub fn audit_concurrent_duplicate_customer_feeds(",
+        "pub fn audit_recreated_customer_feed_replay(",
+        "pub fn audit_customer_schema_mismatch(",
+    ] {
+        assert!(
+            default_harness.contains(required_method),
+            "default bootstrap harness should expose typed scenario audits through `{required_method}`",
+        );
+    }
+    assert!(
+        !e2e_harness.contains("pub fn execute_source_sql(&self, sql: &str)"),
+        "shared E2E harness should not expose raw source SQL just to drive duplicate-feed or replay scenarios",
+    );
+    for required_long_lane_usage in [
+        "audit_concurrent_duplicate_customer_feeds",
+        "audit_recreated_customer_feed_replay",
+        "audit_customer_schema_mismatch",
+    ] {
+        assert!(
+            long_lane.contains(required_long_lane_usage),
+            "long-lane coverage should call the named typed scenario audit `{required_long_lane_usage}`",
+        );
+    }
+}
+
+#[test]
 fn e2e_suite_routes_composite_and_multi_mapping_correctness_through_the_verify_image_boundary() {
     let long_lane = read_runner_test_file("tests/default_bootstrap_long_lane.rs");
     let composite_harness =

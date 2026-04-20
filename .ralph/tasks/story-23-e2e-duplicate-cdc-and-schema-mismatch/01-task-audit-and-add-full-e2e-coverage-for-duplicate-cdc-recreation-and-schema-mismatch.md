@@ -53,3 +53,5 @@ Decisions already made:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch_plans/2026-04-20-duplicate-cdc-schema-mismatch-e2e-plan.md</plan>

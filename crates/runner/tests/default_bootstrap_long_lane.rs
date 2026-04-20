@@ -583,6 +583,42 @@ fn ignored_long_lane_converges_after_high_source_customer_write_churn_during_tra
 
 #[test]
 #[ignore = "long lane"]
+fn ignored_long_lane_classifies_concurrent_duplicate_customer_changefeeds_through_a_typed_audit() {
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness
+        .audit_concurrent_duplicate_customer_feeds(&verify_image)
+        .assert_harmless("1:alice+dual-feed@example.com,2:bob@example.com");
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_classifies_recreated_customer_feed_replay_through_a_typed_audit() {
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness
+        .audit_recreated_customer_feed_replay(&verify_image)
+        .assert_harmless("1:alice+replay@example.com,2:bob@example.com");
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_classifies_customer_schema_mismatch_through_a_typed_audit() {
+    let harness = DefaultBootstrapHarness::start_with_observed_webhook_gateway();
+    let verify_image = VerifyImageHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness
+        .audit_customer_schema_mismatch(&verify_image)
+        .assert_bounded_operator_action("1:alice+schema-mismatch@example.com,2:bob@example.com");
+}
+
+#[test]
+#[ignore = "long lane"]
 fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_tables() {
     let harness = CompositePkExclusionHarness::start();
     let verify_image = VerifyImageHarness::start();

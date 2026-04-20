@@ -9,6 +9,299 @@ pub struct CustomerLiveUpdateAudit {
     received_watermark: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScenarioOutcome {
+    Harmless,
+    BoundedOperatorAction,
+    Defective,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MappingProgressAudit {
+    latest_received_resolved_watermark: Option<String>,
+    latest_reconciled_resolved_watermark: Option<String>,
+    last_successful_sync_watermark: Option<String>,
+    last_error: Option<String>,
+}
+
+impl MappingProgressAudit {
+    pub fn new(
+        latest_received_resolved_watermark: Option<String>,
+        latest_reconciled_resolved_watermark: Option<String>,
+        last_successful_sync_watermark: Option<String>,
+        last_error: Option<String>,
+    ) -> Self {
+        Self {
+            latest_received_resolved_watermark,
+            latest_reconciled_resolved_watermark,
+            last_successful_sync_watermark,
+            last_error,
+        }
+    }
+
+    pub fn cleanly_reconciled(&self) -> bool {
+        self.latest_received_resolved_watermark.is_some()
+            && self.latest_received_resolved_watermark == self.latest_reconciled_resolved_watermark
+            && self.last_successful_sync_watermark == self.latest_reconciled_resolved_watermark
+            && self.last_error.is_none()
+    }
+
+    pub fn last_error(&self) -> Option<&str> {
+        self.last_error.as_deref()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DuplicateFeedAudit {
+    outcome: ScenarioOutcome,
+    added_changefeed_job_id: String,
+    observed_source_job_ids: BTreeSet<String>,
+    delivery_attempt_count: usize,
+    helper_shadow_snapshot: String,
+    helper_shadow_rows: usize,
+    progress: MappingProgressAudit,
+    verify_correctness: VerifyCorrectnessAudit,
+}
+
+impl DuplicateFeedAudit {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        outcome: ScenarioOutcome,
+        added_changefeed_job_id: String,
+        observed_source_job_ids: BTreeSet<String>,
+        delivery_attempt_count: usize,
+        helper_shadow_snapshot: String,
+        helper_shadow_rows: usize,
+        progress: MappingProgressAudit,
+        verify_correctness: VerifyCorrectnessAudit,
+    ) -> Self {
+        Self {
+            outcome,
+            added_changefeed_job_id,
+            observed_source_job_ids,
+            delivery_attempt_count,
+            helper_shadow_snapshot,
+            helper_shadow_rows,
+            progress,
+            verify_correctness,
+        }
+    }
+
+    pub fn assert_harmless(&self, expected_helper_snapshot: &str) {
+        assert_eq!(
+            self.outcome,
+            ScenarioOutcome::Harmless,
+            "concurrent duplicate-feed audit should classify the scenario as harmless: {:?}",
+            self
+        );
+        assert!(
+            self.delivery_attempt_count >= 2,
+            "duplicate-feed audit should observe at least two deliveries for the same logical row: {:?}",
+            self
+        );
+        assert!(
+            self.observed_source_job_ids
+                .contains(&self.added_changefeed_job_id),
+            "duplicate-feed audit should observe the added changefeed job in delivered rows: {:?}",
+            self
+        );
+        assert!(
+            self.observed_source_job_ids.len() >= 2,
+            "duplicate-feed audit should observe at least two distinct source job ids: {:?}",
+            self
+        );
+        assert_eq!(
+            self.helper_shadow_snapshot, expected_helper_snapshot,
+            "duplicate-feed audit should preserve the correct helper shadow state",
+        );
+        assert_eq!(
+            self.helper_shadow_rows, 2,
+            "duplicate-feed audit should not grow helper rows beyond the selected table cardinality",
+        );
+        assert!(
+            self.progress.cleanly_reconciled(),
+            "duplicate-feed audit should end fully reconciled without a stored error: {:?}",
+            self
+        );
+        self.verify_correctness.assert_selected_tables_match();
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecreatedFeedReplayAudit {
+    outcome: ScenarioOutcome,
+    original_changefeed_job_id: String,
+    recreated_changefeed_job_id: String,
+    observed_source_job_ids: BTreeSet<String>,
+    delivery_attempt_count: usize,
+    helper_shadow_snapshot: String,
+    helper_shadow_rows: usize,
+    progress: MappingProgressAudit,
+    verify_correctness: VerifyCorrectnessAudit,
+}
+
+impl RecreatedFeedReplayAudit {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        outcome: ScenarioOutcome,
+        original_changefeed_job_id: String,
+        recreated_changefeed_job_id: String,
+        observed_source_job_ids: BTreeSet<String>,
+        delivery_attempt_count: usize,
+        helper_shadow_snapshot: String,
+        helper_shadow_rows: usize,
+        progress: MappingProgressAudit,
+        verify_correctness: VerifyCorrectnessAudit,
+    ) -> Self {
+        Self {
+            outcome,
+            original_changefeed_job_id,
+            recreated_changefeed_job_id,
+            observed_source_job_ids,
+            delivery_attempt_count,
+            helper_shadow_snapshot,
+            helper_shadow_rows,
+            progress,
+            verify_correctness,
+        }
+    }
+
+    pub fn assert_harmless(&self, expected_helper_snapshot: &str) {
+        assert_eq!(
+            self.outcome,
+            ScenarioOutcome::Harmless,
+            "recreated-feed replay audit should classify the scenario as harmless: {:?}",
+            self
+        );
+        assert!(
+            self.delivery_attempt_count >= 2,
+            "recreated-feed replay audit should observe the original delivery plus replay: {:?}",
+            self
+        );
+        assert!(
+            self.observed_source_job_ids
+                .contains(&self.original_changefeed_job_id),
+            "recreated-feed replay audit should preserve evidence from the original changefeed: {:?}",
+            self
+        );
+        assert!(
+            self.observed_source_job_ids
+                .contains(&self.recreated_changefeed_job_id),
+            "recreated-feed replay audit should observe the recreated changefeed replay explicitly: {:?}",
+            self
+        );
+        assert_eq!(
+            self.helper_shadow_snapshot, expected_helper_snapshot,
+            "recreated-feed replay audit should preserve the correct helper shadow state",
+        );
+        assert_eq!(
+            self.helper_shadow_rows, 2,
+            "recreated-feed replay audit should not grow helper rows beyond the selected table cardinality",
+        );
+        assert!(
+            self.progress.cleanly_reconciled(),
+            "recreated-feed replay audit should end fully reconciled without a stored error: {:?}",
+            self
+        );
+        self.verify_correctness.assert_selected_tables_match();
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SchemaMismatchAudit {
+    outcome: ScenarioOutcome,
+    delivery_attempt_count: usize,
+    helper_shadow_snapshot: String,
+    helper_shadow_rows: usize,
+    progress: MappingProgressAudit,
+    received_advanced_since_baseline: bool,
+    reconciled_stalled_at_baseline: bool,
+    runner_alive_after_failure: bool,
+    runner_stderr: String,
+    verify_correctness: VerifyCorrectnessAudit,
+}
+
+impl SchemaMismatchAudit {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        outcome: ScenarioOutcome,
+        delivery_attempt_count: usize,
+        helper_shadow_snapshot: String,
+        helper_shadow_rows: usize,
+        progress: MappingProgressAudit,
+        received_advanced_since_baseline: bool,
+        reconciled_stalled_at_baseline: bool,
+        runner_alive_after_failure: bool,
+        runner_stderr: String,
+        verify_correctness: VerifyCorrectnessAudit,
+    ) -> Self {
+        Self {
+            outcome,
+            delivery_attempt_count,
+            helper_shadow_snapshot,
+            helper_shadow_rows,
+            progress,
+            received_advanced_since_baseline,
+            reconciled_stalled_at_baseline,
+            runner_alive_after_failure,
+            runner_stderr,
+            verify_correctness,
+        }
+    }
+
+    pub fn assert_bounded_operator_action(&self, expected_helper_snapshot: &str) {
+        assert_eq!(
+            self.outcome,
+            ScenarioOutcome::BoundedOperatorAction,
+            "schema-mismatch audit should classify the scenario as a bounded operator action: {:?}",
+            self
+        );
+        assert_eq!(
+            self.delivery_attempt_count, 1,
+            "schema-mismatch audit should not show duplicate retry amplification at ingress: {:?}",
+            self
+        );
+        assert_eq!(
+            self.helper_shadow_snapshot, expected_helper_snapshot,
+            "schema-mismatch audit should still persist the latest helper shadow state",
+        );
+        assert_eq!(
+            self.helper_shadow_rows, 2,
+            "schema-mismatch audit should not grow helper rows while reconcile is failing",
+        );
+        assert!(
+            self.received_advanced_since_baseline,
+            "schema-mismatch audit should record that the new watermark was received",
+        );
+        assert!(
+            self.reconciled_stalled_at_baseline,
+            "schema-mismatch audit should show that reconcile stalled at the last good checkpoint",
+        );
+        assert!(
+            self.runner_alive_after_failure,
+            "schema-mismatch audit should keep the runner alive for operator intervention",
+        );
+        let last_error = self.progress.last_error().unwrap_or_else(|| {
+            panic!(
+                "schema-mismatch audit should persist an operator-visible last_error: {:?}",
+                self
+            )
+        });
+        assert!(
+            last_error.contains("reconcile upsert failed for public.customers"),
+            "schema-mismatch audit should persist table-specific reconcile failure context: {last_error}",
+        );
+        assert!(
+            self.runner_stderr.contains("failed to apply reconcile upsert")
+                && self.runner_stderr.contains("public.customers"),
+            "schema-mismatch audit should emit operator-visible reconcile failure logs:\n{}",
+            self.runner_stderr,
+        );
+        self.verify_correctness
+            .assert_detects_selected_table_mismatch();
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifyCorrectnessAudit {
     expected_tables: Vec<String>,

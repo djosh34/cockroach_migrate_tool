@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, hash_map::DefaultHasher},
+    collections::{BTreeSet, HashMap, hash_map::DefaultHasher},
     error::Error,
     fmt, fs,
     hash::{Hash, Hasher},
@@ -22,6 +22,7 @@ use hyper_util::{
 };
 use reqwest::Certificate;
 use rustls::ServerConfig;
+use serde_json::Value;
 use tokio::{net::TcpListener, runtime::Builder, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
@@ -274,6 +275,34 @@ impl WebhookChaosGateway {
             })
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    pub(crate) fn attempt_count_for_body_substring(&self, body_substring: &str) -> usize {
+        let state = self
+            .state
+            .lock()
+            .expect("webhook chaos gateway state should lock");
+        state
+            .attempt_log
+            .iter()
+            .filter(|attempt| attempt.body.contains(body_substring))
+            .count()
+    }
+
+    pub(crate) fn observed_source_job_ids_for_body_substring(
+        &self,
+        body_substring: &str,
+    ) -> BTreeSet<String> {
+        let state = self
+            .state
+            .lock()
+            .expect("webhook chaos gateway state should lock");
+        state
+            .attempt_log
+            .iter()
+            .filter(|attempt| attempt.body.contains(body_substring))
+            .flat_map(|attempt| extract_source_job_ids(&attempt.body))
+            .collect()
     }
 
     fn wait_until_healthy(&self) {
@@ -555,6 +584,26 @@ fn request_fingerprint(path: &str, body: &str) -> String {
     path.hash(&mut hasher);
     body.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+fn extract_source_job_ids(body: &str) -> BTreeSet<String> {
+    let Ok(payload) = serde_json::from_str::<Value>(body) else {
+        return BTreeSet::new();
+    };
+
+    payload
+        .get("payload")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .get("source")
+                .and_then(|source| source.get("job_id"))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect()
 }
 
 fn contains_status_subsequence(observed: &[StatusCode], expected: &[StatusCode]) -> bool {

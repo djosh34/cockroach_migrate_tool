@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    collections::BTreeSet,
     fs::{self},
     io,
     path::{Path, PathBuf},
@@ -40,10 +41,17 @@ use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
 pub(crate) const CHANGEFEED_CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
+
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
     DirectRunner,
     ObservableChaosGateway,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ChangefeedInitialScanMode {
+    Yes,
+    No,
 }
 
 pub struct CdcE2eHarnessConfig<'a> {
@@ -518,6 +526,112 @@ impl CdcE2eHarness {
         );
     }
 
+    pub(crate) fn wait_for_gateway_attempt_count_for_request_body(
+        &self,
+        body_substring: &str,
+        minimum_attempts: usize,
+    ) -> usize {
+        for _ in 0..120 {
+            self.assert_runner_process_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            let attempt_count = gateway.attempt_count_for_body_substring(body_substring);
+            if attempt_count >= minimum_attempts {
+                return attempt_count;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        panic!(
+            "gateway did not observe at least {minimum_attempts} deliveries for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            self.runner_diagnostics(),
+        );
+    }
+
+    pub(crate) fn assert_gateway_attempt_count_stable_for_request_body(
+        &self,
+        body_substring: &str,
+        expected_attempts: usize,
+        duration: Duration,
+    ) {
+        let deadline = Instant::now() + duration;
+        loop {
+            self.assert_runner_process_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            let attempt_count = gateway.attempt_count_for_body_substring(body_substring);
+            assert_eq!(
+                attempt_count, expected_attempts,
+                "gateway delivery count changed unexpectedly for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+                gateway.attempt_summary_for_body_substring(body_substring),
+                self.runner_diagnostics(),
+            );
+            if Instant::now() >= deadline {
+                return;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    pub(crate) fn wait_for_gateway_source_job_ids_for_request_body(
+        &self,
+        body_substring: &str,
+        minimum_job_ids: usize,
+    ) -> BTreeSet<String> {
+        for _ in 0..120 {
+            self.assert_runner_process_alive();
+            let gateway = self
+                .webhook_chaos_gateway
+                .as_ref()
+                .expect("chaos gateway should be configured for this harness");
+            let observed_job_ids = gateway.observed_source_job_ids_for_body_substring(body_substring);
+            if observed_job_ids.len() >= minimum_job_ids {
+                return observed_job_ids;
+            }
+            thread::sleep(Duration::from_secs(1));
+        }
+
+        let gateway = self
+            .webhook_chaos_gateway
+            .as_ref()
+            .expect("chaos gateway should be configured for this harness");
+        panic!(
+            "gateway did not observe at least {minimum_job_ids} source job ids for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
+            gateway.attempt_summary_for_body_substring(body_substring),
+            self.runner_diagnostics(),
+        );
+    }
+
+    pub(crate) fn create_additional_changefeed_from_current_cursor(
+        &self,
+        initial_scan_mode: ChangefeedInitialScanMode,
+    ) -> String {
+        let cursor = self.current_source_changefeed_cursor();
+        let sql = self.render_changefeed_sql(&cursor, initial_scan_mode);
+        let output = run_audited_cockroach_sql(&self.wrapper_bin_dir, &sql);
+        parse_changefeed_job_id(&output)
+    }
+
+    pub(crate) fn cancel_changefeed_job(&self, job_id: &str) {
+        run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            &format!("CANCEL JOB {};", job_id.trim()),
+        );
+    }
+
+    pub(crate) fn runner_stderr_snapshot(&self) -> String {
+        self.runner_diagnostics()
+    }
+
     pub(crate) fn apply_source_workload_batch(&self, sql: &str) {
         run_audited_cockroach_sql(
             &self.wrapper_bin_dir,
@@ -916,6 +1030,40 @@ impl CdcE2eHarness {
 
     fn apply_source_bootstrap_sql(&self, sql: &str) {
         apply_source_bootstrap_sql_statements(&self.wrapper_bin_dir, sql);
+    }
+
+    fn current_source_changefeed_cursor(&self) -> String {
+        let output = run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            &format!(
+                "USE {};\nSELECT cluster_logical_timestamp() AS changefeed_cursor;",
+                self.config.source_database
+            ),
+        );
+        parse_changefeed_cursor(&output)
+    }
+
+    fn render_changefeed_sql(
+        &self,
+        cursor: &str,
+        initial_scan_mode: ChangefeedInitialScanMode,
+    ) -> String {
+        let initial_scan = match initial_scan_mode {
+            ChangefeedInitialScanMode::Yes => "yes",
+            ChangefeedInitialScanMode::No => "no",
+        };
+        self.rendered_bootstrap_changefeed_statement()
+            .replace(CHANGEFEED_CURSOR_PLACEHOLDER, cursor)
+            .replace("initial_scan = 'yes'", &format!("initial_scan = '{initial_scan}'"))
+    }
+
+    fn rendered_bootstrap_changefeed_statement(&self) -> String {
+        source_bootstrap_sql_statements(&self.render_source_bootstrap_sql())
+            .into_iter()
+            .find(|statement| contains_non_comment_fragment(statement, "CREATE CHANGEFEED"))
+            .unwrap_or_else(|| {
+                panic!("source bootstrap SQL should contain a CREATE CHANGEFEED statement")
+            })
     }
 
     fn write_runner_config(&self) {
@@ -1804,6 +1952,17 @@ fn parse_changefeed_cursor(output: &str) -> String {
         .rfind(|line| !line.is_empty() && *line != "changefeed_cursor")
         .unwrap_or_else(|| {
             panic!("cluster_logical_timestamp output should include a cursor row, got:\n{output}")
+        })
+        .to_owned()
+}
+
+fn parse_changefeed_job_id(output: &str) -> String {
+    output
+        .lines()
+        .map(str::trim)
+        .rfind(|line| !line.is_empty() && *line != "job_id")
+        .unwrap_or_else(|| {
+            panic!("CREATE CHANGEFEED output should include a job id row, got:\n{output}")
         })
         .to_owned()
 }

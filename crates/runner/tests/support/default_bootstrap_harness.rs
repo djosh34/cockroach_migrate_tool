@@ -1,12 +1,13 @@
 use std::time::Duration;
 
 use crate::e2e_harness::{
-    CdcE2eHarness, CdcE2eHarnessConfig, DestinationTableLock, DestinationWriteFailure,
-    MappingTrackingProgress, WebhookSinkMode,
+    CdcE2eHarness, CdcE2eHarnessConfig, ChangefeedInitialScanMode, DestinationTableLock,
+    DestinationWriteFailure, MappingTrackingProgress, WebhookSinkMode,
 };
 use crate::e2e_integrity::{
-    CustomerLiveUpdateAudit, DestinationRuntimeMode, PostSetupSourceAudit, RuntimeShapeAudit,
-    VerifyCorrectnessAudit,
+    CustomerLiveUpdateAudit, DestinationRuntimeMode, DuplicateFeedAudit,
+    MappingProgressAudit, PostSetupSourceAudit, RecreatedFeedReplayAudit, RuntimeShapeAudit,
+    ScenarioOutcome, SchemaMismatchAudit, VerifyCorrectnessAudit,
 };
 use crate::verify_image_harness_support::VerifyImageHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
@@ -81,6 +82,10 @@ UPDATE public.customers
 SET email = 'bob+final@example.com'
 WHERE id = 2;
 "#;
+
+const CONCURRENT_DUPLICATE_FEED_EMAIL: &str = "alice+dual-feed@example.com";
+const RECREATED_FEED_REPLAY_EMAIL: &str = "alice+replay@example.com";
+const SCHEMA_MISMATCH_EMAIL: &str = "alice+schema-mismatch@example.com";
 
 pub struct CustomerWriteChurnExpectation {
     final_customers_snapshot: String,
@@ -338,6 +343,184 @@ impl DefaultBootstrapHarness {
         self.inner.runtime_shape_audit()
     }
 
+    pub fn audit_concurrent_duplicate_customer_feeds(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> DuplicateFeedAudit {
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+            .assert_selected_tables_match();
+        let added_changefeed_job_id = self
+            .inner
+            .create_additional_changefeed_from_current_cursor(ChangefeedInitialScanMode::No);
+        self.update_source_customer_email(1, CONCURRENT_DUPLICATE_FEED_EMAIL);
+        let delivery_attempt_count = self
+            .inner
+            .wait_for_gateway_attempt_count_for_request_body(CONCURRENT_DUPLICATE_FEED_EMAIL, 2);
+        let observed_source_job_ids = self
+            .inner
+            .wait_for_gateway_source_job_ids_for_request_body(CONCURRENT_DUPLICATE_FEED_EMAIL, 2);
+        let expected_helper_snapshot =
+            format!("1:{CONCURRENT_DUPLICATE_FEED_EMAIL},2:bob@example.com");
+        self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
+        self.assert_helper_shadow_customers(2);
+        let verify_correctness = self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        self.assert_helper_shadow_customers_stable(
+            &expected_helper_snapshot,
+            Duration::from_secs(3),
+        );
+        let progress = self.mapping_progress_audit();
+        let outcome = if delivery_attempt_count >= 2
+            && observed_source_job_ids.contains(&added_changefeed_job_id)
+            && observed_source_job_ids.len() >= 2
+            && progress.cleanly_reconciled()
+            && verify_correctness.selected_tables_match()
+        {
+            ScenarioOutcome::Harmless
+        } else {
+            ScenarioOutcome::Defective
+        };
+
+        DuplicateFeedAudit::new(
+            outcome,
+            added_changefeed_job_id,
+            observed_source_job_ids,
+            delivery_attempt_count,
+            expected_helper_snapshot,
+            self.inner.helper_table_row_count("public.customers"),
+            progress,
+            verify_correctness,
+        )
+    }
+
+    pub fn audit_recreated_customer_feed_replay(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> RecreatedFeedReplayAudit {
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+            .assert_selected_tables_match();
+        self.update_source_customer_email(1, RECREATED_FEED_REPLAY_EMAIL);
+        self.wait_for_helper_shadow_customers(&format!(
+            "1:{RECREATED_FEED_REPLAY_EMAIL},2:bob@example.com"
+        ));
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+            .assert_selected_tables_match();
+        let original_changefeed_job_id = self
+            .inner
+            .wait_for_gateway_source_job_ids_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 1)
+            .into_iter()
+            .next()
+            .expect("original changefeed delivery should expose a source job id");
+        self.inner.cancel_changefeed_job(&original_changefeed_job_id);
+        let recreated_changefeed_job_id = self
+            .inner
+            .create_additional_changefeed_from_current_cursor(ChangefeedInitialScanMode::Yes);
+        let delivery_attempt_count = self
+            .inner
+            .wait_for_gateway_attempt_count_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 2);
+        let observed_source_job_ids = self
+            .inner
+            .wait_for_gateway_source_job_ids_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 2);
+        let expected_helper_snapshot = format!("1:{RECREATED_FEED_REPLAY_EMAIL},2:bob@example.com");
+        self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
+        self.assert_helper_shadow_customers(2);
+        let verify_correctness = self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        self.assert_helper_shadow_customers_stable(
+            &expected_helper_snapshot,
+            Duration::from_secs(3),
+        );
+        let progress = self.mapping_progress_audit();
+        let outcome = if delivery_attempt_count >= 2
+            && observed_source_job_ids.contains(&original_changefeed_job_id)
+            && observed_source_job_ids.contains(&recreated_changefeed_job_id)
+            && progress.cleanly_reconciled()
+            && verify_correctness.selected_tables_match()
+        {
+            ScenarioOutcome::Harmless
+        } else {
+            ScenarioOutcome::Defective
+        };
+
+        RecreatedFeedReplayAudit::new(
+            outcome,
+            original_changefeed_job_id,
+            recreated_changefeed_job_id,
+            observed_source_job_ids,
+            delivery_attempt_count,
+            expected_helper_snapshot,
+            self.inner.helper_table_row_count("public.customers"),
+            progress,
+            verify_correctness,
+        )
+    }
+
+    pub fn audit_customer_schema_mismatch(
+        &self,
+        verify_image: &VerifyImageHarness,
+    ) -> SchemaMismatchAudit {
+        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+            .assert_selected_tables_match();
+        let baseline = self.customer_tracking_progress();
+        self.introduce_customer_email_schema_mismatch();
+        self.update_source_customer_email(1, SCHEMA_MISMATCH_EMAIL);
+        self.inner.wait_for_gateway_forwarded_status_sequence_for_request_body(
+            SCHEMA_MISMATCH_EMAIL,
+            &[reqwest::StatusCode::OK],
+        );
+        let expected_helper_snapshot = format!("1:{SCHEMA_MISMATCH_EMAIL},2:bob@example.com");
+        self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
+        let verify_correctness =
+            self.wait_for_selected_tables_to_mismatch_via_verify_image(verify_image);
+        let failure_progress = self.wait_for_customer_tracking_progress(
+            "schema mismatch should leave the new watermark received, the last good reconcile checkpoint intact, and a persisted error for operators",
+            |progress| {
+                progress
+                    .stream
+                    .received_has_advanced_since(&baseline.stream)
+                    && progress.stream.latest_reconciled_resolved_watermark
+                        == baseline.stream.latest_reconciled_resolved_watermark
+                    && progress.table.last_successful_sync_watermark
+                        == baseline.table.last_successful_sync_watermark
+                    && progress.table.last_error.is_some()
+            },
+        );
+        self.inner.assert_gateway_attempt_count_stable_for_request_body(
+            SCHEMA_MISMATCH_EMAIL,
+            1,
+            Duration::from_secs(3),
+        );
+        self.assert_runner_alive();
+        let progress = mapping_progress_audit_from(&failure_progress);
+        let outcome = if verify_correctness.selected_tables_mismatch()
+            && progress.last_error().is_some()
+            && failure_progress
+                .stream
+                .received_has_advanced_since(&baseline.stream)
+            && failure_progress.stream.latest_reconciled_resolved_watermark
+                == baseline.stream.latest_reconciled_resolved_watermark
+        {
+            ScenarioOutcome::BoundedOperatorAction
+        } else {
+            ScenarioOutcome::Defective
+        };
+
+        SchemaMismatchAudit::new(
+            outcome,
+            self.inner
+                .wait_for_gateway_attempt_count_for_request_body(SCHEMA_MISMATCH_EMAIL, 1),
+            expected_helper_snapshot,
+            self.inner.helper_table_row_count("public.customers"),
+            progress,
+            failure_progress
+                .stream
+                .received_has_advanced_since(&baseline.stream),
+            failure_progress.stream.latest_reconciled_resolved_watermark
+                == baseline.stream.latest_reconciled_resolved_watermark,
+            true,
+            self.inner.runner_stderr_snapshot(),
+            verify_correctness,
+        )
+    }
+
     pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
         self.inner.post_setup_source_audit()
     }
@@ -412,6 +595,18 @@ impl DefaultBootstrapHarness {
         )
     }
 
+    fn introduce_customer_email_schema_mismatch(&self) {
+        self.inner.query_destination(
+            "ALTER TABLE public.customers
+             ALTER COLUMN email TYPE bigint
+             USING 0;",
+        );
+    }
+
+    fn mapping_progress_audit(&self) -> MappingProgressAudit {
+        mapping_progress_audit_from(&self.customer_tracking_progress())
+    }
+
     fn build_inner(
         reconcile_interval_secs: u64,
         webhook_sink_mode: WebhookSinkMode,
@@ -432,4 +627,13 @@ impl DefaultBootstrapHarness {
             DestinationRuntimeMode::HostProcess,
         )
     }
+}
+
+fn mapping_progress_audit_from(progress: &MappingTrackingProgress) -> MappingProgressAudit {
+    MappingProgressAudit::new(
+        progress.stream.latest_received_resolved_watermark.clone(),
+        progress.stream.latest_reconciled_resolved_watermark.clone(),
+        progress.table.last_successful_sync_watermark.clone(),
+        progress.table.last_error.clone(),
+    )
 }

@@ -7,10 +7,12 @@ use std::{
     time::{Instant, SystemTime},
 };
 
+use operator_log::LogEvent;
 use sqlx::{Connection, PgConnection};
 use tokio::task::JoinSet;
 
 use crate::{
+    RuntimeEventSink,
     error::RunnerReconcileRuntimeError,
     runtime_plan::{MappingRuntimePlan, RunnerRuntimePlan},
     tracking_state::{
@@ -20,6 +22,7 @@ use crate::{
 
 pub(crate) async fn serve(
     runtime: Arc<RunnerRuntimePlan>,
+    emit_event: RuntimeEventSink,
 ) -> Result<(), RunnerReconcileRuntimeError> {
     let mut workers = JoinSet::new();
 
@@ -27,7 +30,8 @@ pub(crate) async fn serve(
         for mapping in destination_group.mappings().iter().cloned() {
             let interval = runtime.reconcile_interval();
             let runtime = runtime.clone();
-            workers.spawn(async move { run_mapping_loop(runtime, mapping, interval).await });
+            let emit_event = emit_event.clone();
+            workers.spawn(async move { run_mapping_loop(runtime, mapping, interval, emit_event).await });
         }
     }
 
@@ -42,12 +46,13 @@ async fn run_mapping_loop(
     runtime: Arc<RunnerRuntimePlan>,
     mapping: MappingRuntimePlan,
     interval: std::time::Duration,
+    emit_event: RuntimeEventSink,
 ) -> Result<(), RunnerReconcileRuntimeError> {
     let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
 
     loop {
         ticker.tick().await;
-        let _pass_outcome = run_reconcile_pass(runtime.as_ref(), &mapping).await?;
+        let _pass_outcome = run_reconcile_pass(runtime.as_ref(), &mapping, emit_event.as_ref()).await?;
     }
 }
 
@@ -59,6 +64,7 @@ enum ReconcilePassOutcome {
 async fn run_reconcile_pass(
     runtime: &RunnerRuntimePlan,
     mapping: &MappingRuntimePlan,
+    emit_event: &(dyn Fn(LogEvent<'static>) + Send + Sync),
 ) -> Result<ReconcilePassOutcome, RunnerReconcileRuntimeError> {
     let endpoint = mapping.destination().endpoint_label();
     let database = mapping.destination().database().to_owned();
@@ -122,6 +128,7 @@ async fn run_reconcile_pass(
                 ),
             )
             .await?;
+            emit_event(failure.operator_event(mapping.mapping_id(), &database));
             runtime.metrics().record_reconcile_apply_failure(
                 mapping,
                 failure.table(),
@@ -235,5 +242,24 @@ impl ReconcileApplyFailure {
             Self::MissingPrimaryKey { .. } => "primary-key metadata is missing".to_owned(),
             Self::Apply { source, .. } => source.clone(),
         }
+    }
+
+    fn operator_event(&self, mapping_id: &str, database: &str) -> LogEvent<'static> {
+        let phase = self.phase();
+        let table = self.table().to_owned();
+        let error_detail = self.error_detail();
+
+        LogEvent::error(
+            "runner",
+            "reconcile.apply_failed",
+            format!(
+                "failed to apply reconcile {phase} for mapping `{mapping_id}` in `{database}` real table `{table}`: {error_detail}"
+            ),
+        )
+        .with_field("mapping_id", mapping_id)
+        .with_field("database", database)
+        .with_field("table", &table)
+        .with_field("phase", phase.to_string())
+        .with_field("error", &error_detail)
     }
 }
