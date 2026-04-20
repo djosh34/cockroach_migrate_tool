@@ -13,10 +13,12 @@ permissions:
   contents: read
 
 env:
-  REGISTRY: ghcr.io
-  RUNNER_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-runner
-  SETUP_SQL_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-setup-sql
-  VERIFY_IMAGE_REPOSITORY: ${{ github.repository_owner }}/cockroach-migrate-verify
+  GHCR_REGISTRY: ghcr.io
+  QUAY_REGISTRY: quay.io
+  QUAY_NAMESPACE: ${{ github.repository_owner }}
+  RUNNER_IMAGE_REPOSITORY: cockroach-migrate-runner
+  SETUP_SQL_IMAGE_REPOSITORY: cockroach-migrate-setup-sql
+  VERIFY_IMAGE_REPOSITORY: cockroach-migrate-verify
 
 jobs:
   validate-fast:
@@ -172,7 +174,6 @@ jobs:
       PUBLISHED_IMAGE_REF_FILE: ${{ github.workspace }}/published-image-refs/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.env
     permissions:
       contents: read
-      packages: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -222,26 +223,29 @@ jobs:
               ;;
           esac
           test "${expected_platform}" = "${{ matrix.platform.platform }}"
-      - name: Mask derived publish credentials
+      - name: Mask derived Quay publish credentials
         env:
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
+          QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
         run: |
           set -euo pipefail
-          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${REGISTRY_PASSWORD}" | base64 -w0)"
-          echo "::add-mask::${derived_registry_auth}"
-          printf 'derived registry auth (masked): %s\n' "${derived_registry_auth}"
-      - name: Login to registry
+          quay_basic_auth="$(printf '%s' "${QUAY_ROBOT_USERNAME}:${QUAY_ROBOT_PASSWORD}" | base64 -w0)"
+          echo "::add-mask::${quay_basic_auth}"
+          printf 'Quay publish auth (masked): %s\n' "${quay_basic_auth}"
+      - name: Login to Quay
         env:
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
+          QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${{ env.REGISTRY }}" --username "${{ github.actor }}" --password-stdin
+          printf '%s' "${QUAY_ROBOT_PASSWORD}" | docker login "${{ env.QUAY_REGISTRY }}" --username "${QUAY_ROBOT_USERNAME}" --password-stdin
       - name: Publish image
         run: |
           set -euo pipefail
           image_repository="$(printenv "${{ matrix.image.repository_env }}")"
           test -n "${image_repository}"
-          final_image_ref="${{ env.REGISTRY }}/${image_repository}:${{ github.sha }}"
+          quay_repository="${{ env.QUAY_NAMESPACE }}/${image_repository}"
+          final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
           platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
           docker buildx build \
             --progress plain \
@@ -255,7 +259,9 @@ jobs:
           mkdir -p "$(dirname "${PUBLISHED_IMAGE_REF_FILE}")"
           {
             printf 'image_id=%s\n' "${{ matrix.image.image_id }}"
+            printf 'image_repository=%s\n' "${image_repository}"
             printf 'manifest_key=%s\n' "${{ matrix.image.manifest_key }}"
+            printf 'quay_repository=%s\n' "${quay_repository}"
             printf 'final_image_ref=%s\n' "${final_image_ref}"
             printf 'platform_image_ref=%s\n' "${platform_image_ref}"
             printf 'platform=%s\n' "${{ matrix.platform.platform }}"
@@ -268,8 +274,81 @@ jobs:
           path: ${{ env.PUBLISHED_IMAGE_REF_FILE }}
           if-no-files-found: error
 
-  publish-manifest:
+  quay-security-gate:
     needs: publish-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install Quay scan dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes jq
+      - name: Download published image refs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: published-image-*
+          path: ${{ runner.temp }}/published-image-refs
+          merge-multiple: true
+      - name: Wait for Quay security gate
+        env:
+          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
+          QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          refs_dir="${{ runner.temp }}/published-image-refs"
+          test -d "${refs_dir}"
+          netrc_file="$(mktemp)"
+          trap 'rm -f "${netrc_file}"' EXIT
+          chmod 600 "${netrc_file}"
+          cat > "${netrc_file}" <<EOF
+          machine ${{ env.QUAY_REGISTRY }}
+            login ${QUAY_ROBOT_USERNAME}
+            password ${QUAY_ROBOT_PASSWORD}
+          EOF
+          while IFS= read -r env_file; do
+            unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
+            . "${env_file}"
+            : "${quay_repository:?missing quay_repository}"
+            : "${platform_image_ref:?missing platform_image_ref}"
+            tag_name="${platform_image_ref##*:}"
+            tag_response="$(curl --fail --silent --show-error --netrc-file "${netrc_file}" "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/tag/?specificTag=${tag_name}")"
+            manifest_digest="$(jq -r '.tags[0].manifest_digest // empty' <<< "${tag_response}")"
+            is_manifest_list="$(jq -r '.tags[0].is_manifest_list // false' <<< "${tag_response}")"
+            test -n "${manifest_digest}"
+            test "${is_manifest_list}" = "false"
+            printf 'waiting for Quay scan on %s (%s)\n' "${platform_image_ref}" "${manifest_digest}"
+            scan_status=""
+            for attempt in $(seq 1 60); do
+              security_response="$(curl --fail --silent --show-error --netrc-file "${netrc_file}" "https://${{ env.QUAY_REGISTRY }}/api/v1/repository/${quay_repository}/manifest/${manifest_digest}/security?vulnerabilities=true")"
+              scan_status="$(jq -r '.status // empty' <<< "${security_response}")"
+              case "${scan_status}" in
+                scanned)
+                  vulnerability_count="$(jq '[.. | .Vulnerabilities? | arrays | .[]] | length' <<< "${security_response}")"
+                  if [[ "${vulnerability_count}" != "0" ]]; then
+                    printf 'Quay vulnerability gate failed for %s: %s findings\n' "${platform_image_ref}" "${vulnerability_count}" >&2
+                    jq '{status, findings: [.. | .Vulnerabilities? | arrays | .[] | {Name, Severity, FixedBy}]}' <<< "${security_response}" >&2
+                    exit 1
+                  fi
+                  printf 'Quay scan passed for %s with zero findings\n' "${platform_image_ref}"
+                  break
+                  ;;
+                queued|scanning|in_progress)
+                  printf 'Quay scan still pending for %s (attempt %s, status=%s)\n' "${platform_image_ref}" "${attempt}" "${scan_status}"
+                  sleep 10
+                  ;;
+                *)
+                  printf 'Quay scan returned unexpected status for %s: %s\n' "${platform_image_ref}" "${scan_status:-<empty>}" >&2
+                  jq '.' <<< "${security_response}" >&2
+                  exit 1
+                  ;;
+              esac
+            done
+            test "${scan_status}" = "scanned"
+          done < <(find "${refs_dir}" -type f -name '*-image-ref.env' -print | sort)
+
+  publish-manifest:
+    needs: quay-security-gate
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     env:
@@ -289,6 +368,8 @@ jobs:
       - name: Install publish dependencies
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
           BUILDX_VERSION=v0.30.1
           case "${{ runner.arch }}" in
             X64)
@@ -307,20 +388,27 @@ jobs:
             -o "${HOME}/.docker/cli-plugins/docker-buildx"
           chmod +x "${HOME}/.docker/cli-plugins/docker-buildx"
           docker buildx version
-      - name: Mask derived publish credentials
+      - name: Mask derived GHCR publish credentials
         env:
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${REGISTRY_PASSWORD}" | base64 -w0)"
+          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${GHCR_PASSWORD}" | base64 -w0)"
           echo "::add-mask::${derived_registry_auth}"
-          printf 'derived registry auth (masked): %s\n' "${derived_registry_auth}"
-      - name: Login to registry
+          printf 'GHCR publish auth (masked): %s\n' "${derived_registry_auth}"
+      - name: Login to Quay
         env:
-          REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
+          QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "${REGISTRY_PASSWORD}" | docker login "${{ env.REGISTRY }}" --username "${{ github.actor }}" --password-stdin
+          printf '%s' "${QUAY_ROBOT_PASSWORD}" | docker login "${{ env.QUAY_REGISTRY }}" --username "${QUAY_ROBOT_USERNAME}" --password-stdin
+      - name: Login to GHCR
+        env:
+          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GHCR_PASSWORD}" | docker login "${{ env.GHCR_REGISTRY }}" --username "${{ github.actor }}" --password-stdin
       - name: Download published image refs
         uses: actions/download-artifact@v4
         with:
@@ -334,14 +422,16 @@ jobs:
           refs_dir="${{ runner.temp }}/published-image-refs"
           test -d "${refs_dir}"
           declare -A manifest_keys=()
+          declare -A image_repositories=()
           declare -A final_refs=()
           declare -A amd64_refs=()
           declare -A arm64_refs=()
           image_ids=()
           while IFS= read -r env_file; do
-            unset image_id manifest_key final_image_ref platform_image_ref platform platform_tag_suffix
+            unset image_id image_repository manifest_key quay_repository final_image_ref platform_image_ref platform platform_tag_suffix
             . "${env_file}"
             : "${image_id:?missing image_id}"
+            : "${image_repository:?missing image_repository}"
             : "${manifest_key:?missing manifest_key}"
             : "${final_image_ref:?missing final_image_ref}"
             : "${platform_image_ref:?missing platform_image_ref}"
@@ -351,6 +441,7 @@ jobs:
               image_ids+=("${safe_image_id}")
             fi
             manifest_keys["${safe_image_id}"]="${manifest_key}"
+            image_repositories["${safe_image_id}"]="${image_repository}"
             final_refs["${safe_image_id}"]="${final_image_ref}"
             case "${platform}" in
               linux/amd64)
@@ -370,16 +461,25 @@ jobs:
           output_lines=()
           for safe_image_id in "${image_ids[@]}"; do
             manifest_key="${manifest_keys[${safe_image_id}]:?missing manifest key}"
+            image_repository="${image_repositories[${safe_image_id}]:?missing image repository}"
             final_image_ref="${final_refs[${safe_image_id}]:?missing final image ref}"
             amd64_ref="${amd64_refs[${safe_image_id}]:?missing amd64 ref}"
             arm64_ref="${arm64_refs[${safe_image_id}]:?missing arm64 ref}"
+            ghcr_final_image_ref="${{ env.GHCR_REGISTRY }}/${image_repository}:${{ github.sha }}"
             docker buildx imagetools create \
               --tag "${final_image_ref}" \
               "${amd64_ref}" \
               "${arm64_ref}"
             docker buildx imagetools inspect "${final_image_ref}"
-            json_entries+=("  \"${manifest_key}\": \"${final_image_ref}\"")
-            output_lines+=("${manifest_key}=${final_image_ref}")
+            skopeo copy \
+              --all \
+              --src-authfile "${HOME}/.docker/config.json" \
+              --dest-authfile "${HOME}/.docker/config.json" \
+              "docker://${final_image_ref}" \
+              "docker://${ghcr_final_image_ref}"
+            skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${ghcr_final_image_ref}" >/dev/null
+            json_entries+=("  \"${manifest_key}\": \"${ghcr_final_image_ref}\"")
+            output_lines+=("${manifest_key}=${ghcr_final_image_ref}")
           done
           {
             printf '{\n'
