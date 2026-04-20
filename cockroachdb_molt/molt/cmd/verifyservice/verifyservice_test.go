@@ -54,27 +54,19 @@ func writeRuntimeConfig(t *testing.T) string {
 
 	config := fmt.Sprintf(`listener:
   bind_addr: 127.0.0.1:0
-  transport:
-    mode: https
   tls:
     cert_path: %s
     key_path: %s
-    client_auth:
-      mode: mtls
-      client_ca_path: %s
+    client_ca_path: %s
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb
-    tls:
-      mode: verify-full
-      ca_cert_path: %s
-      client_cert_path: %s
-      client_key_path: %s
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    ca_cert_path: %s
+    client_cert_path: %s
+    client_key_path: %s
   destination:
-    url: postgresql://verify_target@crdb.internal:26257/appdb
-    tls:
-      mode: verify-ca
-      ca_cert_path: %s
+    url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=verify-ca
+    ca_cert_path: %s
 `,
 		serverCertPath,
 		serverKeyPath,
@@ -129,10 +121,9 @@ func TestValidateConfig(t *testing.T) {
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, ""+
 		"verify-service config is valid\n"+
-		"listener transport: https\n"+
-		"listener client auth: mtls\n"+
-		"source tls mode: verify-full\n"+
-		"destination tls mode: verify-ca\n",
+		"listener mode: https+mtls\n"+
+		"source sslmode: verify-full\n"+
+		"destination sslmode: verify-ca\n",
 		stdout.String(),
 	)
 	require.Empty(t, stderr.String())
@@ -155,10 +146,9 @@ func TestValidateConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 	require.NoError(t, err, stderr.String())
 	require.Equal(t, ""+
 		"verify-service config is valid\n"+
-		"listener transport: https\n"+
-		"listener client auth: mtls\n"+
-		"source tls mode: verify-full\n"+
-		"destination tls mode: verify-ca\n",
+		"listener mode: https+mtls\n"+
+		"source sslmode: verify-full\n"+
+		"destination sslmode: verify-ca\n",
 		stdout.String(),
 	)
 	require.Empty(t, stderr.String())
@@ -189,6 +179,9 @@ func TestValidateConfigSupportsJSONOperatorLogs(t *testing.T) {
 	}
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "config.validated", payload["event"])
+	require.Equal(t, "https+mtls", payload["listener_mode"])
+	require.Equal(t, "verify-full", payload["source_sslmode"])
+	require.Equal(t, "verify-ca", payload["destination_sslmode"])
 }
 
 func TestValidateConfigReportsInvalidConfigAsJSONError(t *testing.T) {
@@ -203,7 +196,7 @@ func TestValidateConfigReportsInvalidConfigAsJSONError(t *testing.T) {
 		"--log-format",
 		"json",
 		"--config",
-		filepath.Join("..", "..", "verifyservice", "testdata", "invalid-http-listener.yml"),
+		filepath.Join("..", "..", "verifyservice", "testdata", "invalid-https-without-server-cert.yml"),
 	})
 
 	err := cmd.Execute()
@@ -217,7 +210,7 @@ func TestValidateConfigReportsInvalidConfigAsJSONError(t *testing.T) {
 	require.Equal(t, "error", payload["level"])
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "command.failed", payload["event"])
-	require.Contains(t, payload["message"].(string), "listener.transport.mode")
+	require.Contains(t, payload["message"].(string), "listener.tls.cert_path")
 }
 
 func TestRunSupportsJSONOperatorLogsForRuntimeStartup(t *testing.T) {
@@ -285,7 +278,7 @@ func TestRunReportsInvalidConfigAsJSONError(t *testing.T) {
 		"--log-format",
 		"json",
 		"--config",
-		filepath.Join("..", "..", "verifyservice", "testdata", "invalid-http-listener.yml"),
+		filepath.Join("..", "..", "verifyservice", "testdata", "invalid-https-without-server-cert.yml"),
 	})
 
 	err := cmd.Execute()
@@ -299,7 +292,7 @@ func TestRunReportsInvalidConfigAsJSONError(t *testing.T) {
 	require.Equal(t, "error", payload["level"])
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "command.failed", payload["event"])
-	require.Contains(t, payload["message"].(string), "listener.transport.mode")
+	require.Contains(t, payload["message"].(string), "listener.tls.cert_path")
 }
 
 func TestValidateConfigHelpStaysConfigOnly(t *testing.T) {

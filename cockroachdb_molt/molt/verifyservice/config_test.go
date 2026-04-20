@@ -7,22 +7,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadConfigRequiresExplicitVerifyModes(t *testing.T) {
-	t.Run("missing source mode", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-missing-source-mode.yml"))
-		require.ErrorContains(t, err, "verify.source.tls.mode must be one of: verify-full, verify-ca")
+func TestLoadConfigRejectsRemovedNestedTLSKnobs(t *testing.T) {
+	t.Run("listener transport block is rejected", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-obsolete-listener-transport.yml"))
+		require.ErrorContains(t, err, "field transport not found in type verifyservice.ListenerConfig")
 	})
 
-	t.Run("invalid destination mode", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-destination-mode.yml"))
-		require.ErrorContains(t, err, "verify.destination.tls.mode must be one of: verify-full, verify-ca")
+	t.Run("database tls block is rejected", func(t *testing.T) {
+		_, err := LoadConfig(filepath.Join("testdata", "invalid-obsolete-database-tls.yml"))
+		require.ErrorContains(t, err, "field tls not found in type verifyservice.DatabaseConfig")
 	})
 }
 
 func TestLoadConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 	cfg, err := LoadConfig(filepath.Join("testdata", "valid-passwordless-client-cert.yml"))
 	require.NoError(t, err)
-	require.False(t, cfg.Verify.RawTableOutput.Enabled)
+	require.False(t, cfg.Verify.RawTableOutput)
 
 	sourceConnStr, err := cfg.Verify.Source.ConnectionString()
 	require.NoError(t, err)
@@ -36,19 +36,19 @@ func TestLoadConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 func TestLoadConfigRejectsUnpairedClientCertificateMaterial(t *testing.T) {
 	t.Run("client cert without key", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-source-client-cert-without-key.yml"))
-		require.ErrorContains(t, err, "verify.source.tls.client_cert_path and verify.source.tls.client_key_path must both be set")
+		require.ErrorContains(t, err, "verify.source.client_cert_path and verify.source.client_key_path must both be set")
 	})
 
 	t.Run("client key without cert", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-destination-client-key-without-cert.yml"))
-		require.ErrorContains(t, err, "verify.destination.tls.client_cert_path and verify.destination.tls.client_key_path must both be set")
+		require.ErrorContains(t, err, "verify.destination.client_cert_path and verify.destination.client_key_path must both be set")
 	})
 }
 
 func TestConfigValidateDefaultsRawTableOutputToDisabled(t *testing.T) {
 	cfg, err := LoadConfig(filepath.Join("testdata", "valid-passwordless-client-cert.yml"))
 	require.NoError(t, err)
-	require.False(t, cfg.Verify.RawTableOutput.Enabled)
+	require.False(t, cfg.Verify.RawTableOutput)
 }
 
 func TestLoadConfigRejectsNonPostgresDatabaseSchemes(t *testing.T) {
@@ -63,29 +63,32 @@ func TestLoadConfigRejectsNonPostgresDatabaseSchemes(t *testing.T) {
 	})
 }
 
-func TestLoadConfigValidatesListenerProtectionModes(t *testing.T) {
-	t.Run("http listener is rejected", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-http-listener.yml"))
-		require.ErrorContains(t, err, "listener.transport.mode must be https")
+func TestLoadConfigSupportsOperatorChosenListenerModes(t *testing.T) {
+	t.Run("http listener is accepted", func(t *testing.T) {
+		cfg, err := LoadConfig(filepath.Join("testdata", "valid-http-listener.yml"))
+		require.NoError(t, err)
+		require.Equal(t, "0.0.0.0:8080", cfg.Listener.BindAddr)
+		require.Equal(t, "http", cfg.Listener.Mode())
+	})
+
+	t.Run("https listener without mtls is accepted", func(t *testing.T) {
+		cfg, err := LoadConfig(filepath.Join("testdata", "valid-https-server-tls.yml"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Listener.TLS)
+		require.Equal(t, "/config/certs/server.crt", cfg.Listener.TLS.CertPath)
+		require.Equal(t, "https", cfg.Listener.Mode())
+	})
+
+	t.Run("https listener with mtls is accepted", func(t *testing.T) {
+		cfg, err := LoadConfig(filepath.Join("testdata", "valid-https-mtls.yml"))
+		require.NoError(t, err)
+		require.NotNil(t, cfg.Listener.TLS)
+		require.Equal(t, "/config/certs/client-ca.crt", cfg.Listener.TLS.ClientCAPath)
+		require.Equal(t, "https+mtls", cfg.Listener.Mode())
 	})
 
 	t.Run("https requires cert and key", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-https-without-server-cert.yml"))
-		require.ErrorContains(t, err, "listener.tls.cert_path and listener.tls.key_path must both be set for https")
-	})
-
-	t.Run("https listener requires mtls", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-https-without-client-auth.yml"))
-		require.ErrorContains(t, err, "listener.tls.client_auth.mode must be mtls")
-	})
-
-	t.Run("http listener is rejected even with mtls configured", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-http-mtls.yml"))
-		require.ErrorContains(t, err, "listener.transport.mode must be https")
-	})
-
-	t.Run("mtls requires client ca", func(t *testing.T) {
-		_, err := LoadConfig(filepath.Join("testdata", "invalid-mtls-without-client-ca.yml"))
-		require.ErrorContains(t, err, "listener.tls.client_auth.client_ca_path must be set when listener.tls.client_auth.mode is mtls")
+		require.ErrorContains(t, err, "listener.tls.cert_path and listener.tls.key_path must both be set when listener.tls is configured")
 	})
 }

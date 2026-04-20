@@ -137,3 +137,5 @@
 .ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md
 .ralph/tasks/story-26-hosted-workflow-failure-investigation/01-task-debug-hosted-github-workflow-failures-parallelize-image-builds-and-surface-quay-security-findings.md
 .ralph/tasks/bugs/bug-verify-image-arm64-has-quay-vulnerability-findings.md
+.ralph/tasks/story-21-github-workflows-image-publish/07-task-add-a-manual-image-retag-workflow-for-version-and-optional-latest.md
+.ralph/tasks/story-27-verify-operator-ux-reset/01-task-reset-verify-service-config-to-operator-chosen-security-and-remove-redundant-tls-knobs.md

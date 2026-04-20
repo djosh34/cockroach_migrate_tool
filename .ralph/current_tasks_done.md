@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 07:52:51 PM CEST 2026
+Generated: Mon Apr 20 08:31:19 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -993,5 +993,16 @@ Must use tdd skill to complete
 <blocked_by>.ralph/tasks/story-23-e2e-duplicate-cdc-and-schema-mismatch/01-task-audit-and-add-full-e2e-coverage-for-duplicate-cdc-recreation-and-schema-mismatch.md</blocked_by>
 
 <description>
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-27-verify-operator-ux-reset/01-task-reset-verify-service-config-to-operator-chosen-security-and-remove-redundant-tls-knobs.md`
+
+```
+## Task: Reset verify-service config to operator-chosen security and remove redundant TLS knobs <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
 ```
 

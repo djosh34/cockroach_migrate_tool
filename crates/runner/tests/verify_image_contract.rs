@@ -119,4 +119,21 @@ fn verify_image_validate_config_supports_json_operator_logs() {
         Some("config.validated"),
         "verify image json log must expose the validation success event",
     );
+    assert_eq!(
+        json_object.get("listener_mode").and_then(Value::as_str),
+        Some("https+mtls"),
+        "verify image json log must expose the effective listener mode",
+    );
+    assert_eq!(
+        json_object.get("source_sslmode").and_then(Value::as_str),
+        Some("verify-full"),
+        "verify image json log must expose the source database sslmode",
+    );
+    assert_eq!(
+        json_object
+            .get("destination_sslmode")
+            .and_then(Value::as_str),
+        Some("verify-ca"),
+        "verify image json log must expose the destination database sslmode",
+    );
 }

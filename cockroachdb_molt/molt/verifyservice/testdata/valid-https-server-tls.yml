@@ -1,7 +1,8 @@
 listener:
   bind_addr: 0.0.0.0:8443
   tls:
-    client_ca_path: /config/certs/client-ca.crt
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full

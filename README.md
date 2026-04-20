@@ -280,7 +280,7 @@ docker compose -f runner.compose.yml up runner
 
 ## Verify Quick Start
 
-Pull the published verify image and write the verify-service config inline. Create `config/certs/source-ca.crt`, `config/certs/source-client.crt`, `config/certs/source-client.key`, `config/certs/destination-ca.crt`, `config/certs/client-ca.crt`, `config/certs/server.crt`, and `config/certs/server.key`.
+Pull the published verify image and write the verify-service config inline. Choose the listener mode by config shape: omit `listener.tls` for HTTP, set `cert_path` and `key_path` for HTTPS, and add `client_ca_path` only when you want mTLS. The source and destination database URLs own `sslmode`; the YAML only carries the cert paths the runtime injects. Create the cert files that match your chosen mode.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -296,28 +296,22 @@ Example verify service config:
 # config/verify-service.yml
 listener:
   bind_addr: 0.0.0.0:8080
-  transport:
-    mode: https
   tls:
     cert_path: /config/certs/server.crt
     key_path: /config/certs/server.key
-    client_auth:
-      mode: mtls
-      client_ca_path: /config/certs/client-ca.crt
+    client_ca_path: /config/certs/client-ca.crt
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
-    tls:
-      mode: verify-full
-      ca_cert_path: /config/certs/source-ca.crt
-      client_cert_path: /config/certs/source-client.crt
-      client_key_path: /config/certs/source-client.key
+    ca_cert_path: /config/certs/source-ca.crt
+    client_cert_path: /config/certs/source-client.crt
+    client_key_path: /config/certs/source-client.key
   destination:
     url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
-    tls:
-      mode: verify-ca
-      ca_cert_path: /config/certs/destination-ca.crt
+    ca_cert_path: /config/certs/destination-ca.crt
 ```
+
+Use `listener.bind_addr` alone for HTTP, add `listener.tls.cert_path` plus `listener.tls.key_path` for HTTPS, and set `listener.tls.client_ca_path` when clients must present certificates.
 
 Start the verify API directly:
 

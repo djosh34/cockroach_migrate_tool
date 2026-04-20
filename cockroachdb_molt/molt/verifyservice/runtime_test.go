@@ -27,12 +27,9 @@ func TestServerTLSConfigLoadsServerCertificateAndEnforcesMTLS(t *testing.T) {
 	tlsFiles := writeListenerTLSFiles(t)
 
 	tlsConfig, err := (ListenerTLSConfig{
-		CertPath: tlsFiles.serverCertPath,
-		KeyPath:  tlsFiles.serverKeyPath,
-		ClientAuth: ListenerClientAuthConfig{
-			Mode:         ListenerClientAuthModeMTLS,
-			ClientCAPath: tlsFiles.clientCAPath,
-		},
+		CertPath:     tlsFiles.serverCertPath,
+		KeyPath:      tlsFiles.serverKeyPath,
+		ClientCAPath: tlsFiles.clientCAPath,
 	}).ServerTLSConfig()
 
 	require.NoError(t, err)
@@ -62,16 +59,10 @@ func TestRunServesHTTPSUsingPreloadedServerTLSConfig(t *testing.T) {
 		runErrCh <- Run(ctx, Config{
 			Listener: ListenerConfig{
 				BindAddr: bindAddr,
-				Transport: ListenerTransportConfig{
-					Mode: ListenerTransportModeHTTPS,
-				},
-				TLS: ListenerTLSConfig{
-					CertPath: tlsFiles.serverCertPath,
-					KeyPath:  tlsFiles.serverKeyPath,
-					ClientAuth: ListenerClientAuthConfig{
-						Mode:         ListenerClientAuthModeMTLS,
-						ClientCAPath: clientCAFIFOPath,
-					},
+				TLS: &ListenerTLSConfig{
+					CertPath:     tlsFiles.serverCertPath,
+					KeyPath:      tlsFiles.serverKeyPath,
+					ClientCAPath: clientCAFIFOPath,
 				},
 			},
 		}, RuntimeDependencies{
@@ -158,6 +149,123 @@ func TestRunServesHTTPSUsingPreloadedServerTLSConfig(t *testing.T) {
 	}
 
 	t.Fatal("expected runtime to serve metrics over mTLS")
+}
+
+func TestRunServesHTTPWhenListenerTLSIsOmitted(t *testing.T) {
+	bindAddr := reserveLocalAddress(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- Run(ctx, Config{
+			Listener: ListenerConfig{
+				BindAddr: bindAddr,
+			},
+		}, RuntimeDependencies{
+			Runner: noopRunner{},
+			Logger: zerolog.Nop(),
+		})
+	}()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-runErrCh:
+			require.NoError(t, err)
+			t.Fatal("runtime exited before serving HTTP")
+		default:
+		}
+
+		response, err := client.Get("http://" + bindAddr + "/metrics")
+		if err == nil {
+			defer func() {
+				_ = response.Body.Close()
+			}()
+			if response.StatusCode == http.StatusOK {
+				cancel()
+				select {
+				case err := <-runErrCh:
+					require.NoError(t, err)
+					return
+				case <-time.After(5 * time.Second):
+					t.Fatal("expected runtime to shut down")
+				}
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatal("expected runtime to serve metrics over HTTP")
+}
+
+func TestRunServesHTTPSWithoutRequiringClientCertificates(t *testing.T) {
+	tlsFiles := writeListenerTLSFiles(t)
+	bindAddr := reserveLocalAddress(t)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- Run(ctx, Config{
+			Listener: ListenerConfig{
+				BindAddr: bindAddr,
+				TLS: &ListenerTLSConfig{
+					CertPath: tlsFiles.serverCertPath,
+					KeyPath:  tlsFiles.serverKeyPath,
+				},
+			},
+		}, RuntimeDependencies{
+			Runner: noopRunner{},
+			Logger: zerolog.Nop(),
+		})
+	}()
+
+	rootCAs := x509.NewCertPool()
+	require.True(t, rootCAs.AppendCertsFromPEM(tlsFiles.clientCAPEM))
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+				RootCAs:    rootCAs,
+			},
+		},
+		Timeout: 2 * time.Second,
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case err := <-runErrCh:
+			require.NoError(t, err)
+			t.Fatal("runtime exited before serving HTTPS")
+		default:
+		}
+
+		response, err := client.Get("https://" + bindAddr + "/metrics")
+		if err == nil {
+			defer func() {
+				_ = response.Body.Close()
+			}()
+			if response.StatusCode == http.StatusOK {
+				cancel()
+				select {
+				case err := <-runErrCh:
+					require.NoError(t, err)
+					return
+				case <-time.After(5 * time.Second):
+					t.Fatal("expected runtime to shut down")
+				}
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	t.Fatal("expected runtime to serve metrics over HTTPS without client certificates")
 }
 
 type listenerTLSFiles struct {

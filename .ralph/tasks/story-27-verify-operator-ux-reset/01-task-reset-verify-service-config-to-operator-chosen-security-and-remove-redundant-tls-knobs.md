@@ -1,4 +1,4 @@
-## Task: Reset verify-service config to operator-chosen security and remove redundant TLS knobs <status>not_started</status> <passes>false</passes>
+## Task: Reset verify-service config to operator-chosen security and remove redundant TLS knobs <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -49,13 +49,15 @@ Relevant files and boundaries:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers config parsing and startup for plain HTTP, HTTPS without mTLS, and HTTPS with mTLS
-- [ ] The service does not reject startup solely because the operator chose HTTP or disabled mTLS
-- [ ] Source and destination TLS verification behavior has one source of truth each; duplicated `verify-full` / `verify-ca` configuration is removed
-- [ ] Needlessly nested config booleans such as inner `enabled` toggles are removed or flattened where a direct contract is clearer
-- [ ] CLI help, README examples, and fixture configs document the supported listener and DB TLS modes without implying fake requirements
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers config parsing and startup for plain HTTP, HTTPS without mTLS, and HTTPS with mTLS
+- [x] The service does not reject startup solely because the operator chose HTTP or disabled mTLS
+- [x] Source and destination TLS verification behavior has one source of truth each; duplicated `verify-full` / `verify-ca` configuration is removed
+- [x] Needlessly nested config booleans such as inner `enabled` toggles are removed or flattened where a direct contract is clearer
+- [x] CLI help, README examples, and fixture configs document the supported listener and DB TLS modes without implying fake requirements
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] This task did not impact ultra-long test selection, so `make test-long` was not run
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-27-verify-operator-ux-reset/01-task-reset-verify-service-config-to-operator-chosen-security-and-remove-redundant-tls-knobs_plans/2026-04-20-verify-service-security-contract-reset-plan.md</plan>

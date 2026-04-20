@@ -150,6 +150,19 @@ fn readme_keeps_inline_operator_files_copyable() {
             "README inline operator file `{relative_path}` should contain `{required_snippet}`",
         );
     }
+
+    let verify_config = readme.operator_file("config/verify-service.yml");
+    for forbidden_snippet in [
+        "transport:",
+        "client_auth:",
+        "mode: verify-full",
+        "mode: verify-ca",
+    ] {
+        assert!(
+            !verify_config.contains(forbidden_snippet),
+            "README verify-service config should remove obsolete nested TLS knobs like `{forbidden_snippet}`",
+        );
+    }
 }
 
 #[test]

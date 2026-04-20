@@ -1,21 +1,13 @@
 listener:
   bind_addr: 0.0.0.0:8443
-  transport:
-    mode: https
   tls:
     cert_path: /config/certs/server.crt
     key_path: /config/certs/server.key
-    client_auth:
-      mode: mtls
-      client_ca_path: /config/certs/client-ca.crt
+    client_ca_path: /config/certs/client-ca.crt
 verify:
   source:
-    url: postgres://verify_source@source.internal:26257/appdb
-    tls:
-      mode: verify-full
-      ca_cert_path: /config/certs/source-ca.crt
+    url: postgres://verify_source@source.internal:26257/appdb?sslmode=verify-full
+    ca_cert_path: /config/certs/source-ca.crt
   destination:
-    url: oracle://verify_target:secret@target.internal:1521/appdb
-    tls:
-      mode: verify-ca
-      ca_cert_path: /config/certs/destination-ca.crt
+    url: oracle://verify_target:secret@target.internal:1521/appdb?sslmode=verify-ca
+    ca_cert_path: /config/certs/destination-ca.crt

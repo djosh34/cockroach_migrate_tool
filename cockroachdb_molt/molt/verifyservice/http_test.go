@@ -668,9 +668,7 @@ func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
 	}
 	service := verifyservice.NewService(verifyservice.Config{
 		Verify: verifyservice.VerifyConfig{
-			RawTableOutput: verifyservice.RawTableOutputConfig{
-				Enabled: true,
-			},
+			RawTableOutput: true,
 		},
 	}, verifyservice.Dependencies{
 		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
@@ -733,9 +731,7 @@ func TestPostTablesRawReturnsDestinationRowsWhenEnabled(t *testing.T) {
 	}
 	service := verifyservice.NewService(verifyservice.Config{
 		Verify: verifyservice.VerifyConfig{
-			RawTableOutput: verifyservice.RawTableOutputConfig{
-				Enabled: true,
-			},
+			RawTableOutput: true,
 		},
 	}, verifyservice.Dependencies{
 		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
@@ -773,9 +769,7 @@ func TestPostTablesRawRejectsInvalidIdentifiers(t *testing.T) {
 
 	service := verifyservice.NewService(verifyservice.Config{
 		Verify: verifyservice.VerifyConfig{
-			RawTableOutput: verifyservice.RawTableOutputConfig{
-				Enabled: true,
-			},
+			RawTableOutput: true,
 		},
 	}, verifyservice.Dependencies{
 		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),

@@ -57,7 +57,7 @@ func NewService(cfg Config, deps Dependencies) *Service {
 	return &Service{
 		runner:          deps.Runner,
 		idGenerator:     deps.IDGenerator,
-		rawTableEnabled: cfg.Verify.RawTableOutput.Enabled,
+		rawTableEnabled: cfg.Verify.RawTableOutput,
 		rawTableReader:  deps.RawTableReader,
 	}
 }

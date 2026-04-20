@@ -110,27 +110,19 @@ impl VerifyRuntimeFiles {
             format!(
                 r#"listener:
   bind_addr: 0.0.0.0:8080
-  transport:
-    mode: https
   tls:
     cert_path: /work/config/certs/server.crt
     key_path: /work/config/certs/server.key
-    client_auth:
-      mode: mtls
-      client_ca_path: /work/config/certs/source-ca.crt
+    client_ca_path: /work/config/certs/source-ca.crt
 verify:
   source:
     url: {source_url}
-    tls:
-      mode: verify-full
-      ca_cert_path: /work/config/certs/source-ca.crt
-      client_cert_path: /work/config/certs/source-client.crt
-      client_key_path: /work/config/certs/source-client.key
+    ca_cert_path: /work/config/certs/source-ca.crt
+    client_cert_path: /work/config/certs/source-client.crt
+    client_key_path: /work/config/certs/source-client.key
   destination:
     url: {destination_url}
-    tls:
-      mode: verify-ca
-      ca_cert_path: /work/config/certs/destination-ca.crt
+    ca_cert_path: /work/config/certs/destination-ca.crt
 "#,
                 source_url = run.source_url,
                 destination_url = run.destination_url,

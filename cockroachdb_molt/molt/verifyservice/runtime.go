@@ -34,11 +34,6 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 		Addr:    cfg.Listener.BindAddr,
 		Handler: service.Handler(),
 	}
-	tlsConfig, err := cfg.Listener.TLS.ServerTLSConfig()
-	if err != nil {
-		return err
-	}
-	server.TLSConfig = tlsConfig
 
 	shutdownErrCh := make(chan error, 1)
 	go func() {
@@ -50,7 +45,17 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 		shutdownErrCh <- server.Shutdown(shutdownCtx)
 	}()
 
-	err = server.ListenAndServeTLS("", "")
+	var err error
+	if cfg.Listener.TLS == nil {
+		err = server.ListenAndServe()
+	} else {
+		tlsConfig, tlsErr := cfg.Listener.TLS.ServerTLSConfig()
+		if tlsErr != nil {
+			return tlsErr
+		}
+		server.TLSConfig = tlsConfig
+		err = server.ListenAndServeTLS("", "")
+	}
 	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
@@ -74,11 +79,11 @@ func (cfg ListenerTLSConfig) ServerTLSConfig() (*tls.Config, error) {
 	}
 	tlsConfig.Certificates = []tls.Certificate{serverCertificate}
 
-	if cfg.ClientAuth.Mode != ListenerClientAuthModeMTLS {
+	if cfg.ClientCAPath == "" {
 		return tlsConfig, nil
 	}
 
-	clientCAContents, err := os.ReadFile(cfg.ClientAuth.ClientCAPath)
+	clientCAContents, err := os.ReadFile(cfg.ClientCAPath)
 	if err != nil {
 		return nil, err
 	}

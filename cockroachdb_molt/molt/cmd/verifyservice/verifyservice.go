@@ -49,21 +49,19 @@ func validateConfigCommand() *cobra.Command {
 			if logFormat == logFormatJSON {
 				logger.Info().
 					Str("event", "config.validated").
-					Str("listener_transport", string(cfg.Listener.Transport.Mode)).
-					Str("listener_client_auth", string(cfg.Listener.TLS.ClientAuth.Mode)).
-					Str("source_tls_mode", string(cfg.Verify.Source.TLS.Mode)).
-					Str("destination_tls_mode", string(cfg.Verify.Destination.TLS.Mode)).
+					Str("listener_mode", cfg.Listener.Mode()).
+					Str("source_sslmode", summarizeSSLMode(cfg.Verify.Source.SSLMode())).
+					Str("destination_sslmode", summarizeSSLMode(cfg.Verify.Destination.SSLMode())).
 					Msg("verify-service config validated")
 				return nil
 			}
 
 			_, err = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"verify-service config is valid\nlistener transport: %s\nlistener client auth: %s\nsource tls mode: %s\ndestination tls mode: %s\n",
-				cfg.Listener.Transport.Mode,
-				cfg.Listener.TLS.ClientAuth.Mode,
-				cfg.Verify.Source.TLS.Mode,
-				cfg.Verify.Destination.TLS.Mode,
+				"verify-service config is valid\nlistener mode: %s\nsource sslmode: %s\ndestination sslmode: %s\n",
+				cfg.Listener.Mode(),
+				summarizeSSLMode(cfg.Verify.Source.SSLMode()),
+				summarizeSSLMode(cfg.Verify.Destination.SSLMode()),
 			)
 			return err
 		},
@@ -117,6 +115,13 @@ func runCommand() *cobra.Command {
 
 func registerLogFormatFlag(cmd *cobra.Command, target *string) {
 	cmd.Flags().StringVar(target, "log-format", logFormatText, "Operator log format: text or json.")
+}
+
+func summarizeSSLMode(mode string) string {
+	if mode == "" {
+		return "default"
+	}
+	return mode
 }
 
 func newCommandLogger(w io.Writer, logFormat string) (zerolog.Logger, error) {
