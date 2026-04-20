@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 10:30:22 CEST 2026
+Generated: Mon Apr 20 11:15:03 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -64,6 +64,17 @@ The verify HTTP audit found that completed jobs are never pruned from `Service.j
 
 <description>
 Detected on 2026-04-18 during a reporting audit by running `make test`.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/verify-compose-missing-client-ca-config-mount.md`
+
+```
+## Bug: Verify Compose novice-user contract omits the listener client CA mount <status>done</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+The documented registry-only novice-user flow for `verify.compose.yml` is broken.
 ```
 
 ==============

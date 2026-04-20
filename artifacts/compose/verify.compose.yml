@@ -14,6 +14,8 @@ services:
         target: /config/certs/source-client.key
       - source: verify-destination-ca
         target: /config/certs/destination-ca.crt
+      - source: verify-client-ca
+        target: /config/certs/client-ca.crt
       - source: verify-server-cert
         target: /config/certs/server.crt
       - source: verify-server-key
@@ -35,6 +37,8 @@ configs:
     file: ./config/certs/source-client.key
   verify-destination-ca:
     file: ./config/certs/destination-ca.crt
+  verify-client-ca:
+    file: ./config/certs/client-ca.crt
   verify-server-cert:
     file: ./config/certs/server.crt
   verify-server-key:

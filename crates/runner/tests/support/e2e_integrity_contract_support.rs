@@ -120,6 +120,7 @@ impl E2eIntegrityContractAudit {
     pub fn assert_only_approved_raw_docker_call_sites(&self) {
         let approved = [
             "tests/support/e2e_harness.rs",
+            "tests/support/novice_registry_only_harness.rs",
             "tests/support/runner_container_process.rs",
             "tests/support/runner_image_artifact_harness.rs",
             "tests/support/runner_image_harness.rs",

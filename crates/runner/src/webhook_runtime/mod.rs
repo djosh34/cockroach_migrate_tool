@@ -127,10 +127,12 @@ fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWe
         });
     };
 
-    ServerConfig::builder()
+    let mut config = ServerConfig::builder()
         .with_no_client_auth()
         .with_single_cert(certificates, private_key)
-        .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })
+        .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })?;
+    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    Ok(config)
 }
 
 async fn healthz() -> &'static str {
