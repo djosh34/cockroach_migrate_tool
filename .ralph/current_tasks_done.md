@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 03:29:11 AM CEST 2026
+Generated: Mon Apr 20 03:47:10 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 
@@ -767,6 +767,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Publish separate Docker Compose artifacts for the runner, verify, and SQL-emitter images using modern Compose config features <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/05-task-debug-real-github-image-build-failures-using-authenticated-workflow-api-log-access.md`
+
+```
+## Task: Debug real GitHub image-build failures using authenticated workflow API log access until the published runs succeed <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
