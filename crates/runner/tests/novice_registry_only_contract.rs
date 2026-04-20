@@ -103,6 +103,35 @@ fn novice_readme_and_compose_contracts_stay_registry_only() {
 }
 
 #[test]
+fn readme_public_image_quick_start_documents_secure_runner_and_verify_config_inline() {
+    let readme_path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../README.md");
+    let readme_text = fs::read_to_string(&readme_path).unwrap_or_else(|error| {
+        panic!(
+            "README should be readable at `{}`: {error}",
+            readme_path.display(),
+        )
+    });
+
+    for required_snippet in [
+        "# config/runner.yml",
+        "destination:\n      host: pg-a.example.internal",
+        "tls:\n        mode: verify-ca",
+        "ca_cert_path: /config/certs/destination-ca.crt",
+        "client_cert_path: /config/certs/destination-client.crt",
+        "client_key_path: /config/certs/destination-client.key",
+        "# config/verify-service.yml",
+        "client_ca_path: /config/certs/client-ca.crt",
+        "- source: verify-client-ca",
+        "file: ./config/certs/client-ca.crt",
+    ] {
+        assert!(
+            readme_text.contains(required_snippet),
+            "README public-image quick start must document secure runner and verify config inline; missing `{required_snippet}`",
+        );
+    }
+}
+
+#[test]
 fn setup_sql_compose_emits_sql_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 

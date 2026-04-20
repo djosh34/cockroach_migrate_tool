@@ -20,11 +20,11 @@ pub(crate) fn route_request(
 }
 
 fn route_resolved(mapping: &MappingRuntimePlan, resolved: ResolvedRequest) -> DispatchTarget {
-    DispatchTarget::Resolved(ResolvedTrackingTarget {
+    DispatchTarget::Resolved(Box::new(ResolvedTrackingTarget {
         mapping_id: mapping.mapping_id().to_owned(),
         destination: mapping.destination().clone(),
         resolved_watermark: resolved.resolved().to_owned(),
-    })
+    }))
 }
 
 fn route_row_batch(
@@ -82,5 +82,5 @@ fn route_row_batch(
 
 pub(crate) enum DispatchTarget {
     RowBatch(Box<RowMutationBatch>),
-    Resolved(ResolvedTrackingTarget),
+    Resolved(Box<ResolvedTrackingTarget>),
 }

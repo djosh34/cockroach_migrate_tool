@@ -1,6 +1,17 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 20 11:25:47 AM CEST 2026
+Generated: Mon Apr 20 11:44:47 AM CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-readme-public-image-quick-start-omits-secure-runner-and-verify-config.md`
+
+```
+## Bug: README public-image quick start omits secure runner and verify config <status>done</status> <passes>true</passes> <priority>ultra high</priority>
+
+<description>
+Story 24 execution is blocked because the README cannot currently serve as the only operator document for the secure public-image migration flow.
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-allows-warning-only-insecure-listener-modes.md`
 

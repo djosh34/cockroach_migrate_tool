@@ -123,7 +123,7 @@ export RUNNER_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-runner:${IMAGE_TA
 docker pull "${RUNNER_IMAGE}"
 ```
 
-2. Create a config directory, generate TLS material for local testing, and write one runner config file.
+2. Create a config directory, generate TLS material for the HTTPS listener, place the PostgreSQL CA and client certificate material under `config/certs/`, and write one runner config file.
 
 ```bash
 mkdir -p config/certs
@@ -156,6 +156,11 @@ mappings:
       database: app_a
       user: migration_user_a
       password: runner-secret-a
+      tls:
+        mode: verify-ca
+        ca_cert_path: /config/certs/destination-ca.crt
+        client_cert_path: /config/certs/destination-client.crt
+        client_key_path: /config/certs/destination-client.key
 ```
 
 3. Validate the mounted config directly through the image entrypoint:
@@ -234,7 +239,7 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 ## Runner Docker Compose
 
-Copy this file next to a `config/` directory containing `runner.yml`, `certs/server.crt`, and `certs/server.key`. This compose contract still starts from published images only; no repository checkout or local image build is required.
+Copy this file next to a `config/` directory containing `runner.yml`, `certs/server.crt`, `certs/server.key`, `certs/destination-ca.crt`, `certs/destination-client.crt`, and `certs/destination-client.key`. This compose contract still starts from published images only; no repository checkout or local image build is required.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -282,7 +287,36 @@ docker compose -f runner.compose.yml up runner
 
 ## Verify Docker Compose
 
-Copy this file next to a `config/` directory containing `verify-service.yml` and the certificate paths it references under `config/certs/`. This compose contract starts the published verify-service API directly; no repository checkout or local image build is required.
+Write the verify service config inline and place it next to the certificate material it references:
+
+```yaml
+# config/verify-service.yml
+listener:
+  bind_addr: 0.0.0.0:8080
+  transport:
+    mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_auth:
+      mode: mtls
+      client_ca_path: /config/certs/client-ca.crt
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      mode: verify-full
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
+  destination:
+    url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
+    tls:
+      mode: verify-ca
+      ca_cert_path: /config/certs/destination-ca.crt
+```
+
+Copy `verify.compose.yml` next to a `config/` directory containing `verify-service.yml`, `certs/source-ca.crt`, `certs/source-client.crt`, `certs/source-client.key`, `certs/destination-ca.crt`, `certs/client-ca.crt`, `certs/server.crt`, and `certs/server.key`. This compose contract starts the published verify-service API directly; no repository checkout or local image build is required.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -309,6 +343,8 @@ services:
         target: /config/certs/source-client.key
       - source: verify-destination-ca
         target: /config/certs/destination-ca.crt
+      - source: verify-client-ca
+        target: /config/certs/client-ca.crt
       - source: verify-server-cert
         target: /config/certs/server.crt
       - source: verify-server-key
@@ -330,6 +366,8 @@ configs:
     file: ./config/certs/source-client.key
   verify-destination-ca:
     file: ./config/certs/destination-ca.crt
+  verify-client-ca:
+    file: ./config/certs/client-ca.crt
   verify-server-cert:
     file: ./config/certs/server.crt
   verify-server-key:

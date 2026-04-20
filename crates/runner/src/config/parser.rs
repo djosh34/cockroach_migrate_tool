@@ -8,7 +8,7 @@ use serde::Deserialize;
 use crate::{
     config::{
         MappingConfig, PostgresTargetConfig, ReconcileConfig, RunnerConfig, SourceConfig,
-        TlsConfig, WebhookConfig,
+        PostgresTlsConfig, PostgresTlsMode, TlsConfig, WebhookConfig,
     },
     error::RunnerConfigError,
 };
@@ -149,6 +149,7 @@ struct RawPostgresTargetConfig {
     database: String,
     user: String,
     password: String,
+    tls: Option<RawPostgresTlsConfig>,
 }
 
 impl RawPostgresTargetConfig {
@@ -159,7 +160,79 @@ impl RawPostgresTargetConfig {
             database: validate_text(self.database, "mappings.destination.database")?,
             user: validate_text(self.user, "mappings.destination.user")?,
             password: validate_text(self.password, "mappings.destination.password")?,
+            tls: self.tls.map(RawPostgresTlsConfig::validate).transpose()?,
         })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPostgresTlsConfig {
+    mode: RawPostgresTlsMode,
+    ca_cert_path: Option<PathBuf>,
+    client_cert_path: Option<PathBuf>,
+    client_key_path: Option<PathBuf>,
+}
+
+impl RawPostgresTlsConfig {
+    fn validate(self) -> Result<PostgresTlsConfig, RunnerConfigError> {
+        let ca_cert_path = self
+            .ca_cert_path
+            .map(|path| validate_path(path, "mappings.destination.tls.ca_cert_path"))
+            .transpose()?;
+        let client_cert_path = self
+            .client_cert_path
+            .map(|path| validate_path(path, "mappings.destination.tls.client_cert_path"))
+            .transpose()?;
+        let client_key_path = self
+            .client_key_path
+            .map(|path| validate_path(path, "mappings.destination.tls.client_key_path"))
+            .transpose()?;
+
+        if self.mode.requires_ca_cert() && ca_cert_path.is_none() {
+            return Err(RunnerConfigError::InvalidField {
+                field: "mappings.destination.tls.ca_cert_path",
+                message: "must be set when mappings.destination.tls.mode verifies the server certificate",
+            });
+        }
+
+        if client_cert_path.is_some() != client_key_path.is_some() {
+            return Err(RunnerConfigError::InvalidField {
+                field: "mappings.destination.tls",
+                message: "client_cert_path and client_key_path must be set together",
+            });
+        }
+
+        Ok(PostgresTlsConfig {
+            mode: self.mode.into(),
+            ca_cert_path,
+            client_cert_path,
+            client_key_path,
+        })
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum RawPostgresTlsMode {
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+impl RawPostgresTlsMode {
+    fn requires_ca_cert(&self) -> bool {
+        matches!(self, Self::VerifyCa | Self::VerifyFull)
+    }
+}
+
+impl From<RawPostgresTlsMode> for PostgresTlsMode {
+    fn from(value: RawPostgresTlsMode) -> Self {
+        match value {
+            RawPostgresTlsMode::Require => PostgresTlsMode::Require,
+            RawPostgresTlsMode::VerifyCa => PostgresTlsMode::VerifyCa,
+            RawPostgresTlsMode::VerifyFull => PostgresTlsMode::VerifyFull,
+        }
     }
 }
 

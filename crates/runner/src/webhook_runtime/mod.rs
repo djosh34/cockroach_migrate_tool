@@ -172,7 +172,7 @@ async fn handle_ingest(
         Ok(routing::DispatchTarget::RowBatch(batch)) => {
             handle_row_batch(runtime.as_ref(), mapping, *batch).await
         }
-        Ok(routing::DispatchTarget::Resolved(target)) => handle_resolved(target).await,
+        Ok(routing::DispatchTarget::Resolved(target)) => handle_resolved(*target).await,
         Err(error) => Err(error.into()),
     };
     let outcome = match &result {

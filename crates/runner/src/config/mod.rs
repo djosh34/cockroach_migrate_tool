@@ -6,7 +6,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sqlx::postgres::PgConnectOptions;
+use sqlx::postgres::{PgConnectOptions, PgSslMode};
 
 use crate::error::RunnerConfigError;
 
@@ -105,16 +105,23 @@ pub(crate) struct PostgresTargetConfig {
     pub(super) database: String,
     pub(super) user: String,
     pub(super) password: String,
+    pub(super) tls: Option<PostgresTlsConfig>,
 }
 
 impl PostgresTargetConfig {
     pub(crate) fn connect_options(&self) -> PgConnectOptions {
-        PgConnectOptions::new()
+        let options = PgConnectOptions::new()
             .host(&self.host)
             .port(self.port)
             .database(&self.database)
             .username(&self.user)
-            .password(&self.password)
+            .password(&self.password);
+
+        if let Some(tls) = &self.tls {
+            tls.apply_to(options)
+        } else {
+            options
+        }
     }
 
     pub(crate) fn endpoint_label(&self) -> String {
@@ -127,6 +134,7 @@ impl PostgresTargetConfig {
             && self.database == other.database
             && self.user == other.user
             && self.password == other.password
+            && self.tls == other.tls
     }
 
     pub(crate) fn database(&self) -> &str {
@@ -139,6 +147,48 @@ impl PostgresTargetConfig {
 
     pub(crate) fn port(&self) -> u16 {
         self.port
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PostgresTlsConfig {
+    pub(super) mode: PostgresTlsMode,
+    pub(super) ca_cert_path: Option<PathBuf>,
+    pub(super) client_cert_path: Option<PathBuf>,
+    pub(super) client_key_path: Option<PathBuf>,
+}
+
+impl PostgresTlsConfig {
+    fn apply_to(&self, mut options: PgConnectOptions) -> PgConnectOptions {
+        options = options.ssl_mode(self.mode.into());
+        if let Some(path) = &self.ca_cert_path {
+            options = options.ssl_root_cert(path);
+        }
+        if let Some(path) = &self.client_cert_path {
+            options = options.ssl_client_cert(path);
+        }
+        if let Some(path) = &self.client_key_path {
+            options = options.ssl_client_key(path);
+        }
+
+        options
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PostgresTlsMode {
+    Require,
+    VerifyCa,
+    VerifyFull,
+}
+
+impl From<PostgresTlsMode> for PgSslMode {
+    fn from(value: PostgresTlsMode) -> Self {
+        match value {
+            PostgresTlsMode::Require => PgSslMode::Require,
+            PostgresTlsMode::VerifyCa => PgSslMode::VerifyCa,
+            PostgresTlsMode::VerifyFull => PgSslMode::VerifyFull,
+        }
     }
 }
 

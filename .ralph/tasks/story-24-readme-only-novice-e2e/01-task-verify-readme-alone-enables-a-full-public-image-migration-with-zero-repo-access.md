@@ -55,3 +55,5 @@ Decisions already made:
 - [ ] `make lint` — passes cleanly
 - [ ] If this task impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-24-readme-only-novice-e2e/01-task-verify-readme-alone-enables-a-full-public-image-migration-with-zero-repo-access_plans/2026-04-20-readme-only-public-image-migration-plan.md</plan>

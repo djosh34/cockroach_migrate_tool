@@ -312,6 +312,50 @@ mappings:
 }
 
 #[test]
+fn validate_config_accepts_a_secure_postgresql_destination_with_tls_material() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+      tls:
+        mode: verify-ca
+        ca_cert_path: certs/postgres/ca.crt
+        client_cert_path: certs/postgres/client.crt
+        client_key_path: certs/postgres/client.key
+"#,
+    )
+    .expect("secure postgres target config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"));
+}
+
+#[test]
 fn validate_config_rejects_legacy_verify_sections() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
