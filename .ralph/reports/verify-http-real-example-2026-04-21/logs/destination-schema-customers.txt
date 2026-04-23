@@ -1,0 +1,11 @@
+    table_name    |                         create_statement                         
+------------------+------------------------------------------------------------------
+ public.customers | CREATE TABLE public.customers (                                 +
+                  |         customer_id INT8 NOT NULL,                              +
+                  |         email STRING NOT NULL,                                  +
+                  |         display_name STRING NOT NULL,                           +
+                  |         CONSTRAINT customers_pkey PRIMARY KEY (customer_id ASC),+
+                  |         UNIQUE INDEX customers_email_key (email ASC)            +
+                  | ) WITH (schema_locked = true);
+(1 row)
+

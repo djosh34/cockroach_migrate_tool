@@ -1,0 +1,8 @@
+listener:
+  bind_addr: 0.0.0.0:18081
+verify:
+  raw_table_output: true
+  source:
+    url: postgresql://postgres@localhost:16432/database_that_does_not_exist?sslmode=disable
+  destination:
+    url: postgresql://root@localhost:26262/verify_report?sslmode=disable

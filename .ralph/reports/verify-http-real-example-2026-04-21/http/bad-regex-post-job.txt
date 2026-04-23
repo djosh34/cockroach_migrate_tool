@@ -1,0 +1,6 @@
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 201
+
+{"error":{"category":"request_validation","code":"invalid_filter","message":"request validation failed","details":[{"field":"include_schema","reason":"error parsing regexp: missing closing ]: `[`"}]}}

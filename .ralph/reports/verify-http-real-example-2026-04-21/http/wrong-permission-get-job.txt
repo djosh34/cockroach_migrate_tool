@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:35 GMT
+Content-Length: 421
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"verify_execution","code":"verify_failed","message":"verify execution failed: error splitting tables: cannot get minimum of public.customers: ERROR: permission denied for table customers (SQLSTATE 42501)","details":[{"reason":"error splitting tables: cannot get minimum of public.customers: ERROR: permission denied for table customers (SQLSTATE 42501)"}]}}

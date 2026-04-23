@@ -1,0 +1,14 @@
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 602
+
+# HELP cockroach_migration_tool_verify_active_jobs Current number of active verify jobs.
+# TYPE cockroach_migration_tool_verify_active_jobs gauge
+cockroach_migration_tool_verify_active_jobs 0
+# HELP cockroach_migration_tool_verify_jobs_total Current number of verify jobs by lifecycle status.
+# TYPE cockroach_migration_tool_verify_jobs_total gauge
+cockroach_migration_tool_verify_jobs_total{status="failed"} 0
+cockroach_migration_tool_verify_jobs_total{status="running"} 0
+cockroach_migration_tool_verify_jobs_total{status="stopped"} 0
+cockroach_migration_tool_verify_jobs_total{status="succeeded"} 0

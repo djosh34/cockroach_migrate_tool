@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:32 GMT
+Content-Length: 601
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: error connect: failed to connect to `user=postgres database=database_that_does_not_exist`: 127.0.0.1:16432 (localhost): server error: FATAL: database \"database_that_does_not_exist\" does not exist (SQLSTATE 3D000)","details":[{"reason":"error connect: failed to connect to `user=postgres database=database_that_does_not_exist`: 127.0.0.1:16432 (localhost): server error: FATAL: database \"database_that_does_not_exist\" does not exist (SQLSTATE 3D000)"}]}}

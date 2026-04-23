@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:19 GMT
+Content-Length: 584
+
+{"job_id":"job-000001","status":"succeeded","result":{"summary":{"tables_verified":2,"tables_with_data":2,"has_mismatches":false},"table_summaries":[{"schema":"public","table":"customers","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0},{"schema":"public","table":"orders","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[],"mismatch_summary":{"has_mismatches":false,"affected_tables":[],"counts_by_kind":{}}}}

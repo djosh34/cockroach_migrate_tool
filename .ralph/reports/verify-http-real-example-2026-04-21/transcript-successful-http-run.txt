@@ -1,0 +1,450 @@
++ IMAGE=cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest
++ PG_CONTAINER=verify-report-pg
++ VERIFY_CONTAINER=verify-report-service
++ PG_PORT=16432
++ CRDB_PORT=26262
++ VERIFY_PORT=18081
++ docker rm -f verify-report-service verify-report-pg
+Error response from daemon: No such container: verify-report-service
+verify-report-pg
++ docker run -d --name verify-report-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=postgres -p 16432:5432 postgres:16
+1f513d5db228b338191e63487ae9865c76199571937bbbedddfc379995d6c878
+++ seq 1 60
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ break
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
+ ?column? 
+----------
+        1
+(1 row)
+
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
+ ?column? 
+----------
+        1
+(1 row)
+
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/source_schema.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/source_schema.sql:1: NOTICE:  database "verify_report" does not exist, skipping
+DROP DATABASE
+CREATE DATABASE
+You are now connected to database "verify_report" as user "postgres".
+CREATE TABLE
+CREATE TABLE
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/source_data.sql
+INSERT 0 2
+INSERT 0 2
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'DROP ROLE IF EXISTS verify_no_select; CREATE ROLE verify_no_select LOGIN; GRANT CONNECT ON DATABASE verify_report TO verify_no_select; GRANT USAGE ON SCHEMA public TO verify_no_select;'
+NOTICE:  role "verify_no_select" does not exist, skipping
+DROP ROLE
+CREATE ROLE
+GRANT
+GRANT
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:1: NOTICE:  waiting for job(s) to complete: 1168788012694142977
+If the statement is canceled, jobs will continue in the background.
+DROP DATABASE
+CREATE DATABASE
+SET
+CREATE TABLE
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:14: NOTICE:  waiting for job(s) to complete: 1168788013093683201, 1168788013093715969
+If the statement is canceled, jobs will continue in the background.
+CREATE TABLE
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_data_equal.sql
+INSERT 0 2
+INSERT 0 2
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c '\d+ public.customers'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/source-schema-customers.txt
+                                           Table "public.customers"
+    Column    |  Type   | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+--------------+---------+-----------+----------+---------+----------+-------------+--------------+-------------
+ customer_id  | integer |           | not null |         | plain    |             |              | 
+ email        | text    |           | not null |         | extended |             |              | 
+ display_name | text    |           | not null |         | extended |             |              | 
+Indexes:
+    "customers_pkey" PRIMARY KEY, btree (customer_id)
+    "customers_email_key" UNIQUE CONSTRAINT, btree (email)
+Referenced by:
+    TABLE "orders" CONSTRAINT "orders_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+Access method: heap
+
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c '\d+ public.orders'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/source-schema-orders.txt
+                                            Table "public.orders"
+   Column    |  Type   | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+-------------+---------+-----------+----------+---------+----------+-------------+--------------+-------------
+ order_id    | integer |           | not null |         | plain    |             |              | 
+ customer_id | integer |           | not null |         | plain    |             |              | 
+ order_code  | text    |           | not null |         | extended |             |              | 
+ total_cents | integer |           | not null |         | plain    |             |              | 
+Indexes:
+    "orders_pkey" PRIMARY KEY, btree (order_id)
+    "orders_order_code_key" UNIQUE CONSTRAINT, btree (order_code)
+Foreign-key constraints:
+    "orders_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+Access method: heap
+
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SHOW CREATE TABLE public.customers;'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/destination-schema-customers.txt
+    table_name    |                         create_statement                         
+------------------+------------------------------------------------------------------
+ public.customers | CREATE TABLE public.customers (                                 +
+                  |         customer_id INT8 NOT NULL,                              +
+                  |         email STRING NOT NULL,                                  +
+                  |         display_name STRING NOT NULL,                           +
+                  |         CONSTRAINT customers_pkey PRIMARY KEY (customer_id ASC),+
+                  |         UNIQUE INDEX customers_email_key (email ASC)            +
+                  | ) WITH (schema_locked = true);
+(1 row)
+
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SHOW CREATE TABLE public.orders;'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/destination-schema-orders.txt
+  table_name   |                                                create_statement                                                
+---------------+----------------------------------------------------------------------------------------------------------------
+ public.orders | CREATE TABLE public.orders (                                                                                  +
+               |         order_id INT8 NOT NULL,                                                                               +
+               |         customer_id INT8 NOT NULL,                                                                            +
+               |         order_code STRING NOT NULL,                                                                           +
+               |         total_cents INT8 NOT NULL,                                                                            +
+               |         CONSTRAINT orders_pkey PRIMARY KEY (order_id ASC),                                                    +
+               |         CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(customer_id),+
+               |         UNIQUE INDEX orders_order_code_key (order_code ASC)                                                   +
+               | ) WITH (schema_locked = true);
+(1 row)
+
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'TABLE public.customers; TABLE public.orders;'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/source-data.txt
+ customer_id |       email        | display_name 
+-------------+--------------------+--------------
+        1001 | ada@example.test   | Ada Lovelace
+        1002 | grace@example.test | Grace Hopper
+(2 rows)
+
+ order_id | customer_id |  order_code   | total_cents 
+----------+-------------+---------------+-------------
+     5001 |        1001 | ORD-ADA-001   |       12500
+     5002 |        1002 | ORD-GRACE-001 |       19999
+(2 rows)
+
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'TABLE public.customers; TABLE public.orders;'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/logs/destination-data-equal.txt
+ customer_id |       email        | display_name 
+-------------+--------------------+--------------
+        1001 | ada@example.test   | Ada Lovelace
+        1002 | grace@example.test | Grace Hopper
+(2 rows)
+
+ order_id | customer_id |  order_code   | total_cents 
+----------+-------------+---------------+-------------
+     5001 |        1001 | ORD-ADA-001   |       12500
+     5002 |        1002 | ORD-GRACE-001 |       19999
+(2 rows)
+
++ docker run -d --name verify-report-service --network host -v /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/reports/verify-http-real-example-2026-04-21/config:/config:ro cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest --log-format json --config /config/verify-http-raw.yml
+8deb0809191817d2d75967870efe95c21b3a2b9bae915c1f4e440346141dcaa0
+++ seq 1 60
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ sleep 1
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ break
++ curl -i -sS http://127.0.0.1:18081/metrics
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/initial-metrics.txt
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 602
+
+# HELP cockroach_migration_tool_verify_active_jobs Current number of active verify jobs.
+# TYPE cockroach_migration_tool_verify_active_jobs gauge
+cockroach_migration_tool_verify_active_jobs 0
+# HELP cockroach_migration_tool_verify_jobs_total Current number of verify jobs by lifecycle status.
+# TYPE cockroach_migration_tool_verify_jobs_total gauge
+cockroach_migration_tool_verify_jobs_total{status="failed"} 0
+cockroach_migration_tool_verify_jobs_total{status="running"} 0
+cockroach_migration_tool_verify_jobs_total{status="stopped"} 0
+cockroach_migration_tool_verify_jobs_total{status="succeeded"} 0
++ curl -i -sS -X POST http://127.0.0.1:18081/tables/raw -H 'Content-Type: application/json' --data '{"database":"source","schema":"public","table":"customers"}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/raw-source-customers.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 276
+
+{"database":"source","schema":"public","table":"customers","columns":["customer_id","email","display_name"],"rows":[{"customer_id":1001,"display_name":"Ada Lovelace","email":"ada@example.test"},{"customer_id":1002,"display_name":"Grace Hopper","email":"grace@example.test"}]}
++ curl -i -sS -X POST http://127.0.0.1:18081/tables/raw -H 'Content-Type: application/json' --data '{"database":"destination","schema":"public","table":"orders"}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/raw-destination-orders.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 305
+
+{"database":"destination","schema":"public","table":"orders","columns":["order_id","customer_id","order_code","total_cents"],"rows":[{"customer_id":1001,"order_code":"ORD-ADA-001","order_id":5001,"total_cents":12500},{"customer_id":1002,"order_code":"ORD-GRACE-001","order_id":5002,"total_cents":19999}]}
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/equal-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 43
+
+{"job_id":"job-000001","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000001
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/equal-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:19 GMT
+Content-Length: 584
+
+{"job_id":"job-000001","status":"succeeded","result":{"summary":{"tables_verified":2,"tables_with_data":2,"has_mismatches":false},"table_summaries":[{"schema":"public","table":"customers","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0},{"schema":"public","table":"orders","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[],"mismatch_summary":{"has_mismatches":false,"affected_tables":[],"counts_by_kind":{}}}}
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:1: NOTICE:  waiting for job(s) to complete: 1168788027638251521
+If the statement is canceled, jobs will continue in the background.
+DROP DATABASE
+CREATE DATABASE
+SET
+CREATE TABLE
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:14: NOTICE:  waiting for job(s) to complete: 1168788028053815297, 1168788028053848065
+If the statement is canceled, jobs will continue in the background.
+CREATE TABLE
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_data_mismatch.sql
+INSERT 0 2
+INSERT 0 3
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/data-mismatch-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:19 GMT
+Content-Length: 43
+
+{"job_id":"job-000002","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000002
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/data-mismatch-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:22 GMT
+Content-Length: 1485
+
+{"job_id":"job-000002","status":"failed","result":{"summary":{"tables_verified":2,"tables_with_data":2,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"customers","num_verified":2,"num_success":1,"num_missing":0,"num_mismatch":1,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0},{"schema":"public","table":"orders","num_verified":2,"num_success":1,"num_missing":0,"num_mismatch":1,"num_column_mismatch":0,"num_extraneous":1,"num_live_retry":0}],"findings":[{"kind":"mismatching_row","schema":"public","table":"customers","primary_key":{"customer_id":"1002"},"mismatching_columns":["display_name"],"source_values":{"display_name":"Grace Hopper"},"destination_values":{"display_name":"Rear Admiral Grace Hopper"}},{"kind":"extraneous_row","schema":"public","table":"orders","primary_key":{"order_id":"5003"}},{"kind":"mismatching_row","schema":"public","table":"orders","primary_key":{"order_id":"5002"},"mismatching_columns":["total_cents"],"source_values":{"total_cents":"19999"},"destination_values":{"total_cents":"20999"}}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"customers"},{"schema":"public","table":"orders"}],"counts_by_kind":{"extraneous_row":1,"mismatching_row":2}}},"failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 2 table","details":[{"reason":"mismatch detected for public.customers"},{"reason":"mismatch detected for public.orders"}]}}
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_partial_mismatch.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_partial_mismatch.sql:1: NOTICE:  waiting for job(s) to complete: 1168788038210945025
+If the statement is canceled, jobs will continue in the background.
+DROP DATABASE
+CREATE DATABASE
+SET
+CREATE TABLE
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_partial_mismatch.sql:14: NOTICE:  waiting for job(s) to complete: 1168788038541869057, 1168788038541901825
+If the statement is canceled, jobs will continue in the background.
+CREATE TABLE
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_data_equal.sql
+INSERT 0 2
+INSERT 0 2
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/partial-schema-mismatch-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:22 GMT
+Content-Length: 43
+
+{"job_id":"job-000003","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000003
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/partial-schema-mismatch-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:25 GMT
+Content-Length: 955
+
+{"job_id":"job-000003","status":"failed","result":{"summary":{"tables_verified":2,"tables_with_data":2,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"customers","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0},{"schema":"public","table":"orders","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_table_definition","schema":"public","table":"orders","message":"column type mismatch on total_cents: int4 vs text"}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"orders"}],"counts_by_kind":{"mismatching_table_definition":1}}},"failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.orders"}]}}
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_full_mismatch.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_full_mismatch.sql:1: NOTICE:  waiting for job(s) to complete: 1168788048645750785
+If the statement is canceled, jobs will continue in the background.
+DROP DATABASE
+CREATE DATABASE
+SET
+CREATE TABLE
+CREATE TABLE
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_data_equal.sql
+INSERT 0 2
+INSERT 0 2
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/full-schema-mismatch-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:25 GMT
+Content-Length: 43
+
+{"job_id":"job-000004","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000004
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/full-schema-mismatch-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 1292
+
+{"job_id":"job-000004","status":"failed","result":{"summary":{"tables_verified":2,"tables_with_data":2,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"customers","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0},{"schema":"public","table":"orders","num_verified":2,"num_success":2,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_table_definition","schema":"public","table":"customers","message":"extraneous column loyalty_tier found"},{"kind":"mismatching_table_definition","schema":"public","table":"orders","message":"column type mismatch on total_cents: int4 vs text"},{"kind":"mismatching_table_definition","schema":"public","table":"orders","message":"extraneous column status found"}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"customers"},{"schema":"public","table":"orders"}],"counts_by_kind":{"mismatching_table_definition":3}}},"failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 2 table","details":[{"reason":"mismatch detected for public.customers"},{"reason":"mismatch detected for public.orders"}]}}
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{"include_schema":"["}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/bad-regex-post-job.txt
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 201
+
+{"error":{"category":"request_validation","code":"invalid_filter","message":"request validation failed","details":[{"field":"include_schema","reason":"error parsing regexp: missing closing ]: `[`"}]}}
++ curl -i -sS http://127.0.0.1:18081/jobs/no-such-job
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/not-found-get-job.txt
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 84
+
+{"error":{"category":"job_state","code":"job_not_found","message":"job not found"}}
++ curl -i -sS -X POST http://127.0.0.1:18081/tables/raw -H 'Content-Type: application/json' --data '{"database":"source","schema":"public;drop","table":"customers"}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/raw-invalid-identifier.txt
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 51
+
+{"error":"schema must be a simple SQL identifier"}
++ curl -i -sS http://127.0.0.1:18081/metrics
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/metrics.txt
+HTTP/1.1 200 OK
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 602
+
+# HELP cockroach_migration_tool_verify_active_jobs Current number of active verify jobs.
+# TYPE cockroach_migration_tool_verify_active_jobs gauge
+cockroach_migration_tool_verify_active_jobs 0
+# HELP cockroach_migration_tool_verify_jobs_total Current number of verify jobs by lifecycle status.
+# TYPE cockroach_migration_tool_verify_jobs_total gauge
+cockroach_migration_tool_verify_jobs_total{status="failed"} 1
+cockroach_migration_tool_verify_jobs_total{status="running"} 0
+cockroach_migration_tool_verify_jobs_total{status="stopped"} 0
+cockroach_migration_tool_verify_jobs_total{status="succeeded"} 0
++ docker logs verify-report-service
++ docker rm -f verify-report-service
+verify-report-service
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:1: NOTICE:  waiting for job(s) to complete: 1168788059590885377
+If the statement is canceled, jobs will continue in the background.
+DROP DATABASE
+CREATE DATABASE
+SET
+CREATE TABLE
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql:14: NOTICE:  waiting for job(s) to complete: 1168788059920957441, 1168788059920990209
+If the statement is canceled, jobs will continue in the background.
+CREATE TABLE
++ psql 'postgresql://root@localhost:26262/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_data_equal.sql
+INSERT 0 2
+INSERT 0 2
++ docker run -d --name verify-report-service --network host -v /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/reports/verify-http-real-example-2026-04-21/config:/config:ro cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest --log-format json --config /config/verify-http-raw-wrong-database.yml
+30e7311e7169dfbc5b696c04aa1aa41e648b8c088fdb1772aa35bedf82994e95
+++ seq 1 60
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ break
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-database-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 43
+
+{"job_id":"job-000001","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000001
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-database-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:32 GMT
+Content-Length: 601
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: error connect: failed to connect to `user=postgres database=database_that_does_not_exist`: 127.0.0.1:16432 (localhost): server error: FATAL: database \"database_that_does_not_exist\" does not exist (SQLSTATE 3D000)","details":[{"reason":"error connect: failed to connect to `user=postgres database=database_that_does_not_exist`: 127.0.0.1:16432 (localhost): server error: FATAL: database \"database_that_does_not_exist\" does not exist (SQLSTATE 3D000)"}]}}
++ docker logs verify-report-service
++ docker rm -f verify-report-service
+verify-report-service
++ docker run -d --name verify-report-service --network host -v /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/reports/verify-http-real-example-2026-04-21/config:/config:ro cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest --log-format json --config /config/verify-http-raw-wrong-permission.yml
+bede45f834a55ae9a0841a3c1e84272a0c5125b2e6bb83a12652cd2e65229be6
+++ seq 1 60
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ break
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-permission-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:32 GMT
+Content-Length: 43
+
+{"job_id":"job-000001","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000001
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-permission-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:35 GMT
+Content-Length: 421
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"verify_execution","code":"verify_failed","message":"verify execution failed: error splitting tables: cannot get minimum of public.customers: ERROR: permission denied for table customers (SQLSTATE 42501)","details":[{"reason":"error splitting tables: cannot get minimum of public.customers: ERROR: permission denied for table customers (SQLSTATE 42501)"}]}}
++ docker logs verify-report-service
++ docker rm -f verify-report-service
+verify-report-service
++ docker run -d --name verify-report-service --network host -v /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/reports/verify-http-real-example-2026-04-21/config:/config:ro cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest --log-format json --config /config/verify-http-raw-wrong-cert.yml
+2e52b20e506f72ea244131e932363d5dbade63349b4df4b422136faafa922ec1
+++ seq 1 60
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ sleep 1
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ break
++ curl -i -sS -X POST http://127.0.0.1:18081/jobs -H 'Content-Type: application/json' --data '{}'
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-cert-post-job.txt
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:37 GMT
+Content-Length: 43
+
+{"job_id":"job-000001","status":"running"}
++ sleep 3
++ curl -i -sS http://127.0.0.1:18081/jobs/job-000001
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/wrong-cert-get-job.txt
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:40 GMT
+Content-Length: 685
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: cannot parse `postgresql://postgres@localhost:16432/verify_report?sslmode=verify-full\u0026sslrootcert=%2Fconfig%2Fcerts%2Fnot-a-real-ca.crt`: failed to configure TLS (unable to read CA file: open /config/certs/not-a-real-ca.crt: no such file or directory)","details":[{"reason":"cannot parse `postgresql://postgres@localhost:16432/verify_report?sslmode=verify-full\u0026sslrootcert=%2Fconfig%2Fcerts%2Fnot-a-real-ca.crt`: failed to configure TLS (unable to read CA file: open /config/certs/not-a-real-ca.crt: no such file or directory)"}]}}
++ docker logs verify-report-service
++ docker rm -f verify-report-service
+verify-report-service
++ docker run -d --name verify-report-service --network host -v /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/reports/verify-http-real-example-2026-04-21/config:/config:ro cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest --log-format json --config /config/verify-http-raw-disabled.yml
+aff39d092b6a77e69b97c40853ec6f608a85a1214c2d2ac6e5fd80b162f43e25
+++ seq 1 60
++ for i in $(seq 1 60)
++ curl -sS http://127.0.0.1:18081/metrics
++ break
++ tee .ralph/reports/verify-http-real-example-2026-04-21/http/raw-disabled.txt
++ curl -i -sS -X POST http://127.0.0.1:18081/tables/raw -H 'Content-Type: application/json' --data '{"database":"source","schema":"public","table":"customers"}'
+HTTP/1.1 403 Forbidden
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:40 GMT
+Content-Length: 41
+
+{"error":"raw table output is disabled"}
++ docker logs verify-report-service
++ docker rm -f verify-report-service
+verify-report-service
++ docker rm -f verify-report-pg
+verify-report-pg
++ set +x
+DONE report artifacts in .ralph/reports/verify-http-real-example-2026-04-21

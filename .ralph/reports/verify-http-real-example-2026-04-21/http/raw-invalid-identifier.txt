@@ -1,0 +1,6 @@
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 51
+
+{"error":"schema must be a simple SQL identifier"}

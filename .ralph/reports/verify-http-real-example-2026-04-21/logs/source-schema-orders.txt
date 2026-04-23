@@ -1,0 +1,14 @@
+                                            Table "public.orders"
+   Column    |  Type   | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+-------------+---------+-----------+----------+---------+----------+-------------+--------------+-------------
+ order_id    | integer |           | not null |         | plain    |             |              | 
+ customer_id | integer |           | not null |         | plain    |             |              | 
+ order_code  | text    |           | not null |         | extended |             |              | 
+ total_cents | integer |           | not null |         | plain    |             |              | 
+Indexes:
+    "orders_pkey" PRIMARY KEY, btree (order_id)
+    "orders_order_code_key" UNIQUE CONSTRAINT, btree (order_code)
+Foreign-key constraints:
+    "orders_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+Access method: heap
+

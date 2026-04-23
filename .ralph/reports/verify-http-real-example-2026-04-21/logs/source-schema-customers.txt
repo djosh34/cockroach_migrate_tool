@@ -1,0 +1,13 @@
+                                           Table "public.customers"
+    Column    |  Type   | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
+--------------+---------+-----------+----------+---------+----------+-------------+--------------+-------------
+ customer_id  | integer |           | not null |         | plain    |             |              | 
+ email        | text    |           | not null |         | extended |             |              | 
+ display_name | text    |           | not null |         | extended |             |              | 
+Indexes:
+    "customers_pkey" PRIMARY KEY, btree (customer_id)
+    "customers_email_key" UNIQUE CONSTRAINT, btree (email)
+Referenced by:
+    TABLE "orders" CONSTRAINT "orders_customer_id_fkey" FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+Access method: heap
+

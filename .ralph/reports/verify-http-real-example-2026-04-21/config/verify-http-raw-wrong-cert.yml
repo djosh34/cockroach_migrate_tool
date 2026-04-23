@@ -1,0 +1,9 @@
+listener:
+  bind_addr: 0.0.0.0:18081
+verify:
+  raw_table_output: true
+  source:
+    url: postgresql://postgres@localhost:16432/verify_report?sslmode=verify-full
+    ca_cert_path: /config/certs/not-a-real-ca.crt
+  destination:
+    url: postgresql://root@localhost:26262/verify_report?sslmode=disable

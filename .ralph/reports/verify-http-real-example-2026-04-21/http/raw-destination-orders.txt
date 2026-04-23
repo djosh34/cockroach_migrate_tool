@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 305
+
+{"database":"destination","schema":"public","table":"orders","columns":["order_id","customer_id","order_code","total_cents"],"rows":[{"customer_id":1001,"order_code":"ORD-ADA-001","order_id":5001,"total_cents":12500},{"customer_id":1002,"order_code":"ORD-GRACE-001","order_id":5002,"total_cents":19999}]}

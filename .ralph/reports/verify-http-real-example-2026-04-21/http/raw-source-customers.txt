@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:16 GMT
+Content-Length: 276
+
+{"database":"source","schema":"public","table":"customers","columns":["customer_id","email","display_name"],"rows":[{"customer_id":1001,"display_name":"Ada Lovelace","email":"ada@example.test"},{"customer_id":1002,"display_name":"Grace Hopper","email":"grace@example.test"}]}

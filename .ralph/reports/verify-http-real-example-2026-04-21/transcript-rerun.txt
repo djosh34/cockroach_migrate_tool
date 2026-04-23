@@ -1,0 +1,30 @@
++ IMAGE=cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest
++ PG_CONTAINER=verify-report-pg
++ VERIFY_CONTAINER=verify-report-service
++ PG_PORT=16432
++ CRDB_PORT=26260
++ VERIFY_PORT=18081
++ docker rm -f verify-report-service verify-report-pg verify-report-crdb
+Error response from daemon: No such container: verify-report-service
+Error response from daemon: No such container: verify-report-pg
+verify-report-crdb
++ docker run -d --name verify-report-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=postgres -p 16432:5432 postgres:16
+28d0e95e757c0128f0914ad977999c3c47913be32f1d62bee341c96ea3d19681
+++ seq 1 60
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ break
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
+ ?column? 
+----------
+        1
+(1 row)
+
++ psql 'postgresql://root@localhost:26260/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
+psql: error: connection to server at "localhost" (::1), port 26260 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 26260 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?

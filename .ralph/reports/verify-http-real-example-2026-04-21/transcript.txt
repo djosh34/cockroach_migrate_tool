@@ -1,0 +1,235 @@
++ IMAGE=cockroach-migrate-verify-novice-3592830-1776754579763806893-0:latest
++ PG_CONTAINER=verify-report-pg
++ CRDB_CONTAINER=verify-report-crdb
++ VERIFY_CONTAINER=verify-report-service
++ PG_PORT=16432
++ CRDB_PORT=26262
++ VERIFY_PORT=18081
++ docker rm -f verify-report-service verify-report-pg verify-report-crdb
+Error response from daemon: No such container: verify-report-service
+Error response from daemon: No such container: verify-report-pg
+Error response from daemon: No such container: verify-report-crdb
++ docker run -d --name verify-report-pg -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=postgres -p 16432:5432 postgres:16
+77f5b3640af0f220ffbe20a57dc64811eba8524435c23ffe9deb7631e584dd15
++ docker run -d --name verify-report-crdb -p 26262:26257 cockroachdb/cockroach:v26.1.2 start-single-node --insecure --listen-addr=0.0.0.0:26257 --http-addr=0.0.0.0:8080
+b994923a615c1bd2671d4b7f555016faee93e30d12a7b1811188169e1f8e8682
+++ seq 1 60
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ break
+++ seq 1 60
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ for i in $(seq 1 60)
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -c 'SELECT 1;'
++ sleep 1
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ cat
++ psql 'postgresql://postgres@localhost:16432/postgres?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/source_schema.sql
+psql:.ralph/reports/verify-http-real-example-2026-04-21/sql/source_schema.sql:1: NOTICE:  database "verify_report" does not exist, skipping
+DROP DATABASE
+CREATE DATABASE
+You are now connected to database "verify_report" as user "postgres".
+CREATE TABLE
+CREATE TABLE
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/source_data.sql
+INSERT 0 2
+INSERT 0 2
++ psql 'postgresql://postgres@localhost:16432/verify_report?sslmode=disable' -v ON_ERROR_STOP=1 -c 'DROP ROLE IF EXISTS verify_no_select; CREATE ROLE verify_no_select LOGIN; GRANT CONNECT ON DATABASE verify_report TO verify_no_select; GRANT USAGE ON SCHEMA public TO verify_no_select;'
+NOTICE:  role "verify_no_select" does not exist, skipping
+DROP ROLE
+CREATE ROLE
+GRANT
+GRANT
++ psql 'postgresql://root@localhost:26262/defaultdb?sslmode=disable' -v ON_ERROR_STOP=1 -f .ralph/reports/verify-http-real-example-2026-04-21/sql/destination_schema_equal.sql
+psql: error: connection to server at "localhost" (::1), port 26262 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?
+connection to server at "localhost" (127.0.0.1), port 26262 failed: Connection refused
+	Is the server running on that host and accepting TCP/IP connections?

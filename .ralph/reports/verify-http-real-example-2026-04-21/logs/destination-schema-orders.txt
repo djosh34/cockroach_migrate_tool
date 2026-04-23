@@ -1,0 +1,13 @@
+  table_name   |                                                create_statement                                                
+---------------+----------------------------------------------------------------------------------------------------------------
+ public.orders | CREATE TABLE public.orders (                                                                                  +
+               |         order_id INT8 NOT NULL,                                                                               +
+               |         customer_id INT8 NOT NULL,                                                                            +
+               |         order_code STRING NOT NULL,                                                                           +
+               |         total_cents INT8 NOT NULL,                                                                            +
+               |         CONSTRAINT orders_pkey PRIMARY KEY (order_id ASC),                                                    +
+               |         CONSTRAINT orders_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(customer_id),+
+               |         UNIQUE INDEX orders_order_code_key (order_code ASC)                                                   +
+               | ) WITH (schema_locked = true);
+(1 row)
+

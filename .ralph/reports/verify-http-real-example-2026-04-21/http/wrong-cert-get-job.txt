@@ -1,0 +1,6 @@
+HTTP/1.1 200 OK
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:40 GMT
+Content-Length: 685
+
+{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: cannot parse `postgresql://postgres@localhost:16432/verify_report?sslmode=verify-full\u0026sslrootcert=%2Fconfig%2Fcerts%2Fnot-a-real-ca.crt`: failed to configure TLS (unable to read CA file: open /config/certs/not-a-real-ca.crt: no such file or directory)","details":[{"reason":"cannot parse `postgresql://postgres@localhost:16432/verify_report?sslmode=verify-full\u0026sslrootcert=%2Fconfig%2Fcerts%2Fnot-a-real-ca.crt`: failed to configure TLS (unable to read CA file: open /config/certs/not-a-real-ca.crt: no such file or directory)"}]}}

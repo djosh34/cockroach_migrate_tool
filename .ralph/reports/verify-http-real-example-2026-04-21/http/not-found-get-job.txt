@@ -1,0 +1,6 @@
+HTTP/1.1 404 Not Found
+Content-Type: application/json
+Date: Tue, 21 Apr 2026 07:23:29 GMT
+Content-Length: 84
+
+{"error":{"category":"job_state","code":"job_not_found","message":"job not found"}}
