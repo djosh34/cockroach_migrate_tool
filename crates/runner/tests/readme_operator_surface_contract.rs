@@ -102,6 +102,7 @@ fn readme_keeps_required_and_optional_args_as_short_lists() {
         "- `run --config /config/runner.yml`",
         "- `--config /config/verify-service.yml`",
         "- `--log-format json` for structured stderr logs",
+        "- `--deep` to verify destination connectivity and mapped tables",
     ] {
         assert!(
             readme.text().contains(required_snippet),
@@ -187,6 +188,12 @@ fn readme_runner_quick_start_recommends_destination_urls_and_keeps_the_explicit_
             && runner.contains("sslcert=/config/certs/destination-client.crt")
             && runner.contains("sslkey=/config/certs/destination-client.key"),
         "README runner quick start should document the supported TLS query parameters for destination.url",
+    );
+    assert!(
+        runner.contains("Plain `validate-config` stays offline.")
+            && runner
+                .contains("Add `--deep` to verify destination connectivity and mapped tables."),
+        "README runner quick start should explain the shallow-vs-deep validation split",
     );
     assert!(
         runner.contains("Explicit-field alternative:"),

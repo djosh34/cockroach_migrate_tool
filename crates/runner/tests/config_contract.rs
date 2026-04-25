@@ -1,4 +1,8 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    net::TcpListener,
+    path::{Path, PathBuf},
+};
 
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
@@ -6,14 +10,60 @@ use serde_json::Value;
 
 #[path = "support/runner_public_contract.rs"]
 mod runner_public_contract_support;
+#[path = "support/test_postgres.rs"]
+mod test_postgres_support;
 
 use runner_public_contract_support::RunnerPublicContract;
+use test_postgres_support::TestPostgres;
 
 fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
         .join(name)
+}
+
+fn pick_unused_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .expect("ephemeral port should bind")
+        .local_addr()
+        .expect("bound socket should have a local address")
+        .port()
+}
+
+fn write_url_runner_config(path: &Path, destination_url: &str, tables: &[&str]) {
+    let tables_yaml = tables
+        .iter()
+        .map(|table| format!("        - {table}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    fs::write(
+        path,
+        format!(
+            r#"webhook:
+  bind_addr: 127.0.0.1:0
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+{tables_yaml}
+    destination:
+      url: {destination_url}
+"#,
+            cert_path = fixture_path("certs/server.crt").display(),
+            key_path = fixture_path("certs/server.key").display(),
+            tables_yaml = tables_yaml,
+            destination_url = destination_url,
+        ),
+    )
+    .expect("url-based runner config should be written");
 }
 
 #[test]
@@ -38,6 +88,191 @@ fn validate_config_accepts_a_minimal_valid_yaml_file() {
         !stdout.contains("verify="),
         "validate-config stdout must not print a removed verify summary",
     );
+}
+
+#[test]
+fn validate_config_deep_connects_to_the_destination_and_reports_success() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id BIGINT PRIMARY KEY);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, 0);
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .arg("--deep")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"))
+        .stdout(predicate::str::contains("deep=ok"));
+}
+
+#[test]
+fn validate_config_without_deep_stays_offline_for_unreachable_destinations() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        format!(
+            r#"webhook:
+  bind_addr: 127.0.0.1:0
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+            cert_path = fixture_path("certs/server.crt").display(),
+            key_path = fixture_path("certs/server.key").display(),
+            port = pick_unused_port(),
+        ),
+    )
+    .expect("unreachable runner config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"))
+        .stdout(predicate::str::contains("deep=").not());
+}
+
+#[test]
+fn validate_config_deep_reports_connection_failures_with_mapping_and_endpoint_context() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    let port = pick_unused_port();
+    fs::write(
+        &config_path,
+        format!(
+            r#"webhook:
+  bind_addr: 127.0.0.1:0
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+            cert_path = fixture_path("certs/server.crt").display(),
+            key_path = fixture_path("certs/server.key").display(),
+            port = port,
+        ),
+    )
+    .expect("unreachable runner config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .arg("--deep")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(format!(
+            "config: failed to connect mapping `app-a` to `127.0.0.1:{port}/app_a`"
+        )));
+}
+
+#[test]
+fn validate_config_deep_fails_when_a_mapped_destination_table_is_missing() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id BIGINT PRIMARY KEY);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config_with_tables(&config_path, 0, &["public.missing_table"]);
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .arg("--deep")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "config: missing mapped destination table `public.missing_table` for mapping `app-a` in `app_a`",
+        ));
+}
+
+#[test]
+fn validate_config_deep_accepts_url_destinations() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id BIGINT PRIMARY KEY);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    write_url_runner_config(
+        &config_path,
+        &format!(
+            "postgres://migration_user_a:runner-secret-a@127.0.0.1:{}/app_a",
+            postgres.port()
+        ),
+        &["public.customers"],
+    );
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .arg("--deep")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("deep=ok"));
 }
 
 #[test]

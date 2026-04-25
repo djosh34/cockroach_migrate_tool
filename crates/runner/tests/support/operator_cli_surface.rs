@@ -56,6 +56,7 @@ const RUNNER_COMMAND_HELP_CONTRACTS: &[OperatorCommandHelp] = &[
         required_markers: &[
             "Usage: runner validate-config [OPTIONS] --config <CONFIG>",
             "--config <CONFIG>",
+            "--deep",
             "--log-format <LOG_FORMAT>",
         ],
         forbidden_markers: &[

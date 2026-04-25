@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 21:18:20 CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-04-runner-deep-validation.md`
-
-```
-## Task: Add deep validation mode to runner validate-config <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 25 09:41:15 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-verify-service-ergonomics/task-05-verify-cli-run-subcommand.md`
 

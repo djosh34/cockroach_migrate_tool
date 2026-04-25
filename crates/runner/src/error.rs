@@ -7,6 +7,8 @@ use tokio::task::JoinError;
 pub enum RunnerError {
     #[error("config: {0}")]
     Config(#[from] RunnerConfigError),
+    #[error("config: {0}")]
+    ConfigDeepValidation(#[from] RunnerDestinationCatalogError),
     #[error("postgres setup artifacts: {0}")]
     PostgresSetupArtifacts(#[from] RunnerArtifactError),
     #[error("postgres bootstrap: {0}")]
@@ -125,6 +127,106 @@ pub enum RunnerBootstrapError {
         database: String,
         table: String,
     },
+}
+
+#[derive(Debug, Error)]
+pub enum RunnerDestinationCatalogError {
+    #[error("failed to connect mapping `{mapping_id}` to `{endpoint}`: {source}")]
+    Connect {
+        mapping_id: String,
+        endpoint: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "failed to read destination table shape for mapping `{mapping_id}` in `{database}` table `{table}`: {source}"
+    )]
+    ReadCatalog {
+        mapping_id: String,
+        database: String,
+        table: String,
+        source: sqlx::Error,
+    },
+    #[error(
+        "missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`"
+    )]
+    MissingTable {
+        mapping_id: String,
+        database: String,
+        table: String,
+    },
+    #[error(
+        "unsupported foreign key ON DELETE action `{action}` for mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
+    UnsupportedForeignKeyAction {
+        mapping_id: String,
+        database: String,
+        table: String,
+        action: String,
+    },
+    #[error(
+        "incomplete foreign key metadata while reading mapping `{mapping_id}` in `{database}` table `{table}`"
+    )]
+    IncompleteForeignKeyMetadata {
+        mapping_id: String,
+        database: String,
+        table: String,
+    },
+}
+
+impl From<RunnerDestinationCatalogError> for RunnerBootstrapError {
+    fn from(value: RunnerDestinationCatalogError) -> Self {
+        match value {
+            RunnerDestinationCatalogError::Connect {
+                mapping_id,
+                endpoint,
+                source,
+            } => Self::Connect {
+                mapping_id,
+                endpoint,
+                source,
+            },
+            RunnerDestinationCatalogError::ReadCatalog {
+                mapping_id,
+                database,
+                table,
+                source,
+            } => Self::ReadCatalog {
+                mapping_id,
+                database,
+                table,
+                source,
+            },
+            RunnerDestinationCatalogError::MissingTable {
+                mapping_id,
+                database,
+                table,
+            } => Self::MissingTable {
+                mapping_id,
+                database,
+                table,
+            },
+            RunnerDestinationCatalogError::UnsupportedForeignKeyAction {
+                mapping_id,
+                database,
+                table,
+                action,
+            } => Self::UnsupportedForeignKeyAction {
+                mapping_id,
+                database,
+                table,
+                action,
+            },
+            RunnerDestinationCatalogError::IncompleteForeignKeyMetadata {
+                mapping_id,
+                database,
+                table,
+            } => Self::IncompleteForeignKeyMetadata {
+                mapping_id,
+                database,
+                table,
+            },
+        }
+    }
 }
 
 #[derive(Debug, Error)]

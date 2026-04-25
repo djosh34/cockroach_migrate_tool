@@ -1,4 +1,5 @@
 mod config;
+mod destination_catalog;
 mod error;
 mod helper_plan;
 mod metrics;
@@ -13,6 +14,7 @@ mod webhook_runtime;
 use std::{path::PathBuf, sync::Arc};
 
 use clap::{Parser, Subcommand};
+use destination_catalog::validate_destination_group;
 use operator_log::{LogEvent, LogFormat};
 
 use config::LoadedRunnerConfig;
@@ -41,6 +43,8 @@ enum Command {
     ValidateConfig {
         #[arg(long)]
         config: PathBuf,
+        #[arg(long)]
+        deep: bool,
     },
     Run {
         #[arg(long)]
@@ -55,11 +59,20 @@ where
     let emit_event: RuntimeEventSink = Arc::new(emit_event);
 
     match cli.command {
-        Command::ValidateConfig { config } => {
+        Command::ValidateConfig { config, deep } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            Ok(Some(CommandOutput::Validated(ValidatedConfig::from(
-                &config,
-            ))))
+            let deep_validation = if deep {
+                let startup_plan = RunnerStartupPlan::from_config(config.config())?;
+                for destination_group in startup_plan.destination_groups() {
+                    validate_destination_group(destination_group).await?;
+                }
+                DeepValidationStatus::Ok
+            } else {
+                DeepValidationStatus::Skipped
+            };
+            Ok(Some(CommandOutput::Validated(
+                ValidatedConfig::from_loaded_config(&config, deep_validation),
+            )))
         }
         Command::Run { config } => {
             let config = LoadedRunnerConfig::load(&config)?;
@@ -119,10 +132,20 @@ pub struct ValidatedConfig {
     webhook_bind_addr: std::net::SocketAddr,
     webhook_mode: &'static str,
     webhook_tls_files: Option<String>,
+    deep_validation: DeepValidationStatus,
 }
 
-impl From<&LoadedRunnerConfig> for ValidatedConfig {
-    fn from(loaded_config: &LoadedRunnerConfig) -> Self {
+#[derive(Clone, Copy)]
+enum DeepValidationStatus {
+    Skipped,
+    Ok,
+}
+
+impl ValidatedConfig {
+    fn from_loaded_config(
+        loaded_config: &LoadedRunnerConfig,
+        deep_validation: DeepValidationStatus,
+    ) -> Self {
         let config = loaded_config.config();
 
         Self {
@@ -131,11 +154,10 @@ impl From<&LoadedRunnerConfig> for ValidatedConfig {
             webhook_bind_addr: config.webhook().bind_addr(),
             webhook_mode: config.webhook().effective_mode(),
             webhook_tls_files: config.webhook().tls().map(|tls| tls.material_label()),
+            deep_validation,
         }
     }
-}
 
-impl ValidatedConfig {
     fn text_output(&self) -> String {
         let mut summary = format!(
             "config valid: config={} mappings={} webhook={} mode={}",
@@ -145,19 +167,34 @@ impl ValidatedConfig {
             summary.push_str(" tls=");
             summary.push_str(tls);
         }
+        if let Some(deep_status) = self.deep_validation.field_value() {
+            summary.push_str(" deep=");
+            summary.push_str(deep_status);
+        }
         summary
     }
 
     fn event(&self) -> LogEvent<'static> {
-        let event = LogEvent::info("runner", "config.validated", "runner config validated")
+        let mut event = LogEvent::info("runner", "config.validated", "runner config validated")
             .with_field("config", &self.config_path)
             .with_field("mappings", self.mappings)
             .with_field("webhook", self.webhook_bind_addr.to_string())
             .with_field("mode", self.webhook_mode);
         if let Some(tls) = &self.webhook_tls_files {
-            event.with_field("tls", tls)
-        } else {
-            event
+            event = event.with_field("tls", tls);
+        }
+        if let Some(deep_status) = self.deep_validation.field_value() {
+            event = event.with_field("deep", deep_status);
+        }
+        event
+    }
+}
+
+impl DeepValidationStatus {
+    fn field_value(self) -> Option<&'static str> {
+        match self {
+            Self::Skipped => None,
+            Self::Ok => Some("ok"),
         }
     }
 }

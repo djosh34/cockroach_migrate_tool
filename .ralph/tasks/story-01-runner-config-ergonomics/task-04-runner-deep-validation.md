@@ -1,4 +1,4 @@
-## Task: Add deep validation mode to runner validate-config <status>not_started</status> <passes>false</passes>
+## Task: Add deep validation mode to runner validate-config <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -37,12 +37,14 @@ config: failed to connect mapping `app-a` to `pg-a.example.internal:5432/app_a`:
 </description>
 
 <acceptance_criteria>
-- [ ] `validate-config --deep` connects to each destination and verifies connectivity
-- [ ] `validate-config --deep` verifies that each mapped table exists in the destination
-- [ ] `validate-config` without `--deep` remains fast and does not make network calls
-- [ ] Deep validation errors include mapping ID and endpoint label
-- [ ] Deep validation works with both decomposed and URL-based destination configs
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] `validate-config --deep` connects to each destination and verifies connectivity
+- [x] `validate-config --deep` verifies that each mapped table exists in the destination
+- [x] `validate-config` without `--deep` remains fast and does not make network calls
+- [x] Deep validation errors include mapping ID and endpoint label
+- [x] Deep validation works with both decomposed and URL-based destination configs
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-01-runner-config-ergonomics/task-04-runner-deep-validation_plans/2026-04-25-runner-deep-validation-plan.md</plan>

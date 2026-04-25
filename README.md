@@ -224,6 +224,8 @@ docker run --rm \
   validate-config --log-format json --config /config/runner.yml
 ```
 
+Plain `validate-config` stays offline. Add `--deep` to verify destination connectivity and mapped tables.
+
 Required args:
 
 - `validate-config --config /config/runner.yml`
@@ -232,6 +234,7 @@ Required args:
 Optional args:
 
 - `--log-format json` for structured stderr logs
+- `--deep` to verify destination connectivity and mapped tables
 
 Before starting the runtime, apply the PostgreSQL grant SQL from the setup section. Then start the runtime directly through the image entrypoint.
 
