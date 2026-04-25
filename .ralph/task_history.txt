@@ -142,3 +142,5 @@
 .ralph/tasks/story-27-verify-operator-ux-reset/02-task-simplify-the-verify-http-contract-and-publish-curl-first-operator-docs.md
 .ralph/tasks/story-27-verify-operator-ux-reset/03-task-make-verify-http-errors-and-logs-actionable-at-startup-and-runtime.md
 .ralph/tasks/story-27-verify-operator-ux-reset/04-task-return-full-verify-job-findings-mismatches-and-human-usable-result-json.md
+
+/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-runtime-failures-are-not-reported-in-json-logs.md

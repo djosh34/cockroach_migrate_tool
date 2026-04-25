@@ -1,4 +1,4 @@
-## Bug: Verify HTTP runtime failures are not reported in JSON logs <status>not_started</status> <passes>false</passes> <priority>high</priority>
+## Bug: Verify HTTP runtime failures are not reported in JSON logs <status>completed</status> <passes>true</passes> <priority>high</priority>
 
 <description>
 During the receive-mail investigation for "How to use it?", the real verify HTTP service was run locally with `--log-format json` and exercised through curl against real PostgreSQL databases.
@@ -28,14 +28,14 @@ Then verify if bug still holds. If yes, create new Red test, and continue with R
 </mandatory_red_green_tdd>
 
 <acceptance_criteria>
-- [ ] I created a Red unit and/or integration test that captures the bug
-- [ ] I made the test green by fixing
-- [ ] I manually verified the bug, and created a new Red test if not working still
-- [ ] Failed source connection jobs are emitted to JSON logs with category, code, message, and details
-- [ ] Failed verify execution jobs are emitted to JSON logs with category, code, message, and details
-- [ ] Logged failures do not expose database passwords or other secret material
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this bug impacts ultra-long tests (or their selection): `make test-long` — passes cleanly (ultra-long-only)
+- [x] I created a Red unit and/or integration test that captures the bug
+- [x] I made the test green by fixing
+- [x] I manually verified the bug, and created a new Red test if not working still
+- [x] Failed source connection jobs are emitted to JSON logs with category, code, message, and details
+- [x] Failed verify execution jobs are emitted to JSON logs with category, code, message, and details
+- [x] Logged failures do not expose database passwords or other secret material
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this bug impacts ultra-long tests (or their selection): `make test-long` — not applicable for this task; the default lane remained unchanged
 </acceptance_criteria>

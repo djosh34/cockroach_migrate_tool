@@ -27,6 +27,7 @@ func Run(ctx context.Context, cfg Config, deps RuntimeDependencies) error {
 	service := NewService(cfg, Dependencies{
 		Runner:      runner,
 		IDGenerator: deps.IDGenerator,
+		Logger:      deps.Logger,
 	})
 	defer service.Close()
 

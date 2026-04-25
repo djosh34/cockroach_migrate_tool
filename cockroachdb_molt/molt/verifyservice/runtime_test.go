@@ -8,12 +8,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -201,6 +205,184 @@ func TestRunServesHTTPWhenListenerTLSIsOmitted(t *testing.T) {
 	t.Fatal("expected runtime to serve metrics over HTTP")
 }
 
+func TestRunLogsFailedSourceAccessJobsAsStructuredJSON(t *testing.T) {
+	bindAddr := reserveLocalAddress(t)
+	logs := &runtimeLogBuffer{}
+	logger := zerolog.New(logs).With().Timestamp().Str("service", "verify").Logger()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- Run(ctx, Config{
+			Listener: ListenerConfig{
+				BindAddr: bindAddr,
+			},
+		}, RuntimeDependencies{
+			Runner: runtimeReportingRunner(func(_ context.Context, _ inconsistency.Reporter) error {
+				return newOperatorError(
+					"source_access",
+					"connection_failed",
+					"source connection failed: dial tcp 127.0.0.1:5432: connect: connection refused",
+					operatorErrorDetail{
+						Reason: "dial tcp 127.0.0.1:5432: connect: connection refused",
+					},
+				)
+			}),
+			IDGenerator: func() string { return "job-000001" },
+			Logger:      logger,
+		})
+	}()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	require.Eventually(t, func() bool {
+		response, err := client.Get("http://" + bindAddr + "/metrics")
+		if err != nil {
+			return false
+		}
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		return response.StatusCode == http.StatusOK
+	}, 5*time.Second, 25*time.Millisecond)
+
+	response, err := http.Post("http://"+bindAddr+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, response.StatusCode)
+
+	require.Eventually(t, func() bool {
+		getResponse, err := client.Get("http://" + bindAddr + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = getResponse.Body.Close()
+		}()
+		if getResponse.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
+		return payload["status"] == "failed"
+	}, 5*time.Second, 25*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return strings.Count(strings.TrimSpace(logs.String()), "\n")+1 >= 1 && strings.TrimSpace(logs.String()) != ""
+	}, 2*time.Second, 25*time.Millisecond)
+
+	payloads := parseRuntimeJSONLogLines(t, logs.String())
+	failure := payloads[len(payloads)-1]
+	require.Equal(t, "error", failure["level"])
+	require.Equal(t, "verify", failure["service"])
+	require.Equal(t, "job.failed", failure["event"])
+	require.Equal(t, "source_access", failure["category"])
+	require.Equal(t, "connection_failed", failure["code"])
+	require.Equal(t, "source connection failed: dial tcp 127.0.0.1:5432: connect: connection refused", failure["message"])
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"reason": "dial tcp 127.0.0.1:5432: connect: connection refused",
+			},
+		},
+		failure["details"],
+	)
+
+	cancel()
+	require.NoError(t, <-runErrCh)
+}
+
+func TestRunLogsVerifyExecutionFailuresWithoutLeakingPasswords(t *testing.T) {
+	bindAddr := reserveLocalAddress(t)
+	logs := &runtimeLogBuffer{}
+	logger := zerolog.New(logs).With().Timestamp().Str("service", "verify").Logger()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	runErrCh := make(chan error, 1)
+	go func() {
+		runErrCh <- Run(ctx, Config{
+			Listener: ListenerConfig{
+				BindAddr: bindAddr,
+			},
+		}, RuntimeDependencies{
+			Runner: runtimeReportingRunner(func(_ context.Context, _ inconsistency.Reporter) error {
+				return errors.New("checksum mismatch while reading postgresql://verify:supersecret@source.internal:5432/appdb")
+			}),
+			IDGenerator: func() string { return "job-000001" },
+			Logger:      logger,
+		})
+	}()
+
+	client := &http.Client{Timeout: 2 * time.Second}
+	require.Eventually(t, func() bool {
+		response, err := client.Get("http://" + bindAddr + "/metrics")
+		if err != nil {
+			return false
+		}
+		defer func() {
+			_ = response.Body.Close()
+		}()
+		return response.StatusCode == http.StatusOK
+	}, 5*time.Second, 25*time.Millisecond)
+
+	response, err := http.Post("http://"+bindAddr+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+	require.Equal(t, http.StatusAccepted, response.StatusCode)
+
+	require.Eventually(t, func() bool {
+		getResponse, err := client.Get("http://" + bindAddr + "/jobs/job-000001")
+		require.NoError(t, err)
+		defer func() {
+			_ = getResponse.Body.Close()
+		}()
+		if getResponse.StatusCode != http.StatusOK {
+			return false
+		}
+
+		var payload map[string]any
+		require.NoError(t, json.NewDecoder(getResponse.Body).Decode(&payload))
+		return payload["status"] == "failed"
+	}, 5*time.Second, 25*time.Millisecond)
+
+	require.Eventually(t, func() bool {
+		return strings.TrimSpace(logs.String()) != ""
+	}, 2*time.Second, 25*time.Millisecond)
+
+	payloads := parseRuntimeJSONLogLines(t, logs.String())
+	failure := payloads[len(payloads)-1]
+	require.Equal(t, "error", failure["level"])
+	require.Equal(t, "verify", failure["service"])
+	require.Equal(t, "job.failed", failure["event"])
+	require.Equal(t, "verify_execution", failure["category"])
+	require.Equal(t, "verify_failed", failure["code"])
+	require.Equal(
+		t,
+		"verify execution failed: checksum mismatch while reading postgresql://verify:redacted@source.internal:5432/appdb",
+		failure["message"],
+	)
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"reason": "checksum mismatch while reading postgresql://verify:redacted@source.internal:5432/appdb",
+			},
+		},
+		failure["details"],
+	)
+	require.NotContains(t, logs.String(), "supersecret")
+
+	cancel()
+	require.NoError(t, <-runErrCh)
+}
+
 func TestRunServesHTTPSWithoutRequiringClientCertificates(t *testing.T) {
 	tlsFiles := writeListenerTLSFiles(t)
 	bindAddr := reserveLocalAddress(t)
@@ -277,6 +459,40 @@ type listenerTLSFiles struct {
 	clientCAPEM    []byte
 	serverCert     *x509.Certificate
 	clientCACert   *x509.Certificate
+}
+
+type runtimeLogBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *runtimeLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *runtimeLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func parseRuntimeJSONLogLines(t *testing.T, raw string) []map[string]any {
+	t.Helper()
+
+	lines := bytes.Split(bytes.TrimSpace([]byte(raw)), []byte("\n"))
+	payloads := make([]map[string]any, 0, len(lines))
+	for _, line := range lines {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var payload map[string]any
+		require.NoError(t, json.Unmarshal(line, &payload), "runtime json logging must emit valid JSON")
+		payloads = append(payloads, payload)
+	}
+	require.NotEmpty(t, payloads, "runtime json logging must emit at least one log line")
+	return payloads
 }
 
 func writeListenerTLSFiles(t *testing.T) listenerTLSFiles {
@@ -428,4 +644,14 @@ type noopRunner struct{}
 
 func (noopRunner) Run(context.Context, RunRequest, inconsistency.Reporter) error {
 	return nil
+}
+
+type runtimeReportingRunner func(ctx context.Context, reporter inconsistency.Reporter) error
+
+func (r runtimeReportingRunner) Run(
+	ctx context.Context,
+	_ RunRequest,
+	reporter inconsistency.Reporter,
+) error {
+	return r(ctx, reporter)
 }

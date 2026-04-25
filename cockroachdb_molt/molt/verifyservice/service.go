@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/molt/verify/inconsistency"
+	"github.com/rs/zerolog"
 )
 
 type JobStatus string
@@ -32,12 +33,14 @@ type Dependencies struct {
 	Runner         Runner
 	IDGenerator    func() string
 	RawTableReader RawTableReader
+	Logger         zerolog.Logger
 }
 
 type Service struct {
 	mu               sync.Mutex
 	runner           Runner
 	idGenerator      func() string
+	logger           zerolog.Logger
 	rawTableEnabled  bool
 	rawTableReader   RawTableReader
 	activeJob        *job
@@ -57,6 +60,7 @@ func NewService(cfg Config, deps Dependencies) *Service {
 	return &Service{
 		runner:          deps.Runner,
 		idGenerator:     deps.IDGenerator,
+		logger:          deps.Logger,
 		rawTableEnabled: cfg.Verify.RawTableOutput,
 		rawTableReader:  deps.RawTableReader,
 	}
@@ -136,18 +140,20 @@ func (s *Service) startJob(request RunRequest) (*job, error) {
 
 func (s *Service) finishJob(jobID string, err error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	job := s.activeJob
 	if job == nil || job.id != jobID {
+		s.mu.Unlock()
 		return
 	}
 
+	var failureToLog *operatorError
 	switch {
 	case err == nil:
 		if mismatchFailure := job.result.mismatchFailure(); mismatchFailure != nil {
 			job.status = JobStatusFailed
 			job.failure = mismatchFailure
+			failureToLog = mismatchFailure
 		} else {
 			job.status = JobStatusSucceeded
 		}
@@ -156,10 +162,29 @@ func (s *Service) finishJob(jobID string, err error) {
 	default:
 		job.status = JobStatusFailed
 		job.failure = classifyRunFailure(err)
+		failureToLog = job.failure
 	}
 	job.cancel = nil
 	s.lastCompletedJob = job
 	s.activeJob = nil
+	logger := s.logger
+	s.mu.Unlock()
+
+	if failureToLog != nil {
+		logJobFailure(logger, failureToLog)
+	}
+}
+
+func logJobFailure(logger zerolog.Logger, failure *operatorError) {
+	view := failure.view()
+	event := logger.Error().
+		Str("event", "job.failed").
+		Str("category", view.Category).
+		Str("code", view.Code)
+	if len(view.Details) > 0 {
+		event = event.Any("details", view.Details)
+	}
+	event.Msg(view.Message)
 }
 
 func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {

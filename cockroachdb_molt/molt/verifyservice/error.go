@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/cockroachdb/molt/utils"
 )
 
 type operatorError struct {
@@ -44,6 +46,15 @@ type operatorErrorPayload struct {
 }
 
 var unknownFieldPattern = regexp.MustCompile(`^json: unknown field "([^"]+)"$`)
+var embeddedURIPattern = regexp.MustCompile(`[a-zA-Z][a-zA-Z0-9+.-]*://[^\s"']+`)
+
+var redactedDatabaseQueryParams = []string{
+	"password",
+	"pass",
+	"passwd",
+	"pwd",
+	"sslpassword",
+}
 
 func newOperatorError(category string, code string, message string, details ...operatorErrorDetail) *operatorError {
 	return &operatorError{
@@ -103,9 +114,67 @@ func (e *operatorError) payload() operatorErrorPayload {
 	return operatorErrorPayload{
 		Category: e.category,
 		Code:     e.code,
-		Message:  e.message,
-		Details:  e.details,
+		Message:  sanitizeOperatorText(e.message),
+		Details:  sanitizeOperatorErrorDetails(e.details),
 	}
+}
+
+func (e *operatorError) view() OperatorErrorView {
+	if e == nil {
+		return OperatorErrorView{}
+	}
+	details := make([]OperatorErrorDetail, 0, len(e.details))
+	for _, detail := range sanitizeOperatorErrorDetails(e.details) {
+		details = append(details, OperatorErrorDetail{
+			Field:  detail.Field,
+			Reason: detail.Reason,
+		})
+	}
+	return OperatorErrorView{
+		Category: e.category,
+		Code:     e.code,
+		Message:  sanitizeOperatorText(e.message),
+		Details:  details,
+	}
+}
+
+func sanitizeOperatorErrorDetails(details []operatorErrorDetail) []operatorErrorDetail {
+	if len(details) == 0 {
+		return nil
+	}
+
+	sanitized := make([]operatorErrorDetail, 0, len(details))
+	for _, detail := range details {
+		sanitized = append(sanitized, operatorErrorDetail{
+			Field:  sanitizeOperatorText(detail.Field),
+			Reason: sanitizeOperatorText(detail.Reason),
+		})
+	}
+	return sanitized
+}
+
+func sanitizeOperatorText(text string) string {
+	return embeddedURIPattern.ReplaceAllStringFunc(text, func(raw string) string {
+		trimmed, suffix := splitOperatorURISuffix(raw)
+		sanitized, err := utils.SanitizeExternalStorageURI(trimmed, redactedDatabaseQueryParams)
+		if err != nil {
+			return raw
+		}
+		return sanitized + suffix
+	})
+}
+
+func splitOperatorURISuffix(raw string) (string, string) {
+	end := len(raw)
+	for end > 0 {
+		switch raw[end-1] {
+		case '.', ',', ';', ')', ']', '}':
+			end--
+		default:
+			return raw[:end], raw[end:]
+		}
+	}
+	return raw, ""
 }
 
 func asOperatorError(err error) (*operatorError, bool) {
@@ -166,17 +235,5 @@ func ExtractOperatorError(err error) (OperatorErrorView, bool) {
 	if !ok {
 		return OperatorErrorView{}, false
 	}
-	details := make([]OperatorErrorDetail, 0, len(opErr.details))
-	for _, detail := range opErr.details {
-		details = append(details, OperatorErrorDetail{
-			Field:  detail.Field,
-			Reason: detail.Reason,
-		})
-	}
-	return OperatorErrorView{
-		Category: opErr.category,
-		Code:     opErr.code,
-		Message:  opErr.message,
-		Details:  details,
-	}, true
+	return opErr.view(), true
 }
