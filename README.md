@@ -190,7 +190,7 @@ webhook:
     client_ca_path: /config/certs/client-ca.crt
 ```
 
-For TLS targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
+For TLS targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params. TLS reference: `docs/tls-configuration.md`.
 
 Explicit-field alternative:
 
@@ -306,17 +306,9 @@ docker compose -f runner.compose.yml run --rm runner validate-config --config /c
 docker compose -f runner.compose.yml up runner
 ```
 
-TLS field mapping:
-
-| Boundary | Runner | Verify |
-| --- | --- | --- |
-| Listener TLS | `webhook.tls.cert_path`, `webhook.tls.key_path`, `webhook.tls.client_ca_path` | `listener.tls.cert_path`, `listener.tls.key_path`, `listener.tls.client_ca_path` |
-| Database TLS files | `mappings[].destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` | `verify.source.tls.ca_cert_path`, `client_cert_path`, `client_key_path` and `verify.destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` |
-| Verification mode | `mappings[].destination.tls.mode` or destination URL query params | `sslmode` in `verify.source.url` / `verify.destination.url` |
-
 ## Verify Quick Start
 
-Pull verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in DB URLs.
+Pull verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in DB URLs. TLS reference: `docs/tls-configuration.md`.
 `openapi/verify-service.yaml`.
 
 ```bash

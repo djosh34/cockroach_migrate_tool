@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 25 10:53:30 PM CEST 2026
+Generated: Sat Apr 25 11:06:34 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -271,6 +271,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Document verify service job lifecycle and stateful behavior <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-03-docs-api-contracts/task-10-docs-tls-configuration-reference.md`
+
+```
+## Task: Create unified TLS configuration reference document <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

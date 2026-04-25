@@ -1,4 +1,4 @@
-## Task: Create unified TLS configuration reference document <status>not_started</status> <passes>false</passes>
+## Task: Create unified TLS configuration reference document <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -44,14 +44,16 @@ A user who needs to configure TLS for any component can open one document, find 
 </description>
 
 <acceptance_criteria>
-- [ ] TLS reference document exists and covers all four TLS surfaces
-- [ ] Component-to-field mapping table is present and accurate
-- [ ] Each TLS mode is explained in plain language
-- [ ] At least 7 example config snippets cover common scenarios
-- [ ] File path convention `/config/certs/...` is recommended
-- [ ] No OpenSSL tutorials, vendor CA guides, or K8s configs are included
-- [ ] README links to the TLS reference document
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] TLS reference document exists and covers all four TLS surfaces
+- [x] Component-to-field mapping table is present and accurate
+- [x] Each TLS mode is explained in plain language
+- [x] At least 7 example config snippets cover common scenarios
+- [x] File path convention `/config/certs/...` is recommended
+- [x] No OpenSSL tutorials, vendor CA guides, or K8s configs are included
+- [x] README links to the TLS reference document
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-03-docs-api-contracts/task-10-docs-tls-configuration-reference_plans/2026-04-25-tls-configuration-reference-plan.md</plan>

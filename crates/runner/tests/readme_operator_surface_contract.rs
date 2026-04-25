@@ -290,23 +290,23 @@ fn readme_webhook_payload_docs_cover_resolved_curl_and_responses_without_interna
 }
 
 #[test]
-fn readme_tls_docs_show_side_by_side_runner_and_verify_mapping() {
+fn readme_tls_docs_link_to_the_dedicated_reference_without_duplicating_the_matrix() {
     let readme = ReadmeOperatorSurface::load();
     let runner = readme.section("## Runner Quick Start");
     let verify = readme.section("## Verify Quick Start");
 
-    for required_snippet in [
-        "TLS field mapping:",
-        "| Boundary | Runner | Verify |",
-        "| Listener TLS | `webhook.tls.cert_path`, `webhook.tls.key_path`, `webhook.tls.client_ca_path` | `listener.tls.cert_path`, `listener.tls.key_path`, `listener.tls.client_ca_path` |",
-        "| Database TLS files | `mappings[].destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` | `verify.source.tls.ca_cert_path`, `client_cert_path`, `client_key_path` and `verify.destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` |",
-        "| Verification mode | `mappings[].destination.tls.mode` or destination URL query params | `sslmode` in `verify.source.url` / `verify.destination.url` |",
-    ] {
-        assert!(
-            readme.text().contains(required_snippet),
-            "README should make the runner/verify TLS correspondence obvious; missing `{required_snippet}`",
-        );
-    }
+    assert!(
+        runner.contains("TLS reference: `docs/tls-configuration.md`."),
+        "README runner quick start should link to the dedicated TLS reference doc",
+    );
+    assert!(
+        verify.contains("TLS reference: `docs/tls-configuration.md`."),
+        "README verify quick start should link to the dedicated TLS reference doc",
+    );
+    assert!(
+        !readme.text().contains("TLS field mapping:"),
+        "README should hand the full runner/verify TLS matrix to the dedicated doc instead of duplicating it",
+    );
 
     assert!(
         runner.contains("client_ca_path: /config/certs/client-ca.crt"),

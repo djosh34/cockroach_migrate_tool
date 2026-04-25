@@ -153,3 +153,4 @@
 .ralph/tasks/story-03-docs-api-contracts/task-07-docs-webhook-payload-format.md
 .ralph/tasks/story-03-docs-api-contracts/task-08-docs-openapi-verify-api.md
 .ralph/tasks/story-03-docs-api-contracts/task-09-docs-verify-job-lifecycle.md
+.ralph/tasks/story-03-docs-api-contracts/task-10-docs-tls-configuration-reference.md
