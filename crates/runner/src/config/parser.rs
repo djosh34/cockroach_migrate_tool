@@ -9,7 +9,7 @@ use serde_yaml::Value;
 use crate::{
     config::{
         MappingConfig, PostgresTargetConfig, PostgresTlsConfig, PostgresTlsMode, ReconcileConfig,
-        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig,
+        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig, WebhookMode, WebhookTransport,
     },
     error::RunnerConfigError,
 };
@@ -51,7 +51,9 @@ impl RawRunnerConfig {
 #[serde(deny_unknown_fields)]
 struct RawWebhookConfig {
     bind_addr: String,
-    tls: RawTlsConfig,
+    #[serde(default)]
+    mode: RawWebhookMode,
+    tls: Option<RawTlsConfig>,
 }
 
 impl RawWebhookConfig {
@@ -63,11 +65,44 @@ impl RawWebhookConfig {
                     field: "webhook.bind_addr",
                     source,
                 })?;
+        let transport = match (self.mode, self.tls) {
+            (RawWebhookMode::Http, Some(_)) => {
+                return Err(RunnerConfigError::InvalidField {
+                    field: "webhook.tls",
+                    message: "must not be set when webhook.mode is `http`",
+                });
+            }
+            (RawWebhookMode::Http, None) => WebhookTransport::Http,
+            (RawWebhookMode::Https, Some(tls)) => WebhookTransport::Https(tls.validate()?),
+            (RawWebhookMode::Https, None) => {
+                return Err(RunnerConfigError::InvalidField {
+                    field: "webhook.tls",
+                    message: "must be set when webhook.mode is `https`",
+                });
+            }
+        };
 
         Ok(WebhookConfig {
             bind_addr,
-            tls: self.tls.validate()?,
+            transport,
         })
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum RawWebhookMode {
+    Http,
+    #[default]
+    Https,
+}
+
+impl From<RawWebhookMode> for WebhookMode {
+    fn from(value: RawWebhookMode) -> Self {
+        match value {
+            RawWebhookMode::Http => WebhookMode::Http,
+            RawWebhookMode::Https => WebhookMode::Https,
+        }
     }
 }
 

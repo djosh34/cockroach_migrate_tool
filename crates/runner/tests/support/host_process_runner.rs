@@ -90,11 +90,15 @@ impl HostProcessRunner {
                         .get("webhook")
                         .and_then(Value::as_str)
                         .expect("webhook bound event must expose a webhook address");
+                    let scheme = json_object
+                        .get("mode")
+                        .and_then(Value::as_str)
+                        .expect("webhook bound event must expose a webhook mode");
                     let port = bind_addr
                         .rsplit(':')
                         .next()
                         .expect("webhook bound address must include a port");
-                    return format!("https://localhost:{port}");
+                    return format!("{scheme}://localhost:{port}");
                 }
                 Some(other) => panic!("unexpected runner startup event `{other}`"),
                 None => panic!("runner startup log must include a string event field"),

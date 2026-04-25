@@ -30,7 +30,7 @@ use crate::{
     RuntimeEventSink,
     error::{RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError},
     metrics::WebhookOutcome,
-    runtime_plan::RunnerRuntimePlan,
+    runtime_plan::{RunnerRuntimePlan, WebhookListenerTransport},
     tracking_state::{ResolvedTrackingTarget, persist_resolved_watermark},
 };
 use payload::parse_webhook_request;
@@ -51,14 +51,38 @@ pub(crate) async fn serve(
         .map_err(|source| RunnerWebhookRuntimeError::LocalAddr { source })?;
     emit_event(
         LogEvent::info("runner", "webhook.bound", "runner webhook listener bound")
-            .with_field("webhook", bound_addr.to_string()),
+            .with_field("webhook", bound_addr.to_string())
+            .with_field(
+                "mode",
+                match runtime.webhook_listener().transport() {
+                    WebhookListenerTransport::Http => "http",
+                    WebhookListenerTransport::Https { .. } => "https",
+                },
+            ),
     );
-    let tls_acceptor = TlsAcceptor::from(Arc::new(load_tls_config(runtime.as_ref())?));
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/metrics", get(metrics))
         .route("/ingest/{mapping_id}", post(ingest))
         .with_state(runtime.clone());
+    match runtime.webhook_listener().transport() {
+        WebhookListenerTransport::Http => axum::serve(listener, app)
+            .await
+            .map_err(|source| RunnerWebhookRuntimeError::ServeConnection {
+                source: Box::new(source),
+            }),
+        WebhookListenerTransport::Https { .. } => {
+            let tls_acceptor = TlsAcceptor::from(Arc::new(load_tls_config(runtime.as_ref())?));
+            serve_https(listener, app, tls_acceptor).await
+        }
+    }
+}
+
+async fn serve_https(
+    listener: TcpListener,
+    app: Router,
+    tls_acceptor: TlsAcceptor,
+) -> Result<(), RunnerWebhookRuntimeError> {
     let mut connections = JoinSet::new();
 
     loop {
@@ -77,9 +101,7 @@ pub(crate) async fn serve(
                     AutoBuilder::new(TokioExecutor::new())
                         .serve_connection_with_upgrades(io, TowerToHyperService::new(service))
                         .await
-                        .map_err(|source| RunnerWebhookRuntimeError::ServeConnection {
-                            source,
-                        })
+                        .map_err(|source| RunnerWebhookRuntimeError::ServeConnection { source })
                 });
             }
             Some(result) = connections.join_next(), if !connections.is_empty() => {
@@ -100,40 +122,45 @@ fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWe
             .map_err(|_| RunnerWebhookRuntimeError::InstallCryptoProvider)?;
     }
 
-    let cert_contents = fs::read(runtime.tls_cert_path()).map_err(|source| {
+    let tls = runtime
+        .webhook_listener()
+        .transport()
+        .tls()
+        .unwrap_or_else(|| panic!("https listener must expose tls material"));
+    let cert_contents = fs::read(tls.cert_path()).map_err(|source| {
         RunnerWebhookRuntimeError::ReadTlsCertificate {
-            path: runtime.tls_cert_path().to_path_buf(),
+            path: tls.cert_path().to_path_buf(),
             source,
         }
     })?;
-    let key_contents = fs::read(runtime.tls_key_path()).map_err(|source| {
+    let key_contents = fs::read(tls.key_path()).map_err(|source| {
         RunnerWebhookRuntimeError::ReadTlsPrivateKey {
-            path: runtime.tls_key_path().to_path_buf(),
+            path: tls.key_path().to_path_buf(),
             source,
         }
     })?;
     let certificates = rustls_pemfile::certs(&mut cert_contents.as_slice())
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| RunnerWebhookRuntimeError::ReadTlsCertificate {
-            path: runtime.tls_cert_path().to_path_buf(),
+            path: tls.cert_path().to_path_buf(),
             source,
         })?;
     if certificates.is_empty() {
         return Err(RunnerWebhookRuntimeError::MissingTlsCertificate {
-            path: runtime.tls_cert_path().to_path_buf(),
+            path: tls.cert_path().to_path_buf(),
         });
     }
 
     let private_key =
         rustls_pemfile::private_key(&mut key_contents.as_slice()).map_err(|source| {
             RunnerWebhookRuntimeError::ReadTlsPrivateKey {
-                path: runtime.tls_key_path().to_path_buf(),
+                path: tls.key_path().to_path_buf(),
                 source,
             }
         })?;
     let Some(private_key) = private_key else {
         return Err(RunnerWebhookRuntimeError::MissingTlsPrivateKey {
-            path: runtime.tls_key_path().to_path_buf(),
+            path: tls.key_path().to_path_buf(),
         });
     };
 

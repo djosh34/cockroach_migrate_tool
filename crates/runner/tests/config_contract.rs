@@ -89,9 +89,80 @@ fn validate_config_supports_json_operator_logs() {
         Some("config.validated"),
         "validate-config json log must expose the validation success event",
     );
+    assert_eq!(
+        json_object.get("mode").and_then(Value::as_str),
+        Some("https"),
+        "validate-config json log must expose the default webhook mode",
+    );
+    assert_eq!(
+        json_object.get("tls").and_then(Value::as_str),
+        Some("certs/server.crt+certs/server.key"),
+        "validate-config json log must expose tls material when https is active",
+    );
     assert!(
         !stderr.contains("config valid:"),
         "json logging mode must not fall back to the legacy plain-text summary: {stderr:?}",
+    );
+}
+
+#[test]
+fn validate_config_json_logs_omit_tls_for_http_webhook_mode() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8080
+  mode: http
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("http webhook config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    let assert = command
+        .args(["validate-config", "--log-format", "json", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("validate-config stdout should be utf-8");
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("validate-config stderr should be utf-8");
+
+    assert!(
+        stdout.is_empty(),
+        "json logging mode must keep validate-config stdout empty, got: {stdout:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(stderr.trim()).expect("validate-config stderr must be valid JSON");
+    let json_object = payload
+        .as_object()
+        .expect("validate-config stderr json must be an object");
+
+    assert_eq!(
+        json_object.get("mode").and_then(Value::as_str),
+        Some("http"),
+        "validate-config json log must expose the selected http webhook mode",
+    );
+    assert!(
+        !json_object.contains_key("tls"),
+        "validate-config json log must omit tls when http mode is active: {payload}",
     );
 }
 
@@ -269,6 +340,140 @@ fn validate_config_accepts_a_mounted_config_directory_convention() {
         .stdout(predicate::str::contains("verify=").not())
         .stdout(predicate::str::contains(
             "tls=/config/certs/server.crt+/config/certs/server.key",
+        ));
+}
+
+#[test]
+fn validate_config_accepts_http_webhook_mode_without_tls() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8080
+  mode: http
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("http webhook config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"))
+        .stdout(predicate::str::contains("webhook=127.0.0.1:8080"))
+        .stdout(predicate::str::contains("mode=http"))
+        .stdout(predicate::str::contains("tls=").not());
+}
+
+#[test]
+fn validate_config_defaults_webhook_mode_to_https_when_tls_is_present() {
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(fixture_path("valid-runner-config.yml"))
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("mode=https"))
+        .stdout(predicate::str::contains("tls=certs/server.crt+certs/server.key"));
+}
+
+#[test]
+fn validate_config_rejects_https_webhook_mode_without_tls() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  mode: https
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("https webhook config without tls should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "config: invalid config field `webhook.tls`: must be set when webhook.mode is `https`",
+        ));
+}
+
+#[test]
+fn validate_config_rejects_http_webhook_mode_with_tls_material() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8080
+  mode: http
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("http webhook config with tls should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "config: invalid config field `webhook.tls`: must not be set when webhook.mode is `http`",
         ));
 }
 

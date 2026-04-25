@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
 use crate::{
-    config::{MappingConfig, PostgresTargetConfig, RunnerConfig},
+    config::{MappingConfig, PostgresTargetConfig, RunnerConfig, WebhookConfig},
     error::{RunnerRuntimePlanError, RunnerWebhookRoutingError},
     helper_plan::{HelperShadowTablePlan, MappingHelperPlan},
     metrics::RunnerMetrics,
@@ -9,9 +9,7 @@ use crate::{
 };
 
 pub(crate) struct RunnerStartupPlan {
-    bind_addr: std::net::SocketAddr,
-    tls_cert_path: PathBuf,
-    tls_key_path: PathBuf,
+    webhook_listener: WebhookListenerPlan,
     reconcile_interval: Duration,
     mappings: BTreeMap<String, ConfiguredMappingPlan>,
     destination_groups: Vec<DestinationGroupPlan>,
@@ -40,9 +38,7 @@ impl RunnerStartupPlan {
             .collect::<Result<Vec<_>, RunnerRuntimePlanError>>()?;
 
         Ok(Self {
-            bind_addr: config.webhook().bind_addr(),
-            tls_cert_path: config.webhook().tls().cert_path().to_path_buf(),
-            tls_key_path: config.webhook().tls().key_path().to_path_buf(),
+            webhook_listener: WebhookListenerPlan::from_config(config.webhook()),
             reconcile_interval: Duration::from_secs(config.reconcile().interval_secs()),
             mappings,
             destination_groups,
@@ -178,9 +174,7 @@ impl DestinationGroupPlan {
 }
 
 pub(crate) struct RunnerRuntimePlan {
-    bind_addr: std::net::SocketAddr,
-    tls_cert_path: PathBuf,
-    tls_key_path: PathBuf,
+    webhook_listener: WebhookListenerPlan,
     reconcile_interval: Duration,
     metrics: RunnerMetrics,
     mappings: BTreeMap<String, MappingRuntimePlan>,
@@ -227,9 +221,7 @@ impl RunnerRuntimePlan {
             .collect();
 
         Ok(Self {
-            bind_addr: startup_plan.bind_addr,
-            tls_cert_path: startup_plan.tls_cert_path,
-            tls_key_path: startup_plan.tls_key_path,
+            webhook_listener: startup_plan.webhook_listener,
             reconcile_interval: startup_plan.reconcile_interval,
             metrics: RunnerMetrics::new(),
             mappings,
@@ -237,16 +229,12 @@ impl RunnerRuntimePlan {
         })
     }
 
+    pub(crate) fn webhook_listener(&self) -> &WebhookListenerPlan {
+        &self.webhook_listener
+    }
+
     pub(crate) fn bind_addr(&self) -> std::net::SocketAddr {
-        self.bind_addr
-    }
-
-    pub(crate) fn tls_cert_path(&self) -> &std::path::Path {
-        &self.tls_cert_path
-    }
-
-    pub(crate) fn tls_key_path(&self) -> &std::path::Path {
-        &self.tls_key_path
+        self.webhook_listener.bind_addr()
     }
 
     pub(crate) fn reconcile_interval(&self) -> Duration {
@@ -270,6 +258,69 @@ impl RunnerRuntimePlan {
 
     pub(crate) fn destination_groups(&self) -> &[DestinationRuntimePlan] {
         &self.destination_groups
+    }
+}
+
+pub(crate) struct WebhookListenerPlan {
+    bind_addr: std::net::SocketAddr,
+    transport: WebhookListenerTransport,
+}
+
+impl WebhookListenerPlan {
+    fn from_config(config: &WebhookConfig) -> Self {
+        Self {
+            bind_addr: config.bind_addr(),
+            transport: match config.tls() {
+                Some(tls) => WebhookListenerTransport::Https {
+                    cert_path: tls.cert_path().to_path_buf(),
+                    key_path: tls.key_path().to_path_buf(),
+                },
+                None => WebhookListenerTransport::Http,
+            },
+        }
+    }
+
+    pub(crate) fn bind_addr(&self) -> std::net::SocketAddr {
+        self.bind_addr
+    }
+
+    pub(crate) fn transport(&self) -> &WebhookListenerTransport {
+        &self.transport
+    }
+}
+
+pub(crate) enum WebhookListenerTransport {
+    Http,
+    Https { cert_path: PathBuf, key_path: PathBuf },
+}
+
+impl WebhookListenerTransport {
+    pub(crate) fn tls(&self) -> Option<WebhookListenerTls<'_>> {
+        match self {
+            Self::Http => None,
+            Self::Https {
+                cert_path,
+                key_path,
+            } => Some(WebhookListenerTls {
+                cert_path,
+                key_path,
+            }),
+        }
+    }
+}
+
+pub(crate) struct WebhookListenerTls<'a> {
+    cert_path: &'a PathBuf,
+    key_path: &'a PathBuf,
+}
+
+impl WebhookListenerTls<'_> {
+    pub(crate) fn cert_path(&self) -> &std::path::Path {
+        self.cert_path
+    }
+
+    pub(crate) fn key_path(&self) -> &std::path::Path {
+        self.key_path
     }
 }
 

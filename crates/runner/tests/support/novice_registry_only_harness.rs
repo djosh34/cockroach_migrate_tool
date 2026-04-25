@@ -32,7 +32,8 @@ pub struct RunningRunner {
     postgres_container_name: String,
     runner_container_name: String,
     host_port: u16,
-    server_cert_path: PathBuf,
+    webhook_scheme: &'static str,
+    server_cert_path: Option<PathBuf>,
 }
 
 pub struct RunningDestinationPostgres {
@@ -65,6 +66,17 @@ pub struct VerifyComposeFailure {
     pub category: String,
     pub code: String,
     pub message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunnerReadmeConfig {
+    webhook: RunnerReadmeWebhookConfig,
+}
+
+#[derive(Debug, Deserialize)]
+struct RunnerReadmeWebhookConfig {
+    bind_addr: String,
+    mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,6 +160,7 @@ impl NoviceRegistryOnlyHarness {
             postgres.host_port(),
             "runner-secret-a",
         );
+        let (webhook_scheme, container_port) = self.runner_listener_contract();
         let postgres_container_name = postgres.container_name.clone();
         std::mem::forget(postgres);
 
@@ -160,7 +173,7 @@ impl NoviceRegistryOnlyHarness {
                 "--add-host",
                 "host.docker.internal:host-gateway",
                 "-p",
-                &format!("127.0.0.1:{host_port}:8443"),
+                &format!("127.0.0.1:{host_port}:{container_port}"),
                 "-v",
                 &config_mount,
                 runner_image_ref(),
@@ -177,7 +190,12 @@ impl NoviceRegistryOnlyHarness {
             postgres_container_name,
             runner_container_name,
             host_port,
-            server_cert_path: self.root_dir().join("config/certs/server.crt"),
+            webhook_scheme,
+            server_cert_path: if webhook_scheme == "https" {
+                Some(self.root_dir().join("config/certs/server.crt"))
+            } else {
+                None
+            },
         }
     }
 
@@ -420,6 +438,27 @@ impl NoviceRegistryOnlyHarness {
         fs::write(self.root_dir().join("config/runner.yml"), config_text)
             .expect("novice runner config should be written");
     }
+
+    fn runner_listener_contract(&self) -> (&'static str, u16) {
+        let config_text = fs::read_to_string(self.root_dir().join("config/runner.yml"))
+            .expect("novice runner config should be readable");
+        let config: RunnerReadmeConfig =
+            serde_yaml::from_str(&config_text).expect("novice runner config should parse");
+        let port = config
+            .webhook
+            .bind_addr
+            .rsplit(':')
+            .next()
+            .expect("runner bind_addr should include a port")
+            .parse::<u16>()
+            .expect("runner bind_addr port should be numeric");
+        let scheme = match config.webhook.mode.as_deref() {
+            Some("http") => "http",
+            Some("https") | None => "https",
+            Some(other) => panic!("unexpected runner webhook mode `{other}` in README config"),
+        };
+        (scheme, port)
+    }
 }
 
 impl RunningRunner {
@@ -431,15 +470,14 @@ impl RunningRunner {
                     docker_logs(&self.runner_container_name),
                 );
             }
-            let healthcheck = Command::new("curl")
-                .args([
-                    "--silent",
-                    "--show-error",
-                    "--fail",
-                    "--cacert",
-                    &self.server_cert_path.display().to_string(),
-                    &format!("https://localhost:{}/healthz", self.host_port),
-                ])
+            let url = format!("{}://localhost:{}/healthz", self.webhook_scheme, self.host_port);
+            let mut command = Command::new("curl");
+            command.args(["--silent", "--show-error", "--fail"]);
+            if let Some(server_cert_path) = &self.server_cert_path {
+                command.args(["--cacert", &server_cert_path.display().to_string()]);
+            }
+            let healthcheck = command
+                .arg(&url)
                 .status()
                 .unwrap_or_else(|error| panic!("curl healthcheck should start: {error}"));
             if healthcheck.success() {

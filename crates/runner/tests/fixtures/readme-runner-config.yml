@@ -1,9 +1,7 @@
 # config/runner.yml
 webhook:
-  bind_addr: 0.0.0.0:8443
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
+  bind_addr: 0.0.0.0:8080
+  mode: http
 reconcile:
   interval_secs: 30
 mappings:

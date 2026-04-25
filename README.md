@@ -158,7 +158,7 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 ## Runner Quick Start
 
-Pull the published runner image and create `config/certs/server.crt`, `config/certs/server.key`, `config/certs/destination-ca.crt`, `config/certs/destination-client.crt`, and `config/certs/destination-client.key`.
+Pull the published runner image and write the runner config inline. The local-development path below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
 The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected and routed to the right PostgreSQL target.
 
@@ -167,21 +167,13 @@ export GITHUB_OWNER=<github-owner>
 export IMAGE_TAG=<published-commit-sha>
 export RUNNER_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-runner:${IMAGE_TAG}"
 docker pull "${RUNNER_IMAGE}"
-mkdir -p config/certs
-openssl req -x509 -newkey rsa:2048 -nodes \
-  -keyout config/certs/server.key \
-  -out config/certs/server.crt \
-  -days 365 \
-  -subj "/CN=runner.example.internal"
 ```
 
 ```yaml
 # config/runner.yml
 webhook:
-  bind_addr: 0.0.0.0:8443
-  tls:
-    cert_path: /config/certs/server.crt
-    key_path: /config/certs/server.key
+  bind_addr: 0.0.0.0:8080
+  mode: http
 reconcile:
   interval_secs: 30
 mappings:
@@ -193,6 +185,17 @@ mappings:
         - public.orders
     destination:
       url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
+```
+
+For production HTTPS, switch to:
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
 ```
 
 For TLS-enabled targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
@@ -235,7 +238,7 @@ Before starting the runtime, apply the PostgreSQL grant SQL from the setup secti
 
 ```bash
 docker run --rm \
-  -p 8443:8443 \
+  -p 8080:8080 \
   -v "$(pwd)/config:/config:ro" \
   "${RUNNER_IMAGE}" \
   run --log-format json --config /config/runner.yml
@@ -256,14 +259,10 @@ services:
     image: "${RUNNER_IMAGE}"
     network_mode: bridge
     ports:
-      - "${RUNNER_HTTPS_PORT:-8443}:8443"
+      - "${RUNNER_HTTP_PORT:-8080}:8080"
     configs:
       - source: runner-config
         target: /config/runner.yml
-      - source: runner-server-cert
-        target: /config/certs/server.crt
-      - source: runner-server-key
-        target: /config/certs/server.key
     command:
       - run
       - --log-format
@@ -274,10 +273,6 @@ services:
 configs:
   runner-config:
     file: ./config/runner.yml
-  runner-server-cert:
-    file: ./config/certs/server.crt
-  runner-server-key:
-    file: ./config/certs/server.key
 ```
 
 Validate the mounted config and then start the runtime with Compose:

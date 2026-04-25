@@ -3,6 +3,7 @@ use std::{
     net::TcpListener,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::{Mutex, MutexGuard, OnceLock},
     thread,
     time::Duration,
 };
@@ -49,10 +50,14 @@ struct TestPostgres {
     _data_dir: tempfile::TempDir,
     process: Child,
     port: u16,
+    _suite_guard: MutexGuard<'static, ()>,
 }
 
 impl TestPostgres {
     fn start() -> Self {
+        let suite_guard = bootstrap_suite_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         for _ in 0..10 {
             let data_dir = tempfile::tempdir().expect("postgres data dir should be created");
             let port = pick_unused_port();
@@ -69,7 +74,7 @@ impl TestPostgres {
                 "initdb",
             );
 
-            let process = Command::new("postgres")
+            let mut process = Command::new("postgres")
                 .args(["-D"])
                 .arg(data_dir.path())
                 .args([
@@ -88,13 +93,13 @@ impl TestPostgres {
                 .spawn()
                 .expect("postgres should start");
 
-            let mut instance = Self {
-                _data_dir: data_dir,
-                process,
-                port,
-            };
-            if instance.wait_until_ready() {
-                return instance;
+            if Self::wait_until_ready(&mut process, port, data_dir.path()) {
+                return Self {
+                    _data_dir: data_dir,
+                    process,
+                    port,
+                    _suite_guard: suite_guard,
+                };
             }
         }
 
@@ -160,10 +165,9 @@ impl TestPostgres {
             .to_owned()
     }
 
-    fn wait_until_ready(&mut self) -> bool {
+    fn wait_until_ready(process: &mut Child, port: u16, expected_data_dir: &Path) -> bool {
         for _ in 0..50 {
-            if self
-                .process
+            if process
                 .try_wait()
                 .expect("postgres process status should be readable")
                 .is_some()
@@ -176,14 +180,14 @@ impl TestPostgres {
                     "-h",
                     "127.0.0.1",
                     "-p",
-                    &self.port.to_string(),
+                    &port.to_string(),
                     "-U",
                     "postgres",
                 ])
                 .status()
                 .expect("pg_isready should start");
             if status.success() {
-                return self.server_data_directory_matches_expected();
+                return Self::server_data_directory_matches_expected(port, expected_data_dir);
             }
             thread::sleep(Duration::from_millis(100));
         }
@@ -191,14 +195,14 @@ impl TestPostgres {
         false
     }
 
-    fn server_data_directory_matches_expected(&self) -> bool {
+    fn server_data_directory_matches_expected(port: u16, expected_data_dir: &Path) -> bool {
         let output = Command::new("psql")
             .env("PGPASSWORD", "")
             .args([
                 "-h",
                 "127.0.0.1",
                 "-p",
-                &self.port.to_string(),
+                &port.to_string(),
                 "-U",
                 "postgres",
                 "-d",
@@ -215,11 +219,52 @@ impl TestPostgres {
             && String::from_utf8(output.stdout)
                 .expect("postgres data directory should be utf-8")
                 .trim()
-                == self._data_dir.path().display().to_string()
+                == expected_data_dir.display().to_string()
     }
 
     fn write_runner_config(&self, path: &Path, bind_port: u16) {
         self.write_runner_config_with_tables(path, bind_port, &["public.customers"]);
+    }
+
+    fn write_http_runner_config(&self, path: &Path, bind_port: u16) {
+        self.write_http_runner_config_with_tables(path, bind_port, &["public.customers"]);
+    }
+
+    fn write_explicit_https_runner_config(&self, path: &Path, bind_port: u16) {
+        let tables_yaml = "        - public.customers";
+
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  mode: https
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+{tables_yaml}
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+                bind_port = bind_port,
+                cert_path = fixture_path("certs/server.crt").display(),
+                key_path = fixture_path("certs/server.key").display(),
+                tables_yaml = tables_yaml,
+                port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
     }
 
     fn write_runner_config_with_tables(&self, path: &Path, bind_port: u16, tables: &[&str]) {
@@ -255,6 +300,42 @@ mappings:
                 bind_port = bind_port,
                 cert_path = fixture_path("certs/server.crt").display(),
                 key_path = fixture_path("certs/server.key").display(),
+                tables_yaml = tables_yaml,
+                port = self.port,
+            ),
+        )
+        .expect("runner config should be written");
+    }
+
+    fn write_http_runner_config_with_tables(&self, path: &Path, bind_port: u16, tables: &[&str]) {
+        let tables_yaml = tables
+            .iter()
+            .map(|table| format!("        - {table}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  mode: http
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+{tables_yaml}
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+                bind_port = bind_port,
                 tables_yaml = tables_yaml,
                 port = self.port,
             ),
@@ -349,6 +430,11 @@ mappings:
     }
 }
 
+fn bootstrap_suite_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
 impl Drop for TestPostgres {
     fn drop(&mut self) {
         let _ = self.process.kill();
@@ -366,6 +452,10 @@ fn https_client() -> Client {
         .add_root_certificate(certificate)
         .build()
         .expect("https client should build")
+}
+
+fn http_client() -> Client {
+    Client::builder().build().expect("http client should build")
 }
 
 #[test]
@@ -477,6 +567,48 @@ fn run_serves_healthz_after_binding_an_ephemeral_webhook_port() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");
     postgres.write_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
+}
+
+#[test]
+fn run_serves_plain_http_healthz_when_webhook_mode_is_http() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_http_runner_config(&config_path, 0);
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&http_client());
+}
+
+#[test]
+fn run_serves_https_healthz_when_webhook_mode_is_explicit_https() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_explicit_https_runner_config(&config_path, 0);
     let mut runner = HostProcessRunner::start(&config_path);
     runner.assert_healthy(&https_client());
 }

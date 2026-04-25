@@ -1,4 +1,4 @@
-## Task: Add optional HTTP mode to runner webhook listener <status>not_started</status> <passes>false</passes>
+## Task: Add optional HTTP mode to runner webhook listener <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -31,13 +31,15 @@ and start the runner without certificates for local testing. Production configs 
 </description>
 
 <acceptance_criteria>
-- [ ] Config parser accepts `webhook.mode: http` and `webhook.mode: https`
-- [ ] Config parser rejects `webhook.mode: https` without `webhook.tls` section
-- [ ] Config parser accepts `webhook.mode: http` without `webhook.tls` section
-- [ ] `validate-config` output includes the mode (e.g., `mode=https` or `mode=http`)
-- [ ] Runner serves plain HTTP when mode is `http`
-- [ ] Runner serves HTTPS when mode is `https` (existing behavior)
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] Config parser accepts `webhook.mode: http` and `webhook.mode: https`
+- [x] Config parser rejects `webhook.mode: https` without `webhook.tls` section
+- [x] Config parser accepts `webhook.mode: http` without `webhook.tls` section
+- [x] `validate-config` output includes the mode (e.g., `mode=https` or `mode=http`)
+- [x] Runner serves plain HTTP when mode is `http`
+- [x] Runner serves HTTPS when mode is `https` (existing behavior)
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-01-runner-config-ergonomics/task-01-runner-http-webhook-mode_plans/2026-04-25-runner-http-webhook-mode-plan.md</plan>

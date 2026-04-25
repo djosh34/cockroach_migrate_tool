@@ -117,7 +117,8 @@ pub struct ValidatedConfig {
     config_path: String,
     mappings: usize,
     webhook_bind_addr: std::net::SocketAddr,
-    webhook_tls_files: String,
+    webhook_mode: &'static str,
+    webhook_tls_files: Option<String>,
 }
 
 impl From<&LoadedRunnerConfig> for ValidatedConfig {
@@ -128,24 +129,35 @@ impl From<&LoadedRunnerConfig> for ValidatedConfig {
             config_path: loaded_config.path().display().to_string(),
             mappings: config.mapping_count(),
             webhook_bind_addr: config.webhook().bind_addr(),
-            webhook_tls_files: config.webhook().tls_material_label(),
+            webhook_mode: config.webhook().mode().as_str(),
+            webhook_tls_files: config.webhook().tls().map(|tls| tls.material_label()),
         }
     }
 }
 
 impl ValidatedConfig {
     fn text_output(&self) -> String {
-        format!(
-            "config valid: config={} mappings={} webhook={} tls={}",
-            self.config_path, self.mappings, self.webhook_bind_addr, self.webhook_tls_files
-        )
+        let mut summary = format!(
+            "config valid: config={} mappings={} webhook={} mode={}",
+            self.config_path, self.mappings, self.webhook_bind_addr, self.webhook_mode
+        );
+        if let Some(tls) = &self.webhook_tls_files {
+            summary.push_str(" tls=");
+            summary.push_str(tls);
+        }
+        summary
     }
 
     fn event(&self) -> LogEvent<'static> {
-        LogEvent::info("runner", "config.validated", "runner config validated")
+        let event = LogEvent::info("runner", "config.validated", "runner config validated")
             .with_field("config", &self.config_path)
             .with_field("mappings", self.mappings)
             .with_field("webhook", self.webhook_bind_addr.to_string())
-            .with_field("tls", &self.webhook_tls_files)
+            .with_field("mode", self.webhook_mode);
+        if let Some(tls) = &self.webhook_tls_files {
+            event.with_field("tls", tls)
+        } else {
+            event
+        }
     }
 }

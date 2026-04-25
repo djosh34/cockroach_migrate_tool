@@ -256,7 +256,7 @@ impl From<PostgresTlsMode> for PgSslMode {
 #[derive(Clone, Debug)]
 pub(crate) struct WebhookConfig {
     pub(super) bind_addr: SocketAddr,
-    pub(super) tls: TlsConfig,
+    pub(super) transport: WebhookTransport,
 }
 
 impl WebhookConfig {
@@ -264,12 +264,49 @@ impl WebhookConfig {
         self.bind_addr
     }
 
-    pub(crate) fn tls(&self) -> &TlsConfig {
-        &self.tls
+    pub(crate) fn mode(&self) -> WebhookMode {
+        self.transport.mode()
     }
 
-    pub(crate) fn tls_material_label(&self) -> String {
-        self.tls.material_label()
+    pub(crate) fn tls(&self) -> Option<&TlsConfig> {
+        self.transport.tls()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum WebhookMode {
+    Http,
+    Https,
+}
+
+impl WebhookMode {
+    pub(crate) fn as_str(&self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https => "https",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum WebhookTransport {
+    Http,
+    Https(TlsConfig),
+}
+
+impl WebhookTransport {
+    pub(crate) fn mode(&self) -> WebhookMode {
+        match self {
+            Self::Http => WebhookMode::Http,
+            Self::Https(_) => WebhookMode::Https,
+        }
+    }
+
+    pub(crate) fn tls(&self) -> Option<&TlsConfig> {
+        match self {
+            Self::Http => None,
+            Self::Https(tls) => Some(tls),
+        }
     }
 }
 
