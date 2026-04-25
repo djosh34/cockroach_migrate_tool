@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 09:57:36 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-03-docs-api-contracts/task-07-docs-webhook-payload-format.md`
-
-```
-## Task: Document runner webhook payload format for API consumers <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 25 22:16:22 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-03-docs-api-contracts/task-08-docs-openapi-verify-api.md`
 

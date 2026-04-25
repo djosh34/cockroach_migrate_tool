@@ -49,6 +49,21 @@ impl ReadmeOperatorSurface {
         &self.readme_text[start + heading.len()..end]
     }
 
+    pub fn subsection(&self, section_heading: &str, subsection_heading: &str) -> &str {
+        let section = self.section(section_heading);
+        let start = section.find(subsection_heading).unwrap_or_else(|| {
+            panic!(
+                "README section `{section_heading}` should contain subsection `{subsection_heading}`"
+            );
+        });
+        let after_heading = &section[start..];
+        let end = after_heading
+            .find("\n### ")
+            .map(|index| start + index)
+            .unwrap_or(section.len());
+        &section[start..end]
+    }
+
     pub fn word_count(&self) -> usize {
         self.readme_text.split_whitespace().count()
     }

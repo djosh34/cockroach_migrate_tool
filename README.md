@@ -1,10 +1,10 @@
 # Cockroach Migrate Tool
 
-Run the published `setup-sql`, `runner`, and `verify` images with inline configs only.
+Run published `setup-sql`, `runner`, and `verify` images with inline configs.
 
 ## Setup SQL Quick Start
 
-Pull the `setup-sql` image, render SQL, review it, and apply it yourself.
+Pull `setup-sql`, render SQL, review, apply.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -44,7 +44,6 @@ docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${SETUP_SQL_IMAGE}" \
   emit-cockroach-sql \
-  --log-format json \
   --config /config/cockroach-setup.yml > cockroach-bootstrap.sql
 ```
 
@@ -57,7 +56,7 @@ Optional args:
 
 - `--log-format json` for structured stderr logs while stdout stays reserved for SQL
 
-Apply the rendered SQL yourself after review:
+Apply after review:
 
 ```bash
 cockroach sql \
@@ -65,13 +64,13 @@ cockroach sql \
   --file cockroach-bootstrap.sql
 ```
 
-The rendered SQL:
+SQL:
 
 - enables `kv.rangefeed.enabled`
-- records `cluster_logical_timestamp()` as an explicit source-side statement and feeds that value back into each changefeed `cursor`
-- creates one webhook changefeed per configured source database
-- renders each mapping to its own HTTPS ingest path at `/ingest/<mapping_id>`
-- keeps the operator-facing artifact to SQL statements plus SQL comments only
+- feeds `cluster_logical_timestamp()` back into each changefeed `cursor`
+- creates one changefeed per source database
+- renders each mapping to `/ingest/<mapping_id>`
+- emits only SQL statements and SQL comments
 
 Example PostgreSQL grants config:
 
@@ -87,14 +86,13 @@ mappings:
         - public.orders
 ```
 
-Render the PostgreSQL grants SQL:
+Render grants SQL:
 
 ```bash
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${SETUP_SQL_IMAGE}" \
   emit-postgres-grants \
-  --log-format json \
   --config /config/postgres-grants.yml > postgres-grants.sql
 ```
 
@@ -107,15 +105,13 @@ Optional args:
 
 - `--log-format json` for structured stderr logs while stdout stays reserved for SQL
 
-Apply the emitted PostgreSQL grant SQL before starting the runtime:
+Apply the grant SQL:
 
 ```bash
 psql \
   "postgresql://postgres-admin@pg-a.example.internal:5432/app_a?sslmode=require" \
   -f postgres-grants.sql
 ```
-
-If you prefer Compose:
 
 Save this as `setup-sql.compose.yml`:
 
@@ -133,8 +129,6 @@ services:
         target: /config/ca.crt
     command:
       - emit-cockroach-sql
-      - --log-format
-      - json
       - --config
       - /config/cockroach-setup.yml
 
@@ -147,18 +141,18 @@ configs:
     file: ./config/ca.crt
 ```
 
-Render the SQL artifacts with Compose:
+Compose commands:
 
 ```bash
 docker compose -f setup-sql.compose.yml run --rm setup-sql > cockroach-bootstrap.sql
-docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --log-format json --config /config/postgres-grants.yml > postgres-grants.sql
+docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --config /config/postgres-grants.yml > postgres-grants.sql
 ```
 
 ## Runner Quick Start
 
-Pull the runner image and write the config inline. The example below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
+Pull the runner image and write config. The example uses HTTP on `8080`; for HTTPS, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
-The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected.
+The runner never connects to CockroachDB. `mappings[].source` labels payloads so misrouted events are rejected.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -185,7 +179,7 @@ mappings:
       url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
 ```
 
-For production HTTPS, switch to:
+For HTTPS, switch to:
 
 ```yaml
 webhook:
@@ -197,7 +191,7 @@ webhook:
     client_ca_path: /config/certs/client-ca.crt
 ```
 
-For TLS-enabled targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
+For TLS targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
 
 Explicit-field alternative:
 
@@ -215,13 +209,13 @@ destination:
     client_key_path: /config/certs/destination-client.key
 ```
 
-Validate the mounted config directly through the image entrypoint:
+Validate:
 
 ```bash
 docker run --rm \
   -v "$(pwd)/config:/config:ro" \
   "${RUNNER_IMAGE}" \
-  validate-config --log-format json --config /config/runner.yml
+  validate-config --config /config/runner.yml
 ```
 
 Plain `validate-config` stays offline. Add `--deep` to verify destination connectivity and mapped tables.
@@ -236,22 +230,55 @@ Optional args:
 - `--log-format json` for structured stderr logs
 - `--deep` to verify destination connectivity and mapped tables
 
-Before starting the runtime, apply the PostgreSQL grant SQL from the setup section. Then start the runtime directly through the image entrypoint.
+Apply the PostgreSQL grant SQL, then start the runtime:
 
 ```bash
 docker run --rm \
   -p 8080:8080 \
   -v "$(pwd)/config:/config:ro" \
   "${RUNNER_IMAGE}" \
-  run --log-format json --config /config/runner.yml
+  run --config /config/runner.yml
 ```
-
-The runtime serves:
 
 - `GET /healthz`
 - `POST /ingest/<mapping_id>`
 
-If you prefer Compose:
+### Webhook Payload Format
+
+```json
+{"length":2,"payload":[{"after":{"id":1,"email":"first@example.com"},"key":{"id":1},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"}},{"key":{"id":2},"op":"d","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"}}]}
+```
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `length` | integer | required | `payload` size. |
+| `payload` | array | required | Row events. |
+| `payload[]` | object | required | One event. |
+| `payload[].source.database_name` | string | required | Database label. |
+| `payload[].source.schema_name` | string | required | Schema label. |
+| `payload[].source.table_name` | string | required | Table label. |
+| `payload[].op` | string | required | `c` create/insert, `u` update, `r` refresh/upsert, `d` delete. |
+| `payload[].key` | object | required | JSON key-column map. |
+| `payload[].after` | object | required for `c`, `u`, `r` | JSON post-change column map; omit for `d`. |
+| `resolved` | string | required for resolved | Non-empty watermark. |
+
+- `length` must equal the number of entries in `payload`.
+- Every event in one batch must use the same `source` table.
+
+```json
+{"resolved":"1776526353000000000.0000000000"}
+```
+
+`key` and `after` are arbitrary JSON column maps.
+
+```bash
+curl -H 'content-type: application/json' --data '{"length":2,"payload":[{"after":{"id":1,"email":"first@example.com"},"key":{"id":1},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"}},{"key":{"id":2},"op":"d","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"}}]}' http://127.0.0.1:8080/ingest/app-a
+```
+
+- `200 OK`
+- `400 Bad Request`: ``row-batch request `length` must match payload size``
+- `404 Unknown Mapping`
+- `500 Internal Server Error`
 
 Save this as `runner.compose.yml`:
 
@@ -267,8 +294,6 @@ services:
         target: /config/runner.yml
     command:
       - run
-      - --log-format
-      - json
       - --config
       - /config/runner.yml
 
@@ -277,10 +302,8 @@ configs:
     file: ./config/runner.yml
 ```
 
-Validate the mounted config and then start the runtime with Compose:
-
 ```bash
-docker compose -f runner.compose.yml run --rm runner validate-config --log-format json --config /config/runner.yml
+docker compose -f runner.compose.yml run --rm runner validate-config --config /config/runner.yml
 docker compose -f runner.compose.yml up runner
 ```
 
@@ -294,7 +317,7 @@ TLS field mapping:
 
 ## Verify Quick Start
 
-Pull the verify image and write the config inline. Use `listener.bind_addr` for HTTP, add `cert_path` plus `key_path` for HTTPS, and set `client_ca_path` for mTLS. Database URLs own `sslmode`; YAML only carries mounted cert paths.
+Pull the verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in database URLs.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -303,8 +326,6 @@ export VERIFY_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-verify:${IMAGE_TA
 docker pull "${VERIFY_IMAGE}"
 mkdir -p config/certs
 ```
-
-Example verify service config:
 
 ```yaml
 # config/verify-service.yml
@@ -355,19 +376,17 @@ Optional args:
 
 - `--log-format json` for structured stderr logs
 
-Drive the verify HTTP API with curl:
+- `POST /jobs` starts one verify job.
+- `GET /jobs/${JOB_ID}` polls the job, then returns the final result.
+- `POST /jobs/${JOB_ID}/stop` requests cancellation.
 
-- `POST /jobs` starts one verify job with flat filter fields.
-- `GET /jobs/${JOB_ID}` polls the running job and later returns the final result.
-- `POST /jobs/${JOB_ID}/stop` requests cancellation for the active job.
-
-These examples assume HTTPS on `localhost:9443` and reuse `config/certs/source-client.crt` plus `config/certs/source-client.key` for client auth. Export the returned `job_id` as `JOB_ID`.
+Assume `https://localhost:9443`, client cert auth, `JOB_ID`.
 
 ```bash
 export VERIFY_API="https://localhost:9443"
 ```
 
-Start a verify job with flat filters:
+Start a job:
 
 ```bash
 curl --silent --show-error --insecure \
@@ -378,13 +397,13 @@ curl --silent --show-error --insecure \
   "${VERIFY_API}/jobs"
 ```
 
-Accepted response:
+Accepted:
 
 ```json
 {"job_id":"job-000001","status":"running"}
 ```
 
-Poll the job:
+Poll:
 
 ```bash
 curl --silent --show-error --insecure \
@@ -393,19 +412,19 @@ curl --silent --show-error --insecure \
   "${VERIFY_API}/jobs/${JOB_ID}"
 ```
 
-Running response:
+Running:
 
 ```json
 {"job_id":"job-000001","status":"running"}
 ```
 
-Successful final response:
+Succeeded:
 
 ```json
 {"job_id":"job-000001","status":"succeeded","result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":false},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":7,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[],"mismatch_summary":{"has_mismatches":false,"affected_tables":[],"counts_by_kind":{}}}}
 ```
 
-Stop a running job:
+Stop:
 
 ```bash
 curl --silent --show-error --insecure \
@@ -416,31 +435,29 @@ curl --silent --show-error --insecure \
   "${VERIFY_API}/jobs/${JOB_ID}/stop"
 ```
 
-Stop response:
+Stopping:
 
 ```json
 {"job_id":"job-000001","status":"stopping"}
 ```
 
-Failed final response:
+Failed:
 
 ```json
 {"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: dial tcp source.internal:5432: connect: connection refused","details":[{"reason":"dial tcp source.internal:5432: connect: connection refused"}]}}
 ```
 
-Validation error response:
+Validation error:
 
 ```json
 {"error":{"category":"request_validation","code":"unknown_field","message":"request body contains an unsupported field","details":[{"field":"filters","reason":"unknown field"}]}}
 ```
 
-Mismatch final response:
+Mismatch:
 
 ```json
 {"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":0,"num_column_mismatch":1,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_column","schema":"public","table":"accounts","primary_key":{"id":"101"},"mismatching_columns":["balance"],"source_values":{"balance":"17"},"destination_values":{"balance":"23"},"info":["balance mismatch"]}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"accounts"}],"counts_by_kind":{"mismatching_column":1}}}}
 ```
-
-If you prefer Compose:
 
 Save this as `verify.compose.yml`:
 
@@ -470,8 +487,6 @@ services:
         target: /config/certs/server.key
     command:
       - run
-      - --log-format
-      - json
       - --config
       - /config/verify-service.yml
 
@@ -494,7 +509,7 @@ configs:
     file: ./config/certs/server.key
 ```
 
-Start the dedicated verify API with Compose:
+Compose API
 
 ```bash
 docker compose -f verify.compose.yml up verify

@@ -209,6 +209,87 @@ fn readme_runner_quick_start_recommends_destination_urls_and_keeps_the_explicit_
 }
 
 #[test]
+fn readme_runner_quick_start_includes_webhook_payload_format_subsection() {
+    let readme = ReadmeOperatorSurface::load();
+    let payload_docs =
+        readme.subsection("## Runner Quick Start", "### Webhook Payload Format");
+
+    assert!(
+        payload_docs.starts_with("### Webhook Payload Format"),
+        "README runner quick start should include a dedicated webhook payload format subsection",
+    );
+}
+
+#[test]
+fn readme_webhook_payload_docs_cover_row_batch_shape_and_invariants() {
+    let readme = ReadmeOperatorSurface::load();
+    let payload_docs =
+        readme.subsection("## Runner Quick Start", "### Webhook Payload Format");
+
+    for required_snippet in [
+        "```json",
+        "\"length\":2",
+        "\"op\":\"c\"",
+        "\"op\":\"d\"",
+        "| Field | Type | Required | Description |",
+        "| `payload[]` | object |",
+        "`payload[].source.database_name`",
+        "`payload[].source.schema_name`",
+        "`payload[].source.table_name`",
+        "`payload[].op`",
+        "`c` create/insert",
+        "`u` update",
+        "`r` refresh/upsert",
+        "`d` delete",
+        "`payload[].key`",
+        "`payload[].after`",
+        "- `length` must equal the number of entries in `payload`.",
+        "- Every event in one batch must use the same `source` table.",
+    ] {
+        assert!(
+            payload_docs.contains(required_snippet),
+            "README webhook payload docs should cover row-batch contract snippet `{required_snippet}`",
+        );
+    }
+}
+
+#[test]
+fn readme_webhook_payload_docs_cover_resolved_curl_and_responses_without_internals() {
+    let readme = ReadmeOperatorSurface::load();
+    let payload_docs =
+        readme.subsection("## Runner Quick Start", "### Webhook Payload Format");
+
+    for required_snippet in [
+        "\"resolved\":\"1776526353000000000.0000000000\"",
+        "curl",
+        "/ingest/app-a",
+        "200 OK",
+        "400 Bad Request",
+        "row-batch request `length` must match payload size",
+        "404 Unknown Mapping",
+        "500 Internal Server Error",
+    ] {
+        assert!(
+            payload_docs.contains(required_snippet),
+            "README webhook payload docs should cover response/curl snippet `{required_snippet}`",
+        );
+    }
+
+    for forbidden_snippet in [
+        "RowBatchRequest",
+        "RowEvent",
+        "RowMutation",
+        "payload.rs",
+        "crates/runner/src",
+    ] {
+        assert!(
+            !payload_docs.contains(forbidden_snippet),
+            "README webhook payload docs must stay operator-facing and exclude `{forbidden_snippet}`",
+        );
+    }
+}
+
+#[test]
 fn readme_tls_docs_show_side_by_side_runner_and_verify_mapping() {
     let readme = ReadmeOperatorSurface::load();
     let runner = readme.section("## Runner Quick Start");

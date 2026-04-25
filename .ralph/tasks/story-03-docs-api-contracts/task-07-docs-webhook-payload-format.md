@@ -1,4 +1,4 @@
-## Task: Document runner webhook payload format for API consumers <status>not_started</status> <passes>false</passes>
+## Task: Document runner webhook payload format for API consumers <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -32,15 +32,17 @@ A user can scroll to the "Webhook Payload Format" section in the README and imme
 </description>
 
 <acceptance_criteria>
-- [ ] README contains a "Webhook Payload Format" section with complete examples
-- [ ] Row-batch example includes all required fields and shows valid `op` values
-- [ ] Resolved example is complete and distinct from row-batch
-- [ ] Field description table covers all top-level and nested fields
-- [ ] curl example is copy-pasteable and targets `/ingest/<mapping_id>`
-- [ ] Response codes are documented with example bodies
-- [ ] No internal Rust source code references appear in the documentation
-- [ ] README operator surface contract test passes (word count, heading structure)
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] README contains a "Webhook Payload Format" section with complete examples
+- [x] Row-batch example includes all required fields and shows valid `op` values
+- [x] Resolved example is complete and distinct from row-batch
+- [x] Field description table covers all top-level and nested fields
+- [x] curl example is copy-pasteable and targets `/ingest/<mapping_id>`
+- [x] Response codes are documented with example bodies
+- [x] No internal Rust source code references appear in the documentation
+- [x] README operator surface contract test passes (word count, heading structure)
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-03-docs-api-contracts/task-07-docs-webhook-payload-format_plans/2026-04-25-webhook-payload-format-plan.md</plan>
