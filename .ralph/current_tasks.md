@@ -1,22 +1,11 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 07:47:23 PM CEST 2026
+Generated: Sat Apr 25 08:12:04 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-01-runner-http-webhook-mode.md`
 
 ```
 ## Task: Add optional HTTP mode to runner webhook listener <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-02-runner-destination-connection-string.md`
-
-```
-## Task: Allow runner destination to accept PostgreSQL connection strings <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

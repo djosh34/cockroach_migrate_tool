@@ -160,7 +160,7 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 Pull the published runner image and create `config/certs/server.crt`, `config/certs/server.key`, `config/certs/destination-ca.crt`, `config/certs/destination-client.crt`, and `config/certs/destination-client.key`.
 
-The runner does not connect to CockroachDB. In `mappings[].source`, `database` and `tables` are only the source identifiers the runner expects inside incoming webhook payloads so it can reject misrouted events and map them to the correct PostgreSQL target.
+The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected and routed to the right PostgreSQL target.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -192,16 +192,25 @@ mappings:
         - public.customers
         - public.orders
     destination:
-      host: pg-a.example.internal
-      port: 5432
-      database: app_a
-      user: migration_user_a
-      password: runner-secret-a
-      tls:
-        mode: verify-ca
-        ca_cert_path: /config/certs/destination-ca.crt
-        client_cert_path: /config/certs/destination-client.crt
-        client_key_path: /config/certs/destination-client.key
+      url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
+```
+
+For TLS-enabled targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
+
+Explicit-field alternative:
+
+```yaml
+destination:
+  host: pg-a.example.internal
+  port: 5432
+  database: app_a
+  user: migration_user_a
+  password: runner-secret-a
+  tls:
+    mode: verify-ca
+    ca_cert_path: /config/certs/destination-ca.crt
+    client_cert_path: /config/certs/destination-client.crt
+    client_key_path: /config/certs/destination-client.key
 ```
 
 Validate the mounted config directly through the image entrypoint:

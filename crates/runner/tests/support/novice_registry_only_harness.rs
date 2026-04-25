@@ -414,6 +414,7 @@ impl NoviceRegistryOnlyHarness {
             .readme_contract
             .operator_file("config/runner.yml")
             .replace("pg-a.example.internal", destination_host)
+            .replace(":5432/app_a", &format!(":{destination_port}/app_a"))
             .replacen("port: 5432", &format!("port: {destination_port}"), 1)
             .replace("runner-secret-a", destination_password);
         fs::write(self.root_dir().join("config/runner.yml"), config_text)

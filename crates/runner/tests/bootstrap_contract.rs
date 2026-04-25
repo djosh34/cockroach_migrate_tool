@@ -726,6 +726,85 @@ fn run_bootstraps_shared_destination_helper_state_per_mapping() {
 }
 
 #[test]
+fn run_bootstraps_shared_destination_helper_state_when_mappings_mix_url_and_decomposed_targets() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_shared LOGIN PASSWORD 'runner-secret-shared';",
+    );
+    postgres.exec(
+        "postgres",
+        "CREATE DATABASE shared_app OWNER migration_user_shared;",
+    );
+    postgres.exec_as(
+        "migration_user_shared",
+        "shared_app",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);
+         CREATE TABLE public.orders (id bigint PRIMARY KEY, total_cents bigint NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        format!(
+            r#"webhook:
+  bind_addr: 127.0.0.1:0
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: postgresql://migration_user_shared:runner-secret-shared@127.0.0.1:{port}/shared_app
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.orders
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: shared_app
+      user: migration_user_shared
+      password: runner-secret-shared
+"#,
+            cert_path = fixture_path("certs/server.crt").display(),
+            key_path = fixture_path("certs/server.key").display(),
+            port = postgres.port,
+        ),
+    )
+    .expect("mixed destination runner config should be written");
+
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&https_client());
+
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(table_name, ',' ORDER BY table_name)
+             FROM information_schema.tables
+             WHERE table_schema = '_cockroach_migration_tool';",
+        ),
+        "app-a__public__customers,app-b__public__orders,stream_state,table_sync_state"
+    );
+    assert_eq!(
+        postgres.query(
+            "shared_app",
+            "SELECT string_agg(mapping_id || ':' || source_database, ',' ORDER BY mapping_id)
+             FROM _cockroach_migration_tool.stream_state;",
+        ),
+        "app-a:demo_a,app-b:demo_b"
+    );
+}
+
+#[test]
 fn run_prepares_a_helper_shadow_table_for_each_mapped_destination_table() {
     let postgres = TestPostgres::start();
     postgres.exec(

@@ -6,7 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use sqlx::postgres::{PgConnectOptions, PgSslMode};
+use sqlx::{
+    ConnectOptions,
+    postgres::{PgConnectOptions, PgSslMode},
+};
 
 use crate::error::RunnerConfigError;
 
@@ -100,28 +103,91 @@ impl SourceConfig {
 
 #[derive(Clone, Debug)]
 pub(crate) struct PostgresTargetConfig {
-    pub(super) host: String,
-    pub(super) port: u16,
-    pub(super) database: String,
-    pub(super) user: String,
-    pub(super) password: String,
-    pub(super) tls: Option<PostgresTlsConfig>,
+    connect_options: PgConnectOptions,
+    host: String,
+    port: u16,
+    database: String,
+    target_contract: String,
 }
 
 impl PostgresTargetConfig {
-    pub(crate) fn connect_options(&self) -> PgConnectOptions {
-        let options = PgConnectOptions::new()
-            .host(&self.host)
-            .port(self.port)
-            .database(&self.database)
-            .username(&self.user)
-            .password(&self.password);
+    pub(crate) fn from_url(url: &str) -> Result<Self, RunnerConfigError> {
+        let connect_options = url
+            .parse::<PgConnectOptions>()
+            .map_err(|source| {
+                let message = source.to_string();
+                let message = message
+                    .strip_prefix("error with configuration: ")
+                    .unwrap_or(&message)
+                    .to_owned();
+                RunnerConfigError::InvalidFieldDetail {
+                    field: "mappings.destination.url",
+                    message,
+                }
+            })?;
 
-        if let Some(tls) = &self.tls {
-            tls.apply_to(options)
+        Self::from_connect_options(connect_options, "mappings.destination.url")
+    }
+
+    pub(crate) fn from_parts(
+        host: String,
+        port: u16,
+        database: String,
+        user: String,
+        password: String,
+        tls: Option<PostgresTlsConfig>,
+    ) -> Result<Self, RunnerConfigError> {
+        let connect_options = PgConnectOptions::new()
+            .host(&host)
+            .port(port)
+            .database(&database)
+            .username(&user)
+            .password(&password);
+        let connect_options = if let Some(tls) = &tls {
+            tls.apply_to(connect_options)
         } else {
-            options
+            connect_options
+        };
+
+        Self::from_connect_options(connect_options, "mappings.destination")
+    }
+
+    fn from_connect_options(
+        connect_options: PgConnectOptions,
+        field: &'static str,
+    ) -> Result<Self, RunnerConfigError> {
+        if connect_options.get_socket().is_some() || connect_options.get_host().starts_with('/') {
+            return Err(RunnerConfigError::InvalidField {
+                field,
+                message: "must target a TCP host; unix socket destinations are not supported",
+            });
         }
+
+        if connect_options.get_host().is_empty() {
+            return Err(RunnerConfigError::InvalidField {
+                field,
+                message: "must include a host",
+            });
+        }
+
+        let Some(database) = connect_options.get_database() else {
+            return Err(RunnerConfigError::InvalidField {
+                field,
+                message: "must include a database name",
+            });
+        };
+
+        Ok(Self {
+            host: connect_options.get_host().to_owned(),
+            port: connect_options.get_port(),
+            database: database.to_owned(),
+            target_contract: connect_options.to_url_lossy().to_string(),
+            connect_options,
+        })
+    }
+
+    pub(crate) fn connect_options(&self) -> PgConnectOptions {
+        self.connect_options.clone()
     }
 
     pub(crate) fn endpoint_label(&self) -> String {
@@ -129,12 +195,7 @@ impl PostgresTargetConfig {
     }
 
     pub(crate) fn same_target_contract(&self, other: &Self) -> bool {
-        self.host == other.host
-            && self.port == other.port
-            && self.database == other.database
-            && self.user == other.user
-            && self.password == other.password
-            && self.tls == other.tls
+        self.target_contract == other.target_contract
     }
 
     pub(crate) fn database(&self) -> &str {

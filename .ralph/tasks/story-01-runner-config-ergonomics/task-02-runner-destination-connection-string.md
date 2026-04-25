@@ -1,4 +1,4 @@
-## Task: Allow runner destination to accept PostgreSQL connection strings <status>not_started</status> <passes>false</passes>
+## Task: Allow runner destination to accept PostgreSQL connection strings <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -31,12 +31,14 @@ or keep the existing decomposed style.
 </description>
 
 <acceptance_criteria>
-- [ ] Config parser accepts `mappings[].destination.url` as a valid PostgreSQL connection string
-- [ ] Config parser rejects invalid or malformed connection strings with a clear error
-- [ ] Config parser rejects configs that specify both `url` and decomposed fields simultaneously
-- [ ] `validate-config` works with `url`-based destinations
-- [ ] Runtime connects successfully using `url`-based destinations
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] Config parser accepts `mappings[].destination.url` as a valid PostgreSQL connection string
+- [x] Config parser rejects invalid or malformed connection strings with a clear error
+- [x] Config parser rejects configs that specify both `url` and decomposed fields simultaneously
+- [x] `validate-config` works with `url`-based destinations
+- [x] Runtime connects successfully using `url`-based destinations
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-01-runner-config-ergonomics/task-02-runner-destination-connection-string_plans/2026-04-25-runner-destination-connection-string-plan.md</plan>

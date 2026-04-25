@@ -144,3 +144,4 @@
 .ralph/tasks/story-27-verify-operator-ux-reset/04-task-return-full-verify-job-findings-mismatches-and-human-usable-result-json.md
 
 /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-http-runtime-failures-are-not-reported-in-json-logs.md
+.ralph/tasks/story-01-runner-config-ergonomics/task-02-runner-destination-connection-string.md

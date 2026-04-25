@@ -35,6 +35,11 @@ pub enum RunnerConfigError {
         field: &'static str,
         message: &'static str,
     },
+    #[error("invalid config field `{field}`: {message}")]
+    InvalidFieldDetail {
+        field: &'static str,
+        message: String,
+    },
     #[error("invalid socket address in `{field}`")]
     InvalidSocketAddr {
         field: &'static str,

@@ -133,7 +133,7 @@ fn readme_keeps_inline_operator_files_copyable() {
     for (relative_path, required_snippet) in [
         (
             "config/runner.yml",
-            "client_key_path: /config/certs/destination-client.key",
+            "url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a",
         ),
         (
             "config/verify-service.yml",
@@ -163,6 +163,36 @@ fn readme_keeps_inline_operator_files_copyable() {
             "README verify-service config should remove obsolete nested TLS knobs like `{forbidden_snippet}`",
         );
     }
+}
+
+#[test]
+fn readme_runner_quick_start_recommends_destination_urls_and_keeps_the_explicit_alternative() {
+    let readme = ReadmeOperatorSurface::load();
+    let runner = readme.section("## Runner Quick Start");
+    let runner_config = readme.operator_file("config/runner.yml");
+
+    assert!(
+        runner_config.contains(
+            "url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a",
+        ),
+        "README runner config should recommend the concise destination.url shape",
+    );
+    assert!(
+        runner.contains("sslmode=verify-ca")
+            && runner.contains("sslrootcert=/config/certs/destination-ca.crt")
+            && runner.contains("sslcert=/config/certs/destination-client.crt")
+            && runner.contains("sslkey=/config/certs/destination-client.key"),
+        "README runner quick start should document the supported TLS query parameters for destination.url",
+    );
+    assert!(
+        runner.contains("Explicit-field alternative:"),
+        "README runner quick start should keep the decomposed destination form as an explicit alternative",
+    );
+    assert!(
+        runner.contains("host: pg-a.example.internal")
+            && runner.contains("client_key_path: /config/certs/destination-client.key"),
+        "README runner quick start should still show the explicit alternative with TLS material",
+    );
 }
 
 #[test]

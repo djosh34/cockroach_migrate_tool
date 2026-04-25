@@ -312,6 +312,151 @@ mappings:
 }
 
 #[test]
+fn validate_config_accepts_a_postgresql_destination_url() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
+"#,
+    )
+    .expect("postgres destination url config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"));
+}
+
+#[test]
+fn validate_config_accepts_a_postgresql_destination_url_with_tls_query_parameters() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a?sslmode=verify-ca&sslrootcert=certs/postgres/ca.crt&sslcert=certs/postgres/client.crt&sslkey=certs/postgres/client.key
+"#,
+    )
+    .expect("postgres destination url config with tls query parameters should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("config valid"));
+}
+
+#[test]
+fn validate_config_rejects_mixing_destination_url_with_decomposed_fields() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
+      host: pg-a.example.internal
+"#,
+    )
+    .expect("mixed destination config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "config: invalid config field `mappings.destination`: `url` cannot be combined with `host`, `port`, `database`, `user`, `password`, or `tls`",
+        ));
+}
+
+#[test]
+fn validate_config_rejects_malformed_postgresql_destination_urls_with_parse_detail() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: not-a-postgres-url
+"#,
+    )
+    .expect("invalid destination url config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+
+    command
+        .args(["validate-config", "--config"])
+        .arg(&config_path)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "config: invalid config field `mappings.destination.url`: relative URL without a base",
+        ));
+}
+
+#[test]
 fn validate_config_accepts_a_secure_postgresql_destination_with_tls_material() {
     let temp_dir = tempfile::tempdir().expect("temp dir should be created");
     let config_path = temp_dir.path().join("runner.yml");

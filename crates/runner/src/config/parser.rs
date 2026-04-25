@@ -3,7 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, de};
+use serde_yaml::Value;
 
 use crate::{
     config::{
@@ -141,9 +142,65 @@ impl RawSourceConfig {
     }
 }
 
+#[derive(Debug)]
+enum RawPostgresTargetConfig {
+    Mixed,
+    Url(RawPostgresTargetUrlConfig),
+    Decomposed(RawDecomposedPostgresTargetConfig),
+}
+
+impl<'de> Deserialize<'de> for RawPostgresTargetConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Value::deserialize(deserializer)?;
+        let mapping = value
+            .as_mapping()
+            .ok_or_else(|| de::Error::custom("destination must be a mapping"))?;
+
+        let mut has_url = false;
+        let mut has_decomposed_fields = false;
+
+        for key in mapping.keys() {
+            let Some(key) = key.as_str() else {
+                continue;
+            };
+
+            match key {
+                "url" => has_url = true,
+                "host" | "port" | "database" | "user" | "password" | "tls" => {
+                    has_decomposed_fields = true
+                }
+                _ => {}
+            }
+        }
+
+        if has_url && has_decomposed_fields {
+            return Ok(Self::Mixed);
+        }
+
+        if has_url {
+            serde_yaml::from_value::<RawPostgresTargetUrlConfig>(value)
+                .map(Self::Url)
+                .map_err(de::Error::custom)
+        } else {
+            serde_yaml::from_value::<RawDecomposedPostgresTargetConfig>(value)
+                .map(Self::Decomposed)
+                .map_err(de::Error::custom)
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawPostgresTargetConfig {
+struct RawPostgresTargetUrlConfig {
+    url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawDecomposedPostgresTargetConfig {
     host: String,
     port: u16,
     database: String,
@@ -154,14 +211,30 @@ struct RawPostgresTargetConfig {
 
 impl RawPostgresTargetConfig {
     fn validate(self) -> Result<PostgresTargetConfig, RunnerConfigError> {
-        Ok(PostgresTargetConfig {
-            host: validate_text(self.host, "mappings.destination.host")?,
-            port: self.port,
-            database: validate_text(self.database, "mappings.destination.database")?,
-            user: validate_text(self.user, "mappings.destination.user")?,
-            password: validate_text(self.password, "mappings.destination.password")?,
-            tls: self.tls.map(RawPostgresTlsConfig::validate).transpose()?,
-        })
+        match self {
+            Self::Mixed => Err(RunnerConfigError::InvalidField {
+                field: "mappings.destination",
+                message:
+                    "`url` cannot be combined with `host`, `port`, `database`, `user`, `password`, or `tls`",
+            }),
+            Self::Url(raw) => {
+                PostgresTargetConfig::from_url(&validate_text(raw.url, "mappings.destination.url")?)
+            }
+            Self::Decomposed(raw) => raw.validate(),
+        }
+    }
+}
+
+impl RawDecomposedPostgresTargetConfig {
+    fn validate(self) -> Result<PostgresTargetConfig, RunnerConfigError> {
+        PostgresTargetConfig::from_parts(
+            validate_text(self.host, "mappings.destination.host")?,
+            self.port,
+            validate_text(self.database, "mappings.destination.database")?,
+            validate_text(self.user, "mappings.destination.user")?,
+            validate_text(self.password, "mappings.destination.password")?,
+            self.tls.map(RawPostgresTlsConfig::validate).transpose()?,
+        )
     }
 }
 

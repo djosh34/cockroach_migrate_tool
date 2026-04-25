@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 25 07:47:23 PM CEST 2026
+Generated: Sat Apr 25 08:12:04 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -153,6 +153,17 @@ Detected on 2026-04-18 during a reporting audit by running `make test`.
 
 <description>
 The documented registry-only novice-user flow for `verify.compose.yml` is broken.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-02-runner-destination-connection-string.md`
+
+```
+## Task: Allow runner destination to accept PostgreSQL connection strings <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
 ```
 
 ==============
