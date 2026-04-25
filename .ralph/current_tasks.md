@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 08:40:55 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-03-runner-config-error-context.md`
-
-```
-## Task: Improve runner config validation error messages with actual values <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 25 20:53:00 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-04-runner-deep-validation.md`
 

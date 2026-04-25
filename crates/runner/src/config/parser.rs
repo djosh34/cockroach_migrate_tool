@@ -350,7 +350,7 @@ fn validate_mappings(
     if raw_mappings.is_empty() {
         return Err(RunnerConfigError::InvalidField {
             field: "mappings",
-            message: "must contain at least one mapping",
+            message: "must define at least one mapping",
         });
     }
 
@@ -359,10 +359,7 @@ fn validate_mappings(
     for raw_mapping in raw_mappings {
         let mapping = raw_mapping.validate()?;
         if !seen_ids.insert(mapping.id.clone()) {
-            return Err(RunnerConfigError::InvalidField {
-                field: "mappings.id",
-                message: "must be unique",
-            });
+            return Err(duplicate_value_error("mappings.id", &mapping.id));
         }
         mappings.push(mapping);
     }
@@ -383,10 +380,7 @@ fn validate_tables(values: Vec<String>) -> Result<Vec<String>, RunnerConfigError
     for value in values {
         let table = validate_table_name(value)?;
         if !seen.insert(table.clone()) {
-            return Err(RunnerConfigError::InvalidField {
-                field: "mappings.source.tables",
-                message: "must not contain duplicates",
-            });
+            return Err(duplicate_value_error("mappings.source.tables", &table));
         }
         tables.push(table);
     }
@@ -400,23 +394,31 @@ fn validate_table_name(value: String) -> Result<String, RunnerConfigError> {
 
     match (parts.next(), parts.next(), parts.next()) {
         (Some(schema), Some(name), None) if !schema.is_empty() && !name.is_empty() => Ok(table),
-        _ => Err(RunnerConfigError::InvalidField {
-            field: "mappings.source.tables",
-            message: "entries must use schema.table",
-        }),
+        _ => Err(invalid_field_detail(
+            "mappings.source.tables",
+            format!("found \"{table}\", expected schema-qualified name like \"public.customers\""),
+        )),
     }
 }
 
 fn validate_text(value: String, field: &'static str) -> Result<String, RunnerConfigError> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err(RunnerConfigError::InvalidField {
+        return Err(invalid_field_detail(
             field,
-            message: "must not be empty",
-        });
+            "value was empty or whitespace".to_owned(),
+        ));
     }
 
     Ok(trimmed.to_owned())
+}
+
+fn invalid_field_detail(field: &'static str, message: String) -> RunnerConfigError {
+    RunnerConfigError::InvalidFieldDetail { field, message }
+}
+
+fn duplicate_value_error(field: &'static str, value: &str) -> RunnerConfigError {
+    invalid_field_detail(field, format!("duplicate value \"{value}\""))
 }
 
 fn validate_path(value: PathBuf, field: &'static str) -> Result<PathBuf, RunnerConfigError> {

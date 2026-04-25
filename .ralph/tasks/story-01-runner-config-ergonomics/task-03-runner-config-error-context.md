@@ -1,4 +1,4 @@
-## Task: Improve runner config validation error messages with actual values <status>not_started</status> <passes>false</passes>
+## Task: Improve runner config validation error messages with actual values <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -41,13 +41,13 @@ config: invalid config field `mappings.id`: duplicate value "app-a"
 </description>
 
 <acceptance_criteria>
-- [ ] Invalid table name errors include the actual invalid value and expected format example
-- [ ] Duplicate mapping ID errors include the duplicated ID string
-- [ ] Duplicate table errors include the duplicated table name
-- [ ] Empty/whitespace field errors indicate the field was empty
-- [ ] All existing config contract tests still pass (messages may be updated)
-- [ ] New tests assert on the improved error message content
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] Invalid table name errors include the actual invalid value and expected format example
+- [x] Duplicate mapping ID errors include the duplicated ID string
+- [x] Duplicate table errors include the duplicated table name
+- [x] Empty/whitespace field errors indicate the field was empty
+- [x] All existing config contract tests still pass (messages may be updated)
+- [x] New tests assert on the improved error message content
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
