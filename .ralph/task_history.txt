@@ -152,3 +152,4 @@
 .ralph/tasks/story-02-verify-service-ergonomics/task-05-verify-cli-run-subcommand.md
 .ralph/tasks/story-03-docs-api-contracts/task-07-docs-webhook-payload-format.md
 .ralph/tasks/story-03-docs-api-contracts/task-08-docs-openapi-verify-api.md
+.ralph/tasks/story-03-docs-api-contracts/task-09-docs-verify-job-lifecycle.md

@@ -4,7 +4,7 @@ Run published `setup-sql`, `runner`, and `verify` images with inline configs.
 
 ## Setup SQL Quick Start
 
-Pull `setup-sql`, render SQL, review, apply.
+Pull `setup-sql`, render, apply.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -67,10 +67,9 @@ cockroach sql \
 SQL:
 
 - enables `kv.rangefeed.enabled`
-- feeds `cluster_logical_timestamp()` back into each changefeed `cursor`
-- creates one changefeed per source database
-- renders each mapping to `/ingest/<mapping_id>`
-- emits only SQL statements and SQL comments
+- uses `cluster_logical_timestamp()` as each changefeed `cursor`
+- creates one changefeed per source database at `/ingest/<mapping_id>`
+- emits SQL statements and SQL comments
 
 Example PostgreSQL grants config:
 
@@ -150,9 +149,9 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 ## Runner Quick Start
 
-Pull the runner image and write config. The example uses HTTP on `8080`; for HTTPS, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
+Pull runner image and write config. The example uses HTTP on `8080`; for HTTPS, set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
-The runner never connects to CockroachDB. `mappings[].source` labels payloads so misrouted events are rejected.
+`mappings[].source` rejects misrouted payloads.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -230,7 +229,7 @@ Optional args:
 - `--log-format json` for structured stderr logs
 - `--deep` to verify destination connectivity and mapped tables
 
-Apply the PostgreSQL grant SQL, then start the runtime:
+Apply grants, then start runtime:
 
 ```bash
 docker run --rm \
@@ -317,8 +316,8 @@ TLS field mapping:
 
 ## Verify Quick Start
 
-Pull the verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in database URLs.
-Full API: `openapi/verify-service.yaml`.
+Pull verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in DB URLs.
+`openapi/verify-service.yaml`.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -349,7 +348,7 @@ verify:
       ca_cert_path: /config/certs/destination-ca.crt
 ```
 
-Validate the mounted config directly through the image entrypoint:
+Validate the mounted config through the image entrypoint:
 
 ```bash
 docker run --rm \
@@ -358,7 +357,7 @@ docker run --rm \
   validate-config --log-format json --config /config/verify-service.yml
 ```
 
-Start the verify API directly through the image entrypoint:
+Start the verify API through the image entrypoint:
 
 ```bash
 docker run --rm \
@@ -377,17 +376,27 @@ Optional args:
 
 - `--log-format json` for structured stderr logs
 
-- `POST /jobs` starts a verify job.
-- `GET /jobs/${JOB_ID}` polls and returns the final result.
-- `POST /jobs/${JOB_ID}/stop` requests cancellation.
+### Job Lifecycle
 
-Assume `https://localhost:9443`, client cert auth, `JOB_ID`.
+- `running`: actively verifying
+- `succeeded`: verification completed with no mismatches
+- `failed`: verification completed with mismatches or encountered an error
+- `stopped`: explicitly cancelled via `POST /jobs/{job_id}/stop`
+
+Poll `GET /jobs/{job_id}` every 2 seconds until `status` is no longer `running`.
+Only one job can run at a time. Starting a second job returns `HTTP 409 Conflict`.
+
+```json
+{"error":{"category":"job_state","code":"job_already_running","message":"a verify job is already running"}}
+```
+
+Only the most recent completed job is retained. Starting a new job evicts the previous completed job. Job state is held in memory. If the verify service process restarts, previous job IDs return `HTTP 404`.
 
 ```bash
 export VERIFY_API="https://localhost:9443"
 ```
 
-Start a job:
+Start:
 
 ```bash
 curl --silent --show-error --insecure \
@@ -425,40 +434,12 @@ Succeeded:
 {"job_id":"job-000001","status":"succeeded","result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":false},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":7,"num_missing":0,"num_mismatch":0,"num_column_mismatch":0,"num_extraneous":0,"num_live_retry":0}],"findings":[],"mismatch_summary":{"has_mismatches":false,"affected_tables":[],"counts_by_kind":{}}}}
 ```
 
-Stop:
+Check `result.summary` first, then `result.mismatch_summary`, then `result.findings`.
 
-```bash
-curl --silent --show-error --insecure \
-  --cert config/certs/source-client.crt \
-  --key config/certs/source-client.key \
-  -H 'content-type: application/json' \
-  -d '{}' \
-  "${VERIFY_API}/jobs/${JOB_ID}/stop"
-```
-
-Stopping:
-
-```json
-{"job_id":"job-000001","status":"stopping"}
-```
-
-Failed:
-
-```json
-{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed","message":"source connection failed: dial tcp source.internal:5432: connect: connection refused","details":[{"reason":"dial tcp source.internal:5432: connect: connection refused"}]}}
-```
-
-Validation error:
-
-```json
-{"error":{"category":"request_validation","code":"unknown_field","message":"request body contains an unsupported field","details":[{"field":"filters","reason":"unknown field"}]}}
-```
-
-Mismatch:
-
-```json
-{"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":0,"num_column_mismatch":1,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_column","schema":"public","table":"accounts","primary_key":{"id":"101"},"mismatching_columns":["balance"],"source_values":{"balance":"17"},"destination_values":{"balance":"23"},"info":["balance mismatch"]}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"accounts"}],"counts_by_kind":{"mismatching_column":1}}}}
-```
+`POST /jobs/${JOB_ID}/stop` first returns `{"job_id":"job-000001","status":"stopping"}` before terminal `stopped`.
+Validation errors: `{"error":{"category":"request_validation","code":"unknown_field",...}}`.
+Source failures: `{"job_id":"job-000001","status":"failed","failure":{"category":"source_access","code":"connection_failed",...}}`.
+Mismatch completion: `{"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected",...}}`.
 
 Save this as `verify.compose.yml`:
 

@@ -350,9 +350,9 @@ fn readme_verify_quick_start_documents_the_http_job_flow() {
     let verify = readme.section("## Verify Quick Start");
 
     for required_snippet in [
-        "Validate the mounted config directly through the image entrypoint:",
+        "Validate the mounted config through the image entrypoint:",
         "validate-config --log-format json --config /config/verify-service.yml",
-        "Start the verify API directly through the image entrypoint:",
+        "Start the verify API through the image entrypoint:",
         "run --log-format json --config /config/verify-service.yml",
     ] {
         assert!(
@@ -366,9 +366,6 @@ fn readme_verify_quick_start_documents_the_http_job_flow() {
         "\"include_table\":\"^(accounts|orders)$\"",
         "`openapi/verify-service.yaml`",
         "`listener.bind_addr`",
-        "POST /jobs",
-        "GET /jobs/${JOB_ID}",
-        "POST /jobs/${JOB_ID}/stop",
         "\"status\":\"running\"",
         "\"status\":\"succeeded\"",
         "\"status\":\"failed\"",
@@ -383,6 +380,80 @@ fn readme_verify_quick_start_documents_the_http_job_flow() {
         assert!(
             verify.contains(required_snippet),
             "README verify quick start should document `{required_snippet}`",
+        );
+    }
+}
+
+#[test]
+fn readme_verify_quick_start_has_job_lifecycle_subsection() {
+    let readme = ReadmeOperatorSurface::load();
+    let lifecycle = readme.subsection("## Verify Quick Start", "### Job Lifecycle");
+
+    assert!(
+        lifecycle.starts_with("### Job Lifecycle"),
+        "README verify quick start should include a dedicated job lifecycle subsection",
+    );
+}
+
+#[test]
+fn readme_verify_job_lifecycle_docs_cover_states_polling_and_retention_rules() {
+    let readme = ReadmeOperatorSurface::load();
+    let lifecycle = readme.subsection("## Verify Quick Start", "### Job Lifecycle");
+
+    for required_snippet in [
+        "`running`: actively verifying",
+        "`succeeded`: verification completed with no mismatches",
+        "`failed`: verification completed with mismatches or encountered an error",
+        "`stopped`: explicitly cancelled via `POST /jobs/{job_id}/stop`",
+        "Poll `GET /jobs/{job_id}` every 2 seconds until `status` is no longer `running`.",
+        "Only one job can run at a time.",
+        "Starting a second job returns `HTTP 409 Conflict`.",
+        "\"category\":\"job_state\"",
+        "\"code\":\"job_already_running\"",
+        "Only the most recent completed job is retained.",
+        "Starting a new job evicts the previous completed job.",
+        "Job state is held in memory.",
+        "If the verify service process restarts, previous job IDs return `HTTP 404`.",
+    ] {
+        assert!(
+            lifecycle.contains(required_snippet),
+            "README verify job lifecycle docs should contain `{required_snippet}`",
+        );
+    }
+}
+
+#[test]
+fn readme_verify_job_lifecycle_docs_cover_result_triage_without_internal_leakage() {
+    let readme = ReadmeOperatorSurface::load();
+    let lifecycle = readme.subsection("## Verify Quick Start", "### Job Lifecycle");
+
+    for required_snippet in [
+        "Start:",
+        "${VERIFY_API}/jobs",
+        "${VERIFY_API}/jobs/${JOB_ID}",
+        "\"status\":\"running\"",
+        "\"status\":\"succeeded\"",
+        "Check `result.summary` first, then `result.mismatch_summary`, then `result.findings`.",
+    ] {
+        assert!(
+            lifecycle.contains(required_snippet),
+            "README verify job lifecycle docs should contain `{required_snippet}`",
+        );
+    }
+
+    for forbidden_snippet in [
+        "goroutine",
+        "mutex",
+        "sqlite",
+        "SQLite",
+        "Kubernetes",
+        "pod restart",
+        "lastCompletedJob",
+        "activeJob",
+    ] {
+        assert!(
+            !lifecycle.contains(forbidden_snippet),
+            "README verify job lifecycle docs should stay operator-facing and exclude `{forbidden_snippet}`",
         );
     }
 }

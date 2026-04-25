@@ -1,4 +1,4 @@
-## Task: Document verify service job lifecycle and stateful behavior <status>not_started</status> <passes>false</passes>
+## Task: Document verify service job lifecycle and stateful behavior <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -38,16 +38,16 @@ A user reading the "Verify Quick Start" section knows before they start their fi
 </description>
 
 <acceptance_criteria>
-- [ ] README "Verify Quick Start" contains a "Job Lifecycle" subsection
-- [ ] All four job states are documented with plain-language descriptions
-- [ ] Polling guidance is explicit and includes a suggested interval
-- [ ] Concurrency limit and 409 behavior are documented with example response
-- [ ] Retention policy (only most recent completed job kept) is stated clearly
-- [ ] Restart amnesia behavior is stated clearly without implementation details
-- [ ] Full lifecycle example uses actual curl commands and response bodies
-- [ ] No promises of future features or persistence workarounds
-- [ ] README operator surface contract test passes
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] README "Verify Quick Start" contains a "Job Lifecycle" subsection
+- [x] All four job states are documented with plain-language descriptions
+- [x] Polling guidance is explicit and includes a suggested interval
+- [x] Concurrency limit and 409 behavior are documented with example response
+- [x] Retention policy (only most recent completed job kept) is stated clearly
+- [x] Restart amnesia behavior is stated clearly without implementation details
+- [x] Full lifecycle example uses actual curl commands and response bodies
+- [x] No promises of future features or persistence workarounds
+- [x] README operator surface contract test passes
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
