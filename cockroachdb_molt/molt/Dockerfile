@@ -20,4 +20,4 @@ FROM scratch AS runtime
 
 COPY --from=builder /out/molt /usr/local/bin/molt
 
-ENTRYPOINT ["/usr/local/bin/molt", "verify-service", "run"]
+ENTRYPOINT ["/usr/local/bin/molt", "verify-service"]

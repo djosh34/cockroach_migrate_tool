@@ -22,6 +22,7 @@ services:
       - source: verify-server-key
         target: /config/certs/server.key
     command:
+      - run
       - --log-format
       - json
       - --config

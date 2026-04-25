@@ -85,6 +85,41 @@ const RUNNER_COMMAND_HELP_CONTRACTS: &[OperatorCommandHelp] = &[
     },
 ];
 
+const VERIFY_SERVICE_IMAGE_COMMAND_HELP_CONTRACTS: &[OperatorCommandHelp] = &[
+    OperatorCommandHelp {
+        action: "validate-config",
+        path: &["validate-config"],
+        required_markers: &[
+            "Usage:\n  molt verify-service validate-config --config <path> [flags]",
+            "--config string",
+            "--log-format string",
+        ],
+        forbidden_markers: &[
+            "SUBCOMMAND",
+            "--source-url",
+            "--target-url",
+            "--rows",
+            "--table-splits",
+        ],
+    },
+    OperatorCommandHelp {
+        action: "run",
+        path: &["run"],
+        required_markers: &[
+            "Usage:\n  molt verify-service run --config <path> [flags]",
+            "--config string",
+            "--log-format string",
+        ],
+        forbidden_markers: &[
+            "SUBCOMMAND",
+            "--source-url",
+            "--target-url",
+            "--rows",
+            "--table-splits",
+        ],
+    },
+];
+
 const DOCUMENTED_SURFACES: &[OperatorCliSurface] = &[
     OperatorCliSurface {
         id: "setup-sql",
@@ -122,22 +157,23 @@ const DOCUMENTED_SURFACES: &[OperatorCliSurface] = &[
     },
     OperatorCliSurface {
         id: "verify-service-image",
-        allowed_actions: &["run"],
-        max_action_depth: 0,
+        allowed_actions: &["validate-config", "run"],
+        max_action_depth: 1,
         root_required_markers: &[
-            "Run the dedicated verify-service HTTP API.",
-            "--config string",
-            "--log-format string",
+            "Usage:\n  molt verify-service [command]",
+            "run             Run the dedicated verify-service HTTP API.",
+            "validate-config Validate the dedicated verify-service config file.",
         ],
         root_forbidden_markers: &[
-            "validate-config",
+            "--config string",
+            "--log-format string",
             "--rows",
             "--table-splits",
             "--source",
             "--target",
             "render-postgres-setup",
         ],
-        command_help_contracts: &[],
+        command_help_contracts: VERIFY_SERVICE_IMAGE_COMMAND_HELP_CONTRACTS,
     },
 ];
 

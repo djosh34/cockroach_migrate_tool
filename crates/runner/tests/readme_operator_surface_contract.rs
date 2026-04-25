@@ -100,7 +100,8 @@ fn readme_keeps_required_and_optional_args_as_short_lists() {
         "- `emit-postgres-grants`",
         "- `validate-config --config /config/runner.yml`",
         "- `run --config /config/runner.yml`",
-        "- `--config /config/verify-service.yml`",
+        "- `validate-config --config /config/verify-service.yml`",
+        "- `run --config /config/verify-service.yml`",
         "- `--log-format json` for structured stderr logs",
         "- `--deep` to verify destination connectivity and mapped tables",
     ] {
@@ -147,6 +148,7 @@ fn readme_keeps_inline_operator_files_copyable() {
         ("setup-sql.compose.yml", "image: \"${SETUP_SQL_IMAGE}\""),
         ("runner.compose.yml", "image: \"${RUNNER_IMAGE}\""),
         ("verify.compose.yml", "image: \"${VERIFY_IMAGE}\""),
+        ("verify.compose.yml", "command:\n      - run"),
     ] {
         assert!(
             readme
@@ -265,6 +267,18 @@ fn readme_operator_surface_materializes_the_inline_operator_workspace() {
 fn readme_verify_quick_start_documents_the_http_job_flow() {
     let readme = ReadmeOperatorSurface::load();
     let verify = readme.section("## Verify Quick Start");
+
+    for required_snippet in [
+        "Validate the mounted config directly through the image entrypoint:",
+        "validate-config --log-format json --config /config/verify-service.yml",
+        "Start the verify API directly through the image entrypoint:",
+        "run --log-format json --config /config/verify-service.yml",
+    ] {
+        assert!(
+            verify.contains(required_snippet),
+            "README verify quick start should document `{required_snippet}`",
+        );
+    }
 
     for required_snippet in [
         "\"include_schema\":\"^public$\"",

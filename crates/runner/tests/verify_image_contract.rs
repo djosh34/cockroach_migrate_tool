@@ -53,9 +53,15 @@ fn verify_image_keeps_x_crypto_out_of_vulnerable_runtime_versions() {
 fn verify_image_exposes_only_the_verify_command_surface() {
     let harness = VerifyImageArtifactHarness::start();
     let contract = VerifyDockerContract::load();
+    let surface = OperatorCliSurface::verify_service_image();
 
     contract.assert_image_entrypoint_is_direct_verify_surface(&harness.image_entrypoint_json());
-    OperatorCliSurface::verify_service_image().assert_root_help_output(&harness.help_output());
+    surface.assert_root_help_output(&harness.help_output());
+
+    for action in surface.allowed_actions() {
+        let help_output = harness.command_help_output(&surface.command_help(action).path_with_help_flag());
+        surface.command_help(action).assert_help_output(&help_output);
+    }
 }
 
 #[test]

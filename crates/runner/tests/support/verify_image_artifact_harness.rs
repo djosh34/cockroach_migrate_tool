@@ -54,6 +54,15 @@ impl VerifyImageArtifactHarness {
         )
     }
 
+    pub fn command_help_output(&self, args: &[&str]) -> String {
+        run_command_capture(
+            Command::new("docker")
+                .args(["run", "--rm", &self.image_tag])
+                .args(args),
+            "docker run verify image command help",
+        )
+    }
+
     pub fn validate_config_json_logs(&self) -> (String, String) {
         let fixture_mount = format!(
             "{}:/work/testdata:ro",

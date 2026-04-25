@@ -1,4 +1,4 @@
-## Task: Add explicit `run` subcommand to verify service for CLI consistency <status>not_started</status> <passes>false</passes>
+## Task: Add explicit `run` subcommand to verify service for CLI consistency <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -30,12 +30,14 @@ runner run --config /config/runner.yml --log-format json
 </description>
 
 <acceptance_criteria>
-- [ ] `verify-service run --config <path>` starts the service successfully
-- [ ] `verify-service run --config <path> --log-format json` works
-- [ ] README and Compose examples use the `run` subcommand
-- [ ] Operator CLI surface contract test reflects the new subcommand
-- [ ] Existing Go tests for verify service still pass
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] `verify-service run --config <path>` starts the service successfully
+- [x] `verify-service run --config <path> --log-format json` works
+- [x] README and Compose examples use the `run` subcommand
+- [x] Operator CLI surface contract test reflects the new subcommand
+- [x] Existing Go tests for verify service still pass
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-02-verify-service-ergonomics/task-05-verify-cli-run-subcommand_plans/2026-04-25-verify-cli-run-subcommand-plan.md</plan>

@@ -44,12 +44,12 @@ fn operator_cli_surface_encodes_the_depth_policy_for_readme_flows() {
 
     assert_eq!(
         OperatorCliSurface::verify_service_image().allowed_actions(),
-        ["run"],
-        "the published verify image must stay direct at the user-visible surface",
+        ["validate-config", "run"],
+        "the published verify image must expose the same two actions as the verify-service command tree",
     );
     assert_eq!(
         OperatorCliSurface::verify_service_image().max_action_depth(),
-        0,
-        "the published verify image entrypoint must not add another visible action layer",
+        1,
+        "the published verify image must keep one visible action layer instead of hiding `run` in the entrypoint",
     );
 }

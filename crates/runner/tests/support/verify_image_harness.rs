@@ -164,6 +164,7 @@ impl RunningVerifyImage {
                 "-v",
                 &config_mount,
                 image_tag,
+                "run",
                 "--config",
                 "/work/config/verify-service.yml",
             ]),

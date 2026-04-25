@@ -86,8 +86,8 @@ impl VerifyDockerContract {
     pub fn assert_image_entrypoint_is_direct_verify_surface(&self, image_entrypoint_json: &str) {
         assert_eq!(
             image_entrypoint_json.trim(),
-            "[\"/usr/local/bin/molt\",\"verify-service\",\"run\"]",
-            "verify image must invoke the verify-service runtime surface directly from the entrypoint",
+            "[\"/usr/local/bin/molt\",\"verify-service\"]",
+            "verify image must expose the verify-service command root directly from the entrypoint",
         );
     }
 

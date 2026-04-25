@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 25 09:41:15 PM CEST 2026
+Generated: Sat Apr 25 09:57:36 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -216,6 +216,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Build the single-binary container contract for the destination runner <status>in_progress</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-verify-service-ergonomics/task-05-verify-cli-run-subcommand.md`
+
+```
+## Task: Add explicit `run` subcommand to verify service for CLI consistency <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

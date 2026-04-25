@@ -1,10 +1,10 @@
 # Cockroach Migrate Tool
 
-Run the published `setup-sql`, `runner`, and `verify` images with inline configs only. No repository checkout, local Rust install, or local image build is required.
+Run the published `setup-sql`, `runner`, and `verify` images with inline configs only.
 
 ## Setup SQL Quick Start
 
-Pull the published `setup-sql` image, render SQL, review it, and apply it yourself.
+Pull the `setup-sql` image, render SQL, review it, and apply it yourself.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -156,7 +156,7 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 ## Runner Quick Start
 
-Pull the published runner image and write the runner config inline. The local path below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
+Pull the runner image and write the config inline. The example below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
 The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected.
 
@@ -294,7 +294,7 @@ TLS field mapping:
 
 ## Verify Quick Start
 
-Pull the published verify image and write the verify-service config inline. Omit `listener.tls` for HTTP, set `cert_path` plus `key_path` for HTTPS, and add `client_ca_path` for mTLS. Database URLs own `sslmode`; YAML only carries mounted cert paths.
+Pull the verify image and write the config inline. Use `listener.bind_addr` for HTTP, add `cert_path` plus `key_path` for HTTPS, and set `client_ca_path` for mTLS. Database URLs own `sslmode`; YAML only carries mounted cert paths.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -327,22 +327,29 @@ verify:
       ca_cert_path: /config/certs/destination-ca.crt
 ```
 
-Use `listener.bind_addr` alone for HTTP, add `listener.tls.cert_path` plus `listener.tls.key_path` for HTTPS, and set `listener.tls.client_ca_path` when clients must present certificates.
+Validate the mounted config directly through the image entrypoint:
 
-Start the verify API directly:
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${VERIFY_IMAGE}" \
+  validate-config --log-format json --config /config/verify-service.yml
+```
+
+Start the verify API directly through the image entrypoint:
 
 ```bash
 docker run --rm \
   -p 9443:8080 \
   -v "$(pwd)/config:/config:ro" \
   "${VERIFY_IMAGE}" \
-  --log-format json \
-  --config /config/verify-service.yml
+  run --log-format json --config /config/verify-service.yml
 ```
 
 Required args:
 
-- `--config /config/verify-service.yml`
+- `validate-config --config /config/verify-service.yml`
+- `run --config /config/verify-service.yml`
 
 Optional args:
 
@@ -462,6 +469,7 @@ services:
       - source: verify-server-key
         target: /config/certs/server.key
     command:
+      - run
       - --log-format
       - json
       - --config
