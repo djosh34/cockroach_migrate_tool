@@ -318,6 +318,7 @@ TLS field mapping:
 ## Verify Quick Start
 
 Pull the verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in database URLs.
+Full API: `openapi/verify-service.yaml`.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -376,8 +377,8 @@ Optional args:
 
 - `--log-format json` for structured stderr logs
 
-- `POST /jobs` starts one verify job.
-- `GET /jobs/${JOB_ID}` polls the job, then returns the final result.
+- `POST /jobs` starts a verify job.
+- `GET /jobs/${JOB_ID}` polls and returns the final result.
 - `POST /jobs/${JOB_ID}/stop` requests cancellation.
 
 Assume `https://localhost:9443`, client cert auth, `JOB_ID`.

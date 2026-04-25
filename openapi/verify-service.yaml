@@ -1,0 +1,737 @@
+openapi: 3.0.3
+info:
+  title: Verify Service HTTP API
+  version: 0.1.0
+  license:
+    name: Proprietary
+  description: >
+    HTTP API for starting, polling, and stopping verify jobs, plus optional raw
+    table reads and Prometheus metrics. The default local URL is
+    `http://localhost:8080`, but the actual host and port come from
+    `listener.bind_addr`. The API is stateful: it allows only one active job at
+    a time, retains only the most recent completed job, and loses retained job
+    state on process restart. Listener TLS and mTLS are configured at the
+    listener layer rather than through an application-level authentication
+    scheme.
+servers:
+  - url: http://localhost:8080
+    description: Default local endpoint. The actual host and port come from `listener.bind_addr`.
+security: []
+paths:
+  /jobs:
+    post:
+      operationId: startVerifyJob
+      summary: Start a verify job
+      description: >
+        Starts a verify job when no other verify job is currently running.
+        Request filters are flat top-level fields only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobRequest'
+            examples:
+              filtered_request:
+                summary: Filter to one schema and a subset of tables
+                value:
+                  include_schema: ^public$
+                  include_table: ^(accounts|orders)$
+      responses:
+        '202':
+          description: Verify job accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    job_id: job-000001
+                    status: running
+        '400':
+          description: Request body validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                invalid_filter:
+                  value:
+                    error:
+                      category: request_validation
+                      code: invalid_filter
+                      message: request validation failed
+                      details:
+                        - field: include_schema
+                          reason: 'error parsing regexp: missing closing ]: `[`'
+                unknown_field:
+                  value:
+                    error:
+                      category: request_validation
+                      code: unknown_field
+                      message: request body contains an unsupported field
+                      details:
+                        - field: verify
+                          reason: unknown field
+                multiple_documents:
+                  value:
+                    error:
+                      category: request_validation
+                      code: multiple_documents
+                      message: request body must contain exactly one JSON object
+        '409':
+          description: A verify job is already running.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                job_already_running:
+                  value:
+                    error:
+                      category: job_state
+                      code: job_already_running
+                      message: a verify job is already running
+        '413':
+          description: Request body exceeds the maximum accepted size.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                request_body_too_large:
+                  value:
+                    error:
+                      category: request_validation
+                      code: request_body_too_large
+                      message: request body exceeds maximum size
+  /jobs/{job_id}:
+    get:
+      operationId: getVerifyJob
+      summary: Get verify job status
+      description: >
+        Returns the current state for the active job or the most recent
+        completed job. Only the most recent completed job is retained.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Verify job identifier.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Verify job status and, when available, result details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStatusResponse'
+              examples:
+                running:
+                  value:
+                    job_id: job-000001
+                    status: running
+                succeeded:
+                  value:
+                    job_id: job-000001
+                    status: succeeded
+                    result:
+                      summary:
+                        tables_verified: 1
+                        tables_with_data: 1
+                        has_mismatches: false
+                      table_summaries:
+                        - schema: public
+                          table: accounts
+                          num_verified: 7
+                          num_success: 7
+                          num_missing: 0
+                          num_mismatch: 0
+                          num_column_mismatch: 0
+                          num_extraneous: 0
+                          num_live_retry: 0
+                      findings: []
+                      mismatch_summary:
+                        has_mismatches: false
+                        affected_tables: []
+                        counts_by_kind: {}
+                failed:
+                  value:
+                    job_id: job-000001
+                    status: failed
+                    failure:
+                      category: mismatch
+                      code: mismatch_detected
+                      message: verify detected mismatches in 1 table
+                      details:
+                        - reason: mismatch detected for public.accounts
+                    result:
+                      summary:
+                        tables_verified: 1
+                        tables_with_data: 1
+                        has_mismatches: true
+                      table_summaries:
+                        - schema: public
+                          table: accounts
+                          num_verified: 7
+                          num_success: 6
+                          num_missing: 0
+                          num_mismatch: 0
+                          num_column_mismatch: 1
+                          num_extraneous: 0
+                          num_live_retry: 0
+                      findings:
+                        - kind: mismatching_column
+                          schema: public
+                          table: accounts
+                          primary_key:
+                            id: '101'
+                          mismatching_columns:
+                            - balance
+                          source_values:
+                            balance: '17'
+                          destination_values:
+                            balance: '23'
+                          info:
+                            - balance mismatch
+                      mismatch_summary:
+                        has_mismatches: true
+                        affected_tables:
+                          - schema: public
+                            table: accounts
+                        counts_by_kind:
+                          mismatching_column: 1
+                stopped:
+                  value:
+                    job_id: job-000001
+                    status: stopped
+                failed_source_access:
+                  value:
+                    job_id: job-000001
+                    status: failed
+                    failure:
+                      category: source_access
+                      code: connection_failed
+                      message: 'source connection failed: dial tcp 127.0.0.1:5432: connect: connection refused'
+                      details:
+                        - reason: 'dial tcp 127.0.0.1:5432: connect: connection refused'
+                failed_verify_execution:
+                  value:
+                    job_id: job-000001
+                    status: failed
+                    failure:
+                      category: verify_execution
+                      code: verify_failed
+                      message: 'verify execution failed: verify exploded'
+                      details:
+                        - reason: verify exploded
+                    result:
+                      summary:
+                        tables_verified: 0
+                        tables_with_data: 0
+                        has_mismatches: true
+                      table_summaries: []
+                      findings:
+                        - kind: mismatching_table_definition
+                          schema: public
+                          table: accounts
+                          message: primary key mismatch
+                      mismatch_summary:
+                        has_mismatches: true
+                        affected_tables:
+                          - schema: public
+                            table: accounts
+                        counts_by_kind:
+                          mismatching_table_definition: 1
+        '404':
+          description: Verify job not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                job_not_found:
+                  value:
+                    error:
+                      category: job_state
+                      code: job_not_found
+                      message: job not found
+  /jobs/{job_id}/stop:
+    post:
+      operationId: stopVerifyJob
+      summary: Request verify job cancellation
+      description: >
+        Requests cancellation for the active job. The request body must be an
+        empty JSON object.
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          description: Verify job identifier.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmptyObject'
+            examples:
+              empty_request:
+                value: {}
+      responses:
+        '200':
+          description: Verify job stop requested.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobStopResponse'
+              examples:
+                stopping:
+                  value:
+                    job_id: job-000001
+                    status: stopping
+        '400':
+          description: Request body validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                unknown_field:
+                  value:
+                    error:
+                      category: request_validation
+                      code: unknown_field
+                      message: request body contains an unsupported field
+                      details:
+                        - field: reason
+                          reason: unknown field
+        '404':
+          description: Verify job not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                job_not_found:
+                  value:
+                    error:
+                      category: job_state
+                      code: job_not_found
+                      message: job not found
+        '413':
+          description: Request body exceeds the maximum accepted size.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                request_body_too_large:
+                  value:
+                    error:
+                      category: request_validation
+                      code: request_body_too_large
+                      message: request body exceeds maximum size
+  /tables/raw:
+    post:
+      operationId: readRawTable
+      summary: Read raw table rows
+      description: >
+        Reads raw table data when `verify.raw_table_output` is enabled. Decode
+        failures return structured operator errors, while request validation and
+        disabled-state failures currently return a plain `{ "error": "..." }`
+        envelope.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RawTableRequest'
+            examples:
+              source_table:
+                value:
+                  database: source
+                  schema: public
+                  table: accounts
+      responses:
+        '200':
+          description: Raw table rows returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RawTableResponse'
+              examples:
+                source_rows:
+                  value:
+                    database: source
+                    schema: public
+                    table: accounts
+                    columns:
+                      - id
+                      - email
+                    rows:
+                      - id: 1
+                        email: first@example.com
+        '400':
+          description: >
+            Invalid JSON uses the structured operator-error envelope; raw-table
+            validation failures use the plain error envelope.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/OperatorErrorEnvelope'
+                  - $ref: '#/components/schemas/PlainError'
+              examples:
+                invalid_identifier:
+                  value:
+                    error: schema must be a simple SQL identifier
+                unknown_field:
+                  value:
+                    error:
+                      category: request_validation
+                      code: unknown_field
+                      message: request body contains an unsupported field
+                      details:
+                        - field: extra
+                          reason: unknown field
+        '403':
+          description: Raw table output is disabled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlainError'
+              examples:
+                disabled:
+                  value:
+                    error: raw table output is disabled
+        '413':
+          description: Request body exceeds the maximum accepted size.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperatorErrorEnvelope'
+              examples:
+                request_body_too_large:
+                  value:
+                    error:
+                      category: request_validation
+                      code: request_body_too_large
+                      message: request body exceeds maximum size
+  /metrics:
+    get:
+      operationId: getVerifyMetrics
+      summary: Get Prometheus metrics
+      description: Returns Prometheus metrics as text/plain.
+      responses:
+        '200':
+          description: Prometheus metrics.
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |-
+                # HELP cockroach_migration_tool_verify_active_jobs Number of active verify jobs.
+                # TYPE cockroach_migration_tool_verify_active_jobs gauge
+                cockroach_migration_tool_verify_active_jobs 1
+components:
+  schemas:
+    JobRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        include_schema:
+          type: string
+          description: POSIX regular expression for included schemas.
+        include_table:
+          type: string
+          description: POSIX regular expression for included tables.
+        exclude_schema:
+          type: string
+          description: POSIX regular expression for excluded schemas.
+        exclude_table:
+          type: string
+          description: POSIX regular expression for excluded tables.
+    EmptyObject:
+      type: object
+      additionalProperties: false
+      properties: {}
+    JobStatus:
+      type: string
+      enum:
+        - running
+        - succeeded
+        - failed
+        - stopped
+    JobAcceptedResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - running
+    JobStopResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          enum:
+            - stopping
+    JobStatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - job_id
+        - status
+      properties:
+        job_id:
+          type: string
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        result:
+          $ref: '#/components/schemas/JobResult'
+        failure:
+          $ref: '#/components/schemas/OperatorError'
+    JobResult:
+      type: object
+      additionalProperties: false
+      required:
+        - summary
+        - table_summaries
+        - findings
+        - mismatch_summary
+      properties:
+        summary:
+          $ref: '#/components/schemas/ResultSummary'
+        table_summaries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableSummary'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobFinding'
+        mismatch_summary:
+          $ref: '#/components/schemas/MismatchSummary'
+    ResultSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - tables_verified
+        - tables_with_data
+        - has_mismatches
+      properties:
+        tables_verified:
+          type: integer
+        tables_with_data:
+          type: integer
+        has_mismatches:
+          type: boolean
+    TableSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - table
+        - num_verified
+        - num_success
+        - num_missing
+        - num_mismatch
+        - num_column_mismatch
+        - num_extraneous
+        - num_live_retry
+      properties:
+        schema:
+          type: string
+        table:
+          type: string
+        num_verified:
+          type: integer
+        num_success:
+          type: integer
+        num_missing:
+          type: integer
+        num_mismatch:
+          type: integer
+        num_column_mismatch:
+          type: integer
+        num_extraneous:
+          type: integer
+        num_live_retry:
+          type: integer
+    JobFinding:
+      type: object
+      additionalProperties: false
+      required:
+        - kind
+        - schema
+        - table
+      properties:
+        kind:
+          type: string
+        schema:
+          type: string
+        table:
+          type: string
+        primary_key:
+          type: object
+          additionalProperties:
+            type: string
+        mismatching_columns:
+          type: array
+          items:
+            type: string
+        source_values:
+          type: object
+          additionalProperties:
+            type: string
+        destination_values:
+          type: object
+          additionalProperties:
+            type: string
+        info:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+    MismatchSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - has_mismatches
+        - affected_tables
+        - counts_by_kind
+      properties:
+        has_mismatches:
+          type: boolean
+        affected_tables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TableIdentity'
+        counts_by_kind:
+          type: object
+          additionalProperties:
+            type: integer
+    TableIdentity:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - table
+      properties:
+        schema:
+          type: string
+        table:
+          type: string
+    RawTableRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - database
+        - schema
+        - table
+      properties:
+        database:
+          type: string
+          enum:
+            - source
+            - destination
+        schema:
+          type: string
+        table:
+          type: string
+    RawTableResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - database
+        - schema
+        - table
+        - columns
+        - rows
+      properties:
+        database:
+          type: string
+          enum:
+            - source
+            - destination
+        schema:
+          type: string
+        table:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    OperatorErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          $ref: '#/components/schemas/OperatorError'
+    OperatorError:
+      type: object
+      additionalProperties: false
+      required:
+        - category
+        - code
+        - message
+      properties:
+        category:
+          type: string
+          enum:
+            - request_validation
+            - job_state
+            - source_access
+            - mismatch
+            - verify_execution
+        code:
+          type: string
+          description: >
+            Example codes include unknown_field, job_already_running,
+            job_not_found, connection_failed, mismatch_detected, and
+            verify_failed.
+        message:
+          type: string
+        details:
+          type: array
+          items:
+            $ref: '#/components/schemas/OperatorErrorDetail'
+    OperatorErrorDetail:
+      type: object
+      additionalProperties: false
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+    PlainError:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string

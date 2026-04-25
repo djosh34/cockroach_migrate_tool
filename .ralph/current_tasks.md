@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 22:16:22 CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-03-docs-api-contracts/task-08-docs-openapi-verify-api.md`
-
-```
-## Task: Create OpenAPI 3.0 specification for verify service HTTP API <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
+Generated: Sat Apr 25 10:38:15 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-03-docs-api-contracts/task-09-docs-verify-job-lifecycle.md`
 

@@ -364,6 +364,8 @@ fn readme_verify_quick_start_documents_the_http_job_flow() {
     for required_snippet in [
         "\"include_schema\":\"^public$\"",
         "\"include_table\":\"^(accounts|orders)$\"",
+        "`openapi/verify-service.yaml`",
+        "`listener.bind_addr`",
         "POST /jobs",
         "GET /jobs/${JOB_ID}",
         "POST /jobs/${JOB_ID}/stop",

@@ -1,4 +1,4 @@
-## Task: Create OpenAPI 3.0 specification for verify service HTTP API <status>not_started</status> <passes>false</passes>
+## Task: Create OpenAPI 3.0 specification for verify service HTTP API <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -53,15 +53,17 @@ A user can open `openapi/verify-service.yaml` in Swagger UI, Postman, or any Ope
 </description>
 
 <acceptance_criteria>
-- [ ] OpenAPI 3.0 YAML file exists and validates against the OpenAPI schema (use a linter)
-- [ ] All verify service endpoints are documented with paths, methods, and parameters
-- [ ] Request body schemas match the actual JSON decoder expectations (flat filters, raw table request)
-- [ ] Response schemas cover all status codes returned by the handlers
-- [ ] Enum values for status and error categories are explicitly listed
-- [ ] Example values are provided for requests and responses
-- [ ] No runner endpoints or internal implementation details are included
-- [ ] README references the OpenAPI file location
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] OpenAPI 3.0 YAML file exists and validates against the OpenAPI schema (use a linter)
+- [x] All verify service endpoints are documented with paths, methods, and parameters
+- [x] Request body schemas match the actual JSON decoder expectations (flat filters, raw table request)
+- [x] Response schemas cover all status codes returned by the handlers
+- [x] Enum values for status and error categories are explicitly listed
+- [x] Example values are provided for requests and responses
+- [x] No runner endpoints or internal implementation details are included
+- [x] README references the OpenAPI file location
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-03-docs-api-contracts/task-08-docs-openapi-verify-api_plans/2026-04-25-openapi-verify-api-plan.md</plan>
