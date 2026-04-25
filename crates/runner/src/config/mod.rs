@@ -112,19 +112,17 @@ pub(crate) struct PostgresTargetConfig {
 
 impl PostgresTargetConfig {
     pub(crate) fn from_url(url: &str) -> Result<Self, RunnerConfigError> {
-        let connect_options = url
-            .parse::<PgConnectOptions>()
-            .map_err(|source| {
-                let message = source.to_string();
-                let message = message
-                    .strip_prefix("error with configuration: ")
-                    .unwrap_or(&message)
-                    .to_owned();
-                RunnerConfigError::InvalidFieldDetail {
-                    field: "mappings.destination.url",
-                    message,
-                }
-            })?;
+        let connect_options = url.parse::<PgConnectOptions>().map_err(|source| {
+            let message = source.to_string();
+            let message = message
+                .strip_prefix("error with configuration: ")
+                .unwrap_or(&message)
+                .to_owned();
+            RunnerConfigError::InvalidFieldDetail {
+                field: "mappings.destination.url",
+                message,
+            }
+        })?;
 
         Self::from_connect_options(connect_options, "mappings.destination.url")
     }
@@ -264,27 +262,12 @@ impl WebhookConfig {
         self.bind_addr
     }
 
-    pub(crate) fn mode(&self) -> WebhookMode {
-        self.transport.mode()
+    pub(crate) fn effective_mode(&self) -> &'static str {
+        self.transport.effective_mode()
     }
 
     pub(crate) fn tls(&self) -> Option<&TlsConfig> {
         self.transport.tls()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum WebhookMode {
-    Http,
-    Https,
-}
-
-impl WebhookMode {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Self::Http => "http",
-            Self::Https => "https",
-        }
     }
 }
 
@@ -295,17 +278,18 @@ pub(crate) enum WebhookTransport {
 }
 
 impl WebhookTransport {
-    pub(crate) fn mode(&self) -> WebhookMode {
-        match self {
-            Self::Http => WebhookMode::Http,
-            Self::Https(_) => WebhookMode::Https,
-        }
-    }
-
     pub(crate) fn tls(&self) -> Option<&TlsConfig> {
         match self {
             Self::Http => None,
             Self::Https(tls) => Some(tls),
+        }
+    }
+
+    pub(crate) fn effective_mode(&self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https(tls) if tls.client_ca_path.is_some() => "https+mtls",
+            Self::Https(_) => "https",
         }
     }
 }
@@ -314,6 +298,7 @@ impl WebhookTransport {
 pub(crate) struct TlsConfig {
     pub(super) cert_path: PathBuf,
     pub(super) key_path: PathBuf,
+    pub(super) client_ca_path: Option<PathBuf>,
 }
 
 impl TlsConfig {
@@ -325,8 +310,20 @@ impl TlsConfig {
         &self.key_path
     }
 
+    pub(crate) fn client_ca_path(&self) -> Option<&Path> {
+        self.client_ca_path.as_deref()
+    }
+
     pub(crate) fn material_label(&self) -> String {
-        format!("{}+{}", self.cert_path.display(), self.key_path.display())
+        match &self.client_ca_path {
+            Some(client_ca_path) => format!(
+                "{}+{}+{}",
+                self.cert_path.display(),
+                self.key_path.display(),
+                client_ca_path.display()
+            ),
+            None => format!("{}+{}", self.cert_path.display(), self.key_path.display()),
+        }
     }
 }
 

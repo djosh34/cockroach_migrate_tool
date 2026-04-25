@@ -9,7 +9,7 @@ use std::{
 };
 
 use predicates::prelude::{PredicateBooleanExt, predicate};
-use reqwest::{Certificate, blocking::Client};
+use reqwest::{Certificate, Identity, blocking::Client};
 use serde_json::Value;
 
 #[path = "support/host_process_runner.rs"]
@@ -23,6 +23,21 @@ fn fixture_path(name: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
+        .join(name)
+}
+
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should resolve")
+}
+
+fn investigation_cert(name: &str) -> PathBuf {
+    repo_root()
+        .join("investigations")
+        .join("cockroach-webhook-cdc")
+        .join("certs")
         .join(name)
 }
 
@@ -176,14 +191,7 @@ impl TestPostgres {
             }
 
             let status = Command::new("pg_isready")
-                .args([
-                    "-h",
-                    "127.0.0.1",
-                    "-p",
-                    &port.to_string(),
-                    "-U",
-                    "postgres",
-                ])
+                .args(["-h", "127.0.0.1", "-p", &port.to_string(), "-U", "postgres"])
                 .status()
                 .expect("pg_isready should start");
             if status.success() {
@@ -265,6 +273,44 @@ mappings:
             ),
         )
         .expect("runner config should be written");
+    }
+
+    fn write_mtls_runner_config(&self, path: &Path, bind_port: u16) {
+        let tables_yaml = "        - public.customers";
+
+        fs::write(
+            path,
+            format!(
+                r#"webhook:
+  bind_addr: 127.0.0.1:{bind_port}
+  tls:
+    cert_path: {cert_path}
+    key_path: {key_path}
+    client_ca_path: {client_ca_path}
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+{tables_yaml}
+    destination:
+      host: 127.0.0.1
+      port: {port}
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+                bind_port = bind_port,
+                cert_path = investigation_cert("server.crt").display(),
+                key_path = investigation_cert("server.key").display(),
+                client_ca_path = investigation_cert("ca.crt").display(),
+                tables_yaml = tables_yaml,
+                port = self.port,
+            ),
+        )
+        .expect("runner mtls config should be written");
     }
 
     fn write_runner_config_with_tables(&self, path: &Path, bind_port: u16, tables: &[&str]) {
@@ -454,6 +500,121 @@ fn https_client() -> Client {
         .expect("https client should build")
 }
 
+fn https_client_with_ca(certificate_path: &Path) -> Client {
+    let certificate = Certificate::from_pem(
+        &fs::read(certificate_path).expect("server certificate should be readable"),
+    )
+    .expect("server certificate should parse");
+
+    Client::builder()
+        .add_root_certificate(certificate)
+        .build()
+        .expect("https client should build")
+}
+
+fn https_client_with_identity(certificate_path: &Path, identity: Identity) -> Client {
+    let certificate = Certificate::from_pem(
+        &fs::read(certificate_path).expect("server certificate should be readable"),
+    )
+    .expect("server certificate should parse");
+
+    Client::builder()
+        .add_root_certificate(certificate)
+        .identity(identity)
+        .build()
+        .expect("https client with identity should build")
+}
+
+fn generate_mtls_client_identity(temp_dir: &Path) -> Identity {
+    let client_cert_config_path = temp_dir.join("runner-client.cnf");
+    fs::write(
+        &client_cert_config_path,
+        "[req]\n\
+         distinguished_name = dn\n\
+         prompt = no\n\
+         req_extensions = req_ext\n\
+         \n\
+         [dn]\n\
+         CN = runner-test-client\n\
+         \n\
+         [req_ext]\n\
+         basicConstraints = CA:FALSE\n\
+         keyUsage = critical,digitalSignature,keyEncipherment\n\
+         extendedKeyUsage = clientAuth\n",
+    )
+    .expect("runner mtls client config should be written");
+
+    let client_key_path = temp_dir.join("runner-client.key");
+    let client_csr_path = temp_dir.join("runner-client.csr");
+    let client_cert_path = temp_dir.join("runner-client.crt");
+    let client_serial_path = temp_dir.join("runner-client.srl");
+
+    run_command(
+        Command::new("openssl").args([
+            "req",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            client_key_path
+                .to_str()
+                .expect("runner client key path should be utf-8"),
+            "-out",
+            client_csr_path
+                .to_str()
+                .expect("runner client csr path should be utf-8"),
+            "-config",
+            client_cert_config_path
+                .to_str()
+                .expect("runner client config path should be utf-8"),
+        ]),
+        "openssl req runner mtls client csr",
+    );
+    run_command(
+        Command::new("openssl").args([
+            "x509",
+            "-req",
+            "-days",
+            "365",
+            "-in",
+            client_csr_path
+                .to_str()
+                .expect("runner client csr path should be utf-8"),
+            "-CA",
+            investigation_cert("ca.crt")
+                .to_str()
+                .expect("runner investigation ca cert path should be utf-8"),
+            "-CAkey",
+            investigation_cert("ca.key")
+                .to_str()
+                .expect("runner investigation ca key path should be utf-8"),
+            "-CAcreateserial",
+            "-CAserial",
+            client_serial_path
+                .to_str()
+                .expect("runner client serial path should be utf-8"),
+            "-out",
+            client_cert_path
+                .to_str()
+                .expect("runner client cert path should be utf-8"),
+            "-extensions",
+            "req_ext",
+            "-extfile",
+            client_cert_config_path
+                .to_str()
+                .expect("runner client config path should be utf-8"),
+        ]),
+        "openssl x509 runner mtls client cert",
+    );
+
+    let mut pem =
+        fs::read(&client_cert_path).expect("runner mtls client certificate should be readable");
+    pem.extend_from_slice(
+        &fs::read(&client_key_path).expect("runner mtls client key should be readable"),
+    );
+    Identity::from_pem(&pem).expect("runner mtls client identity should parse")
+}
+
 fn http_client() -> Client {
     Client::builder().build().expect("http client should build")
 }
@@ -611,6 +772,39 @@ fn run_serves_https_healthz_when_webhook_mode_is_explicit_https() {
     postgres.write_explicit_https_runner_config(&config_path, 0);
     let mut runner = HostProcessRunner::start(&config_path);
     runner.assert_healthy(&https_client());
+}
+
+#[test]
+fn run_requires_a_client_certificate_when_webhook_client_ca_is_configured() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec_as(
+        "migration_user_a",
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_mtls_runner_config(&config_path, 0);
+
+    let mut runner = HostProcessRunner::start(&config_path);
+    let healthz_url = runner.healthz_url();
+    let unauthenticated_client = https_client_with_ca(&investigation_cert("ca.crt"));
+    let authenticated_client = https_client_with_identity(
+        &investigation_cert("ca.crt"),
+        generate_mtls_client_identity(temp_dir.path()),
+    );
+
+    assert!(
+        unauthenticated_client.get(&healthz_url).send().is_err(),
+        "runner mtls listener must reject clients without a certificate",
+    );
+    runner.assert_healthy(&authenticated_client);
 }
 
 #[test]

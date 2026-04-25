@@ -79,12 +79,14 @@ func writeRuntimeConfig(t *testing.T) string {
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
-    ca_cert_path: %s
-    client_cert_path: %s
-    client_key_path: %s
+    tls:
+      ca_cert_path: %s
+      client_cert_path: %s
+      client_key_path: %s
   destination:
     url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=verify-ca
-    ca_cert_path: %s
+    tls:
+      ca_cert_path: %s
 `,
 		serverCertPath,
 		serverKeyPath,

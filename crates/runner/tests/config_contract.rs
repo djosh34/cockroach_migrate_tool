@@ -464,7 +464,9 @@ fn validate_config_defaults_webhook_mode_to_https_when_tls_is_present() {
         .assert()
         .success()
         .stdout(predicate::str::contains("mode=https"))
-        .stdout(predicate::str::contains("tls=certs/server.crt+certs/server.key"));
+        .stdout(predicate::str::contains(
+            "tls=certs/server.crt+certs/server.key",
+        ));
 }
 
 #[test]
@@ -546,6 +548,71 @@ mappings:
         .stderr(predicate::str::contains(
             "config: invalid config field `webhook.tls`: must not be set when webhook.mode is `http`",
         ));
+}
+
+#[test]
+fn validate_config_accepts_https_webhook_client_ca_and_reports_mtls_mode() {
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    fs::write(
+        &config_path,
+        r#"webhook:
+  bind_addr: 127.0.0.1:8443
+  tls:
+    cert_path: certs/server.crt
+    key_path: certs/server.key
+    client_ca_path: certs/client-ca.crt
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+"#,
+    )
+    .expect("https mtls webhook config should be written");
+
+    let mut command = Command::cargo_bin("runner").expect("runner binary should exist");
+    let assert = command
+        .args(["validate-config", "--log-format", "json", "--config"])
+        .arg(&config_path)
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(assert.get_output().stdout.clone())
+        .expect("validate-config stdout should be utf-8");
+    let stderr = String::from_utf8(assert.get_output().stderr.clone())
+        .expect("validate-config stderr should be utf-8");
+
+    assert!(
+        stdout.is_empty(),
+        "json logging mode must keep validate-config stdout empty, got: {stdout:?}",
+    );
+
+    let payload: Value =
+        serde_json::from_str(stderr.trim()).expect("validate-config stderr must be valid JSON");
+    let json_object = payload
+        .as_object()
+        .expect("validate-config stderr json must be an object");
+
+    assert_eq!(
+        json_object.get("mode").and_then(Value::as_str),
+        Some("https+mtls"),
+        "validate-config json log must expose the effective mtls webhook mode",
+    );
+    assert_eq!(
+        json_object.get("tls").and_then(Value::as_str),
+        Some("certs/server.crt+certs/server.key+certs/client-ca.crt"),
+        "validate-config json log must expose the full webhook tls material when mtls is active",
+    );
 }
 
 #[test]

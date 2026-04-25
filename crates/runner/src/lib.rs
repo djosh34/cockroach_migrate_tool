@@ -129,7 +129,7 @@ impl From<&LoadedRunnerConfig> for ValidatedConfig {
             config_path: loaded_config.path().display().to_string(),
             mappings: config.mapping_count(),
             webhook_bind_addr: config.webhook().bind_addr(),
-            webhook_mode: config.webhook().mode().as_str(),
+            webhook_mode: config.webhook().effective_mode(),
             webhook_tls_files: config.webhook().tls().map(|tls| tls.material_label()),
         }
     }

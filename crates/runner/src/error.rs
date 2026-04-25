@@ -175,6 +175,8 @@ pub enum RunnerWebhookRuntimeError {
     MissingTlsCertificate { path: PathBuf },
     #[error("tls private key file `{path}` did not contain a private key")]
     MissingTlsPrivateKey { path: PathBuf },
+    #[error("failed to build rustls client verification from `{path}`: {message}")]
+    BuildTlsClientVerifier { path: PathBuf, message: String },
     #[error("failed to build rustls server config")]
     BuildTlsConfig { source: rustls::Error },
     #[error("failed tls handshake for webhook connection")]

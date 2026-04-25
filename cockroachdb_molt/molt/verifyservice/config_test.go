@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestLoadConfigRejectsRemovedNestedTLSKnobs(t *testing.T) {
+func TestLoadConfigRejectsRemovedFlatTLSKnobs(t *testing.T) {
 	t.Run("listener transport block is rejected", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-obsolete-listener-transport.yml"))
 		require.ErrorContains(t, err, "field transport not found in type verifyservice.ListenerConfig")
 	})
 
-	t.Run("database tls block is rejected", func(t *testing.T) {
+	t.Run("database flat tls fields are rejected", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-obsolete-database-tls.yml"))
-		require.ErrorContains(t, err, "field tls not found in type verifyservice.DatabaseConfig")
+		require.ErrorContains(t, err, "field ca_cert_path not found in type verifyservice.DatabaseConfig")
 	})
 }
 
@@ -36,12 +36,12 @@ func TestLoadConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 func TestLoadConfigRejectsUnpairedClientCertificateMaterial(t *testing.T) {
 	t.Run("client cert without key", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-source-client-cert-without-key.yml"))
-		require.ErrorContains(t, err, "verify.source.client_cert_path and verify.source.client_key_path must both be set")
+		require.ErrorContains(t, err, "verify.source.tls.client_cert_path and verify.source.tls.client_key_path must both be set")
 	})
 
 	t.Run("client key without cert", func(t *testing.T) {
 		_, err := LoadConfig(filepath.Join("testdata", "invalid-destination-client-key-without-cert.yml"))
-		require.ErrorContains(t, err, "verify.destination.client_cert_path and verify.destination.client_key_path must both be set")
+		require.ErrorContains(t, err, "verify.destination.tls.client_cert_path and verify.destination.tls.client_key_path must both be set")
 	})
 }
 

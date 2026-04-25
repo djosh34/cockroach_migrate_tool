@@ -1,6 +1,6 @@
 # Current Tasks Summary
 
-Generated: Sat Apr 25 08:53:32 PM CEST 2026
+Generated: Sat Apr 25 21:18:20 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-04-runner-deep-validation.md`
 
@@ -17,17 +17,6 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add explicit `run` subcommand to verify service for CLI consistency <status>not_started</status> <passes>false</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-02-verify-service-ergonomics/task-06-standardize-tls-config-patterns.md`
-
-```
-## Task: Standardize TLS config field naming and structure across runner and verify <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete

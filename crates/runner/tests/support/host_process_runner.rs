@@ -90,10 +90,15 @@ impl HostProcessRunner {
                         .get("webhook")
                         .and_then(Value::as_str)
                         .expect("webhook bound event must expose a webhook address");
-                    let scheme = json_object
+                    let mode = json_object
                         .get("mode")
                         .and_then(Value::as_str)
                         .expect("webhook bound event must expose a webhook mode");
+                    let scheme = match mode {
+                        "http" => "http",
+                        "https" | "https+mtls" => "https",
+                        other => panic!("unexpected webhook mode `{other}`"),
+                    };
                     let port = bind_addr
                         .rsplit(':')
                         .next()

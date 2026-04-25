@@ -7,7 +7,9 @@ listener:
 verify:
   source:
     url: postgres://verify_source@source.internal:26257/appdb?sslmode=verify-full
-    ca_cert_path: /config/certs/source-ca.crt
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
   destination:
     url: oracle://verify_target:secret@target.internal:1521/appdb?sslmode=verify-ca
-    ca_cert_path: /config/certs/destination-ca.crt
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt

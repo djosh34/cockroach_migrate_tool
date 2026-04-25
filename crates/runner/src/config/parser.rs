@@ -9,7 +9,7 @@ use serde_yaml::Value;
 use crate::{
     config::{
         MappingConfig, PostgresTargetConfig, PostgresTlsConfig, PostgresTlsMode, ReconcileConfig,
-        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig, WebhookMode, WebhookTransport,
+        RunnerConfig, SourceConfig, TlsConfig, WebhookConfig, WebhookTransport,
     },
     error::RunnerConfigError,
 };
@@ -97,20 +97,12 @@ enum RawWebhookMode {
     Https,
 }
 
-impl From<RawWebhookMode> for WebhookMode {
-    fn from(value: RawWebhookMode) -> Self {
-        match value {
-            RawWebhookMode::Http => WebhookMode::Http,
-            RawWebhookMode::Https => WebhookMode::Https,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawTlsConfig {
     cert_path: PathBuf,
     key_path: PathBuf,
+    client_ca_path: Option<PathBuf>,
 }
 
 impl RawTlsConfig {
@@ -118,6 +110,10 @@ impl RawTlsConfig {
         Ok(TlsConfig {
             cert_path: validate_path(self.cert_path, "webhook.tls.cert_path")?,
             key_path: validate_path(self.key_path, "webhook.tls.key_path")?,
+            client_ca_path: self
+                .client_ca_path
+                .map(|path| validate_path(path, "webhook.tls.client_ca_path"))
+                .transpose()?,
         })
     }
 }
@@ -249,8 +245,7 @@ impl RawPostgresTargetConfig {
         match self {
             Self::Mixed => Err(RunnerConfigError::InvalidField {
                 field: "mappings.destination",
-                message:
-                    "`url` cannot be combined with `host`, `port`, `database`, `user`, `password`, or `tls`",
+                message: "`url` cannot be combined with `host`, `port`, `database`, `user`, `password`, or `tls`",
             }),
             Self::Url(raw) => {
                 PostgresTargetConfig::from_url(&validate_text(raw.url, "mappings.destination.url")?)

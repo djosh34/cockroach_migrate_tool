@@ -22,7 +22,7 @@ use hyper_util::{
     service::TowerToHyperService,
 };
 use operator_log::LogEvent;
-use rustls::ServerConfig;
+use rustls::{RootCertStore, ServerConfig, server::WebPkiClientVerifier};
 use tokio::{net::TcpListener, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
 
@@ -54,10 +54,7 @@ pub(crate) async fn serve(
             .with_field("webhook", bound_addr.to_string())
             .with_field(
                 "mode",
-                match runtime.webhook_listener().transport() {
-                    WebhookListenerTransport::Http => "http",
-                    WebhookListenerTransport::Https { .. } => "https",
-                },
+                runtime.webhook_listener().transport().effective_mode(),
             ),
     );
     let app = Router::new()
@@ -66,14 +63,14 @@ pub(crate) async fn serve(
         .route("/ingest/{mapping_id}", post(ingest))
         .with_state(runtime.clone());
     match runtime.webhook_listener().transport() {
-        WebhookListenerTransport::Http => axum::serve(listener, app)
-            .await
-            .map_err(|source| RunnerWebhookRuntimeError::ServeConnection {
+        WebhookListenerTransport::Http => axum::serve(listener, app).await.map_err(|source| {
+            RunnerWebhookRuntimeError::ServeConnection {
                 source: Box::new(source),
-            }),
+            }
+        }),
         WebhookListenerTransport::Https { .. } => {
             let tls_acceptor = TlsAcceptor::from(Arc::new(load_tls_config(runtime.as_ref())?));
-            serve_https(listener, app, tls_acceptor).await
+            serve_https(listener, app, tls_acceptor, emit_event).await
         }
     }
 }
@@ -82,6 +79,7 @@ async fn serve_https(
     listener: TcpListener,
     app: Router,
     tls_acceptor: TlsAcceptor,
+    emit_event: RuntimeEventSink,
 ) -> Result<(), RunnerWebhookRuntimeError> {
     let mut connections = JoinSet::new();
 
@@ -92,11 +90,22 @@ async fn serve_https(
                     .map_err(|source| RunnerWebhookRuntimeError::Accept { source })?;
                 let tls_acceptor = tls_acceptor.clone();
                 let service = app.clone();
+                let emit_event = emit_event.clone();
                 connections.spawn(async move {
-                    let tls_stream = tls_acceptor
-                        .accept(tcp_stream)
-                        .await
-                        .map_err(|source| RunnerWebhookRuntimeError::TlsHandshake { source })?;
+                    let tls_stream = match tls_acceptor.accept(tcp_stream).await {
+                        Ok(tls_stream) => tls_stream,
+                        Err(source) => {
+                            emit_event(
+                                LogEvent::error(
+                                    "runner",
+                                    "webhook.tls_handshake_failed",
+                                    "runner rejected a webhook tls connection",
+                                )
+                                .with_field("error", source.to_string()),
+                            );
+                            return Ok(());
+                        }
+                    };
                     let io = TokioIo::new(tls_stream);
                     AutoBuilder::new(TokioExecutor::new())
                         .serve_connection_with_upgrades(io, TowerToHyperService::new(service))
@@ -164,12 +173,61 @@ fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWe
         });
     };
 
-    let mut config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certificates, private_key)
-        .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })?;
+    let config_builder = ServerConfig::builder();
+    let mut config = match tls.client_ca_path() {
+        Some(client_ca_path) => {
+            let client_verifier = load_client_verifier(client_ca_path)?;
+            config_builder
+                .with_client_cert_verifier(client_verifier)
+                .with_single_cert(certificates, private_key)
+                .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })?
+        }
+        None => config_builder
+            .with_no_client_auth()
+            .with_single_cert(certificates, private_key)
+            .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })?,
+    };
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
     Ok(config)
+}
+
+fn load_client_verifier(
+    client_ca_path: &std::path::Path,
+) -> Result<std::sync::Arc<dyn rustls::server::danger::ClientCertVerifier>, RunnerWebhookRuntimeError>
+{
+    let client_ca_contents = fs::read(client_ca_path).map_err(|source| {
+        RunnerWebhookRuntimeError::ReadTlsCertificate {
+            path: client_ca_path.to_path_buf(),
+            source,
+        }
+    })?;
+    let client_ca_certificates = rustls_pemfile::certs(&mut client_ca_contents.as_slice())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| RunnerWebhookRuntimeError::ReadTlsCertificate {
+            path: client_ca_path.to_path_buf(),
+            source,
+        })?;
+    if client_ca_certificates.is_empty() {
+        return Err(RunnerWebhookRuntimeError::MissingTlsCertificate {
+            path: client_ca_path.to_path_buf(),
+        });
+    }
+
+    let mut roots = RootCertStore::empty();
+    let (valid_count, _) = roots.add_parsable_certificates(client_ca_certificates);
+    if valid_count == 0 {
+        return Err(RunnerWebhookRuntimeError::BuildTlsClientVerifier {
+            path: client_ca_path.to_path_buf(),
+            message: "no valid client CA certificates were found".to_owned(),
+        });
+    }
+
+    WebPkiClientVerifier::builder(std::sync::Arc::new(roots))
+        .build()
+        .map_err(|source| RunnerWebhookRuntimeError::BuildTlsClientVerifier {
+            path: client_ca_path.to_path_buf(),
+            message: source.to_string(),
+        })
 }
 
 async fn healthz() -> &'static str {

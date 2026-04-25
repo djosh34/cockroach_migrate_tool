@@ -7,11 +7,13 @@ listener:
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
-    ca_cert_path: /config/certs/source-ca.crt
-    client_cert_path: /config/certs/source-client.crt
-    client_key_path: /config/certs/source-client.key
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
   destination:
     url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=verify-ca
-    ca_cert_path: /config/certs/destination-ca.crt
-    client_cert_path: /config/certs/destination-client.crt
-    client_key_path: /config/certs/destination-client.key
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+      client_cert_path: /config/certs/destination-client.crt
+      client_key_path: /config/certs/destination-client.key

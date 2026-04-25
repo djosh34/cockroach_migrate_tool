@@ -470,7 +470,10 @@ impl RunningRunner {
                     docker_logs(&self.runner_container_name),
                 );
             }
-            let url = format!("{}://localhost:{}/healthz", self.webhook_scheme, self.host_port);
+            let url = format!(
+                "{}://localhost:{}/healthz",
+                self.webhook_scheme, self.host_port
+            );
             let mut command = Command::new("curl");
             command.args(["--silent", "--show-error", "--fail"]);
             if let Some(server_cert_path) = &self.server_cert_path {

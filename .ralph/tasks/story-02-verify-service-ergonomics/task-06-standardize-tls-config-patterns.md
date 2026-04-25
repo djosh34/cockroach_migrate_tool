@@ -1,4 +1,4 @@
-## Task: Standardize TLS config field naming and structure across runner and verify <status>not_started</status> <passes>false</passes>
+## Task: Standardize TLS config field naming and structure across runner and verify <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -25,12 +25,14 @@ A user can look at runner TLS config and verify TLS config and immediately see w
 </description>
 
 <acceptance_criteria>
-- [ ] Runner webhook TLS field names are consistent with verify listener TLS field names
-- [ ] Runner destination TLS field names are consistent with verify database TLS field names where applicable
-- [ ] README includes a side-by-side comparison table of TLS options
-- [ ] All existing config fixtures and tests updated to use standardized names
-- [ ] No breaking changes to working configs (backward-compatible aliases if needed)
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite)
-- [ ] `make lint` — passes cleanly
+- [x] Runner webhook TLS field names are consistent with verify listener TLS field names
+- [x] Runner destination TLS field names are consistent with verify database TLS field names where applicable
+- [x] README includes a side-by-side comparison table of TLS options
+- [x] All existing config fixtures and tests updated to use standardized names
+- [x] Obsolete flat verify database TLS fields are removed instead of preserved as aliases
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite)
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-02-verify-service-ergonomics/task-06-standardize-tls-config-patterns_plans/2026-04-25-standardize-tls-config-patterns-plan.md</plan>

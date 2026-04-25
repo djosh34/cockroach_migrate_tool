@@ -20,14 +20,18 @@ func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t 
 	cfg := Config{
 		Verify: VerifyConfig{
 			Source: DatabaseConfig{
-				URL:            "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify&sslmode=verify-full",
-				CACertPath:     "/etc/source-ca.pem",
-				ClientCertPath: "/etc/source-client.pem",
-				ClientKeyPath:  "/etc/source-client.key",
+				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify&sslmode=verify-full",
+				TLS: &DatabaseTLSConfig{
+					CACertPath:     "/etc/source-ca.pem",
+					ClientCertPath: "/etc/source-client.pem",
+					ClientKeyPath:  "/etc/source-client.key",
+				},
 			},
 			Destination: DatabaseConfig{
-				URL:        "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify&sslmode=verify-ca",
-				CACertPath: "/etc/target-ca.pem",
+				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify&sslmode=verify-ca",
+				TLS: &DatabaseTLSConfig{
+					CACertPath: "/etc/target-ca.pem",
+				},
 			},
 		},
 	}

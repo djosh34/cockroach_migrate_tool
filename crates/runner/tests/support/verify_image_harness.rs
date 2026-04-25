@@ -117,12 +117,14 @@ impl VerifyRuntimeFiles {
 verify:
   source:
     url: {source_url}
-    ca_cert_path: /work/config/certs/source-ca.crt
-    client_cert_path: /work/config/certs/source-client.crt
-    client_key_path: /work/config/certs/source-client.key
+    tls:
+      ca_cert_path: /work/config/certs/source-ca.crt
+      client_cert_path: /work/config/certs/source-client.crt
+      client_key_path: /work/config/certs/source-client.key
   destination:
     url: {destination_url}
-    ca_cert_path: /work/config/certs/destination-ca.crt
+    tls:
+      ca_cert_path: /work/config/certs/destination-ca.crt
 "#,
                 source_url = run.source_url,
                 destination_url = run.destination_url,

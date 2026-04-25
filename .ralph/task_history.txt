@@ -147,3 +147,4 @@
 .ralph/tasks/story-01-runner-config-ergonomics/task-02-runner-destination-connection-string.md
 /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-01-runner-http-webhook-mode.md
 .ralph/tasks/story-01-runner-config-ergonomics/task-03-runner-config-error-context.md
+.ralph/tasks/story-02-verify-service-ergonomics/task-06-standardize-tls-config-patterns.md

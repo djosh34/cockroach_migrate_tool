@@ -32,10 +32,14 @@ type VerifyConfig struct {
 }
 
 type DatabaseConfig struct {
-	URL            string `yaml:"url"`
-	CACertPath     string `yaml:"ca_cert_path"`
-	ClientCertPath string `yaml:"client_cert_path"`
-	ClientKeyPath  string `yaml:"client_key_path"`
+	URL string             `yaml:"url"`
+	TLS *DatabaseTLSConfig `yaml:"tls,omitempty"`
+}
+
+type DatabaseTLSConfig struct {
+	CACertPath     string `yaml:"ca_cert_path,omitempty"`
+	ClientCertPath string `yaml:"client_cert_path,omitempty"`
+	ClientKeyPath  string `yaml:"client_key_path,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -111,14 +115,15 @@ func (cfg DatabaseConfig) validate(path string) error {
 	if err := validatePostgresScheme(cfg.URL); err != nil {
 		return errors.Newf("%s.url %s", path, err.Error())
 	}
-	if sslModeRequiresServerVerification(cfg.SSLMode()) && cfg.CACertPath == "" {
-		return errors.Newf("%s.ca_cert_path must be set when %s.url sslmode verifies the server certificate", path, path)
+	tlsPath := path + ".tls"
+	if sslModeRequiresServerVerification(cfg.SSLMode()) && cfg.tlsConfig().CACertPath == "" {
+		return errors.Newf("%s.ca_cert_path must be set when %s.url sslmode verifies the server certificate", tlsPath, path)
 	}
 
-	hasClientCert := cfg.ClientCertPath != ""
-	hasClientKey := cfg.ClientKeyPath != ""
+	hasClientCert := cfg.tlsConfig().ClientCertPath != ""
+	hasClientKey := cfg.tlsConfig().ClientKeyPath != ""
 	if hasClientCert != hasClientKey {
-		return errors.Newf("%s.client_cert_path and %s.client_key_path must both be set", path, path)
+		return errors.Newf("%s.client_cert_path and %s.client_key_path must both be set", tlsPath, tlsPath)
 	}
 	return nil
 }
@@ -159,13 +164,20 @@ func (cfg DatabaseConfig) ConnectionString() (string, error) {
 		return "", errors.Wrap(err, "parse database url")
 	}
 	query := parsed.Query()
-	if cfg.CACertPath != "" {
-		query.Set("sslrootcert", cfg.CACertPath)
+	if cfg.tlsConfig().CACertPath != "" {
+		query.Set("sslrootcert", cfg.tlsConfig().CACertPath)
 	}
-	if cfg.ClientCertPath != "" {
-		query.Set("sslcert", cfg.ClientCertPath)
-		query.Set("sslkey", cfg.ClientKeyPath)
+	if cfg.tlsConfig().ClientCertPath != "" {
+		query.Set("sslcert", cfg.tlsConfig().ClientCertPath)
+		query.Set("sslkey", cfg.tlsConfig().ClientKeyPath)
 	}
 	parsed.RawQuery = query.Encode()
 	return parsed.String(), nil
+}
+
+func (cfg DatabaseConfig) tlsConfig() DatabaseTLSConfig {
+	if cfg.TLS == nil {
+		return DatabaseTLSConfig{}
+	}
+	return *cfg.TLS
 }

@@ -2,11 +2,9 @@
 
 Run the published `setup-sql`, `runner`, and `verify` images with inline configs only. No repository checkout, local Rust install, or local image build is required.
 
-Automated publication pushes commit-SHA tags for the canonical GHCR packages `cockroach-migrate-setup-sql`, `cockroach-migrate-runner`, and `cockroach-migrate-verify`.
-
 ## Setup SQL Quick Start
 
-Pull the published `setup-sql` image, render the SQL you need, review it, and apply it yourself. The one-time setup flow stays separate from the long-running runtime.
+Pull the published `setup-sql` image, render SQL, review it, and apply it yourself.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -117,7 +115,7 @@ psql \
   -f postgres-grants.sql
 ```
 
-If you prefer Docker Compose, save the same image contract inline and reuse the same config files.
+If you prefer Compose:
 
 Save this as `setup-sql.compose.yml`:
 
@@ -158,9 +156,9 @@ docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants 
 
 ## Runner Quick Start
 
-Pull the published runner image and write the runner config inline. The local-development path below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
+Pull the published runner image and write the runner config inline. The local path below uses plain HTTP on port `8080`. For production, omit `mode` or set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
-The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected and routed to the right PostgreSQL target.
+The runner never connects to CockroachDB. In `mappings[].source`, `database` and `tables` only label incoming webhook payloads so misrouted events are rejected.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -196,6 +194,7 @@ webhook:
   tls:
     cert_path: /config/certs/server.crt
     key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
 ```
 
 For TLS-enabled targets, add `sslmode=verify-ca`, `sslrootcert=/config/certs/destination-ca.crt`, `sslcert=/config/certs/destination-client.crt`, and `sslkey=/config/certs/destination-client.key` query params.
@@ -249,7 +248,7 @@ The runtime serves:
 - `GET /healthz`
 - `POST /ingest/<mapping_id>`
 
-If you prefer Compose, use the same image contract with Docker Compose.
+If you prefer Compose:
 
 Save this as `runner.compose.yml`:
 
@@ -282,9 +281,17 @@ docker compose -f runner.compose.yml run --rm runner validate-config --log-forma
 docker compose -f runner.compose.yml up runner
 ```
 
+TLS field mapping:
+
+| Boundary | Runner | Verify |
+| --- | --- | --- |
+| Listener TLS | `webhook.tls.cert_path`, `webhook.tls.key_path`, `webhook.tls.client_ca_path` | `listener.tls.cert_path`, `listener.tls.key_path`, `listener.tls.client_ca_path` |
+| Database TLS files | `mappings[].destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` | `verify.source.tls.ca_cert_path`, `client_cert_path`, `client_key_path` and `verify.destination.tls.ca_cert_path`, `client_cert_path`, `client_key_path` |
+| Verification mode | `mappings[].destination.tls.mode` or destination URL query params | `sslmode` in `verify.source.url` / `verify.destination.url` |
+
 ## Verify Quick Start
 
-Pull the published verify image and write the verify-service config inline. Omit `listener.tls` for HTTP, set `cert_path` plus `key_path` for HTTPS, and add `client_ca_path` for mTLS. Database URLs own `sslmode`; the YAML only carries mounted cert paths.
+Pull the published verify image and write the verify-service config inline. Omit `listener.tls` for HTTP, set `cert_path` plus `key_path` for HTTPS, and add `client_ca_path` for mTLS. Database URLs own `sslmode`; YAML only carries mounted cert paths.
 
 ```bash
 export GITHUB_OWNER=<github-owner>
@@ -307,12 +314,14 @@ listener:
 verify:
   source:
     url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
-    ca_cert_path: /config/certs/source-ca.crt
-    client_cert_path: /config/certs/source-client.crt
-    client_key_path: /config/certs/source-client.key
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
   destination:
     url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
-    ca_cert_path: /config/certs/destination-ca.crt
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
 ```
 
 Use `listener.bind_addr` alone for HTTP, add `listener.tls.cert_path` plus `listener.tls.key_path` for HTTPS, and set `listener.tls.client_ca_path` when clients must present certificates.
@@ -336,13 +345,13 @@ Optional args:
 
 - `--log-format json` for structured stderr logs
 
-Drive the verify HTTP API with curl after the process is listening:
+Drive the verify HTTP API with curl:
 
 - `POST /jobs` starts one verify job with flat filter fields.
 - `GET /jobs/${JOB_ID}` polls the running job and later returns the final result.
 - `POST /jobs/${JOB_ID}/stop` requests cancellation for the active job.
 
-These examples assume HTTPS on `localhost:9443` and reuse `config/certs/source-client.crt` plus `config/certs/source-client.key` for client auth. Export the returned `job_id` as `JOB_ID` before polling or stopping.
+These examples assume HTTPS on `localhost:9443` and reuse `config/certs/source-client.crt` plus `config/certs/source-client.key` for client auth. Export the returned `job_id` as `JOB_ID`.
 
 ```bash
 export VERIFY_API="https://localhost:9443"
@@ -379,8 +388,6 @@ Running response:
 ```json
 {"job_id":"job-000001","status":"running"}
 ```
-
-For completed jobs, inspect `result.summary` first, then `result.mismatch_summary`, then `result.findings` for the concrete evidence behind any mismatch.
 
 Successful final response:
 
@@ -423,7 +430,7 @@ Mismatch final response:
 {"job_id":"job-000001","status":"failed","failure":{"category":"mismatch","code":"mismatch_detected","message":"verify detected mismatches in 1 table","details":[{"reason":"mismatch detected for public.accounts"}]},"result":{"summary":{"tables_verified":1,"tables_with_data":1,"has_mismatches":true},"table_summaries":[{"schema":"public","table":"accounts","num_verified":7,"num_success":6,"num_missing":0,"num_mismatch":0,"num_column_mismatch":1,"num_extraneous":0,"num_live_retry":0}],"findings":[{"kind":"mismatching_column","schema":"public","table":"accounts","primary_key":{"id":"101"},"mismatching_columns":["balance"],"source_values":{"balance":"17"},"destination_values":{"balance":"23"},"info":["balance mismatch"]}],"mismatch_summary":{"has_mismatches":true,"affected_tables":[{"schema":"public","table":"accounts"}],"counts_by_kind":{"mismatching_column":1}}}}
 ```
 
-If you prefer Compose, use the same image contract with Docker Compose.
+If you prefer Compose:
 
 Save this as `verify.compose.yml`:
 

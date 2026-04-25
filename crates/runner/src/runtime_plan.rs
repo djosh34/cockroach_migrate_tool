@@ -274,6 +274,7 @@ impl WebhookListenerPlan {
                 Some(tls) => WebhookListenerTransport::Https {
                     cert_path: tls.cert_path().to_path_buf(),
                     key_path: tls.key_path().to_path_buf(),
+                    client_ca_path: tls.client_ca_path().map(ToOwned::to_owned),
                 },
                 None => WebhookListenerTransport::Http,
             },
@@ -291,19 +292,33 @@ impl WebhookListenerPlan {
 
 pub(crate) enum WebhookListenerTransport {
     Http,
-    Https { cert_path: PathBuf, key_path: PathBuf },
+    Https {
+        cert_path: PathBuf,
+        key_path: PathBuf,
+        client_ca_path: Option<PathBuf>,
+    },
 }
 
 impl WebhookListenerTransport {
+    pub(crate) fn effective_mode(&self) -> &'static str {
+        match self {
+            Self::Http => "http",
+            Self::Https { client_ca_path, .. } if client_ca_path.is_some() => "https+mtls",
+            Self::Https { .. } => "https",
+        }
+    }
+
     pub(crate) fn tls(&self) -> Option<WebhookListenerTls<'_>> {
         match self {
             Self::Http => None,
             Self::Https {
                 cert_path,
                 key_path,
+                client_ca_path,
             } => Some(WebhookListenerTls {
                 cert_path,
                 key_path,
+                client_ca_path: client_ca_path.as_ref(),
             }),
         }
     }
@@ -312,6 +327,7 @@ impl WebhookListenerTransport {
 pub(crate) struct WebhookListenerTls<'a> {
     cert_path: &'a PathBuf,
     key_path: &'a PathBuf,
+    client_ca_path: Option<&'a PathBuf>,
 }
 
 impl WebhookListenerTls<'_> {
@@ -321,6 +337,10 @@ impl WebhookListenerTls<'_> {
 
     pub(crate) fn key_path(&self) -> &std::path::Path {
         self.key_path
+    }
+
+    pub(crate) fn client_ca_path(&self) -> Option<&std::path::Path> {
+        self.client_ca_path.map(|path| path.as_path())
     }
 }
 
