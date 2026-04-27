@@ -1,14 +1,15 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 01:10:07 CEST 2026
+Generated: Tue Apr 28 01:54:20 AM CEST 2026
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-nix-image-generation-boundaries.md`
 
 ```
-## Task: Migrate Docker Image Generation To Nix <status>not_started</status> <passes>false</passes>
+## Smell Set: 2026-04-28-story-29-nix-image-generation-boundaries <status>not_started</status> <passes>false</passes>
 
-<description>
-**Goal:** Generate project Docker images with Nix instead of Dockerfiles, reusing the same crane/Nix build outputs that local builds and tests use. The higher order goal is to make container artifacts reproducible products of the Nix build graph rather than separate, drifting Dockerfile builds.
+Please refer to skill 'improve-code-boundaries' to see what smells there are.
+
+Inside dirs:
 ```
 
 ==============

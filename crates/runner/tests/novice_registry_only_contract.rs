@@ -6,6 +6,8 @@ use std::{
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
+#[path = "support/nix_image_artifact_harness.rs"]
+mod nix_image_artifact_harness_support;
 #[path = "support/published_image_refs.rs"]
 mod published_image_refs_support;
 #[path = "support/readme_operator_workspace.rs"]

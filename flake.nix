@@ -5,6 +5,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     crane.url = "github:ipetkov/crane";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -12,18 +16,35 @@
       nixpkgs,
       flake-utils,
       crane,
+      rust-overlay,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
         craneLib = crane.mkLib pkgs;
         cargoSrc = craneLib.cleanCargoSource ./.;
         repoSrc = pkgs.lib.cleanSource ./.;
         runnerManifest = builtins.fromTOML (builtins.readFile ./crates/runner/Cargo.toml);
         runnerPname = runnerManifest.package.name;
         runnerVersion = runnerManifest.package.version;
+        runnerMuslTarget =
+          {
+            x86_64-linux = "x86_64-unknown-linux-musl";
+            aarch64-linux = "aarch64-unknown-linux-musl";
+          }
+          .${system};
+        craneLibMusl =
+          (crane.mkLib pkgs).overrideToolchain (
+            p:
+            p.rust-bin.stable.latest.default.override {
+              targets = [ runnerMuslTarget ];
+            }
+          );
         goVersion = "0.1.0";
         runnerTestInputs = [
           pkgs.gettext
@@ -56,6 +77,27 @@
           src = cargoSrc;
           strictDeps = true;
           cargoExtraArgs = "-p runner";
+          doCheck = false;
+        };
+
+        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly {
+          pname = "${runnerPname}-runtime-deps";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+        };
+
+        runnerRuntime = craneLibMusl.buildPackage {
+          cargoArtifacts = runnerRuntimeCargoArtifacts;
+          pname = "${runnerPname}-runtime";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          cargoExtraArgs = "-p runner";
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
           doCheck = false;
         };
 
@@ -111,11 +153,66 @@
           doCheck = false;
         };
 
+        moltRuntime = pkgs.pkgsStatic.buildGoModule {
+          pname = "molt-runtime";
+          version = goVersion;
+          src = ./.;
+          modRoot = "cockroachdb_molt/molt";
+          vendorHash = "sha256-2imVjNA9cJXqh4JIPoWnShh2quDpZA4ji+PmWT3DeMk=";
+          subPackages = [ "." ];
+          nativeBuildInputs = [ pkgs.removeReferencesTo ];
+          postFixup = ''
+            remove-references-to \
+              -t ${pkgs.tzdata} \
+              -t ${pkgs.mailcap} \
+              -t ${pkgs.iana-etc} \
+              "$out/bin/molt"
+          '';
+          doCheck = false;
+        };
+
         verifyService = pkgs.writeShellApplication {
           name = "verify-service";
           text = ''
             exec ${molt}/bin/molt verify-service "$@"
           '';
+        };
+
+        mkRuntimeImage =
+          {
+            imageName,
+            imageTag,
+            binaryPath,
+            entrypoint,
+          }:
+          pkgs.dockerTools.buildImage {
+            name = imageName;
+            tag = imageTag;
+            extraCommands = ''
+              mkdir -p usr/local/bin
+              cp ${binaryPath} usr/local/bin/$(basename ${binaryPath})
+              chmod 0555 usr/local/bin/$(basename ${binaryPath})
+            '';
+            config = {
+              Entrypoint = entrypoint;
+            };
+          };
+
+        runnerImage = mkRuntimeImage {
+          imageName = "cockroach-migrate-runner";
+          imageTag = "nix";
+          binaryPath = "${runnerRuntime}/bin/runner";
+          entrypoint = [ "/usr/local/bin/runner" ];
+        };
+
+        verifyImage = mkRuntimeImage {
+          imageName = "cockroach-migrate-verify";
+          imageTag = "nix";
+          binaryPath = "${moltRuntime}/bin/molt";
+          entrypoint = [
+            "/usr/local/bin/molt"
+            "verify-service"
+          ];
         };
 
         verifyServiceTest = pkgs.buildGoModule {
@@ -152,8 +249,12 @@
           test = testApp;
           fmt = fmtApp;
           molt = molt;
+          "molt-runtime" = moltRuntime;
+          "runner-runtime" = runnerRuntime;
+          "runner-image" = runnerImage;
           "runner-long-test" = runnerLongTest;
           "test-long" = longTestApp;
+          "verify-image" = verifyImage;
           "verify-service" = verifyService;
         };
 

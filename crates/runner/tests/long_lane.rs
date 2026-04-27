@@ -1,5 +1,7 @@
 #[path = "support/runner_docker_contract.rs"]
 mod runner_docker_contract;
+#[path = "support/nix_image_artifact_harness.rs"]
+mod nix_image_artifact_harness_support;
 #[path = "support/runner_image_harness.rs"]
 mod runner_image_harness;
 #[path = "support/runner_public_contract.rs"]

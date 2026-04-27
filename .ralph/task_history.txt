@@ -160,3 +160,4 @@
 .ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/03-task-create-bash-scripts-to-generate-sql-from-yaml.md
 .ralph/tasks/story-29-migrate-to-nix-crane/01-task-install-nix-on-this-vm.md
 .ralph/tasks/story-29-migrate-to-nix-crane/02-task-migrate-build-run-test-lint-to-crane.md
+.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md

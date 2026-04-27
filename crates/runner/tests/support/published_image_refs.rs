@@ -1,6 +1,4 @@
 use std::{
-    path::PathBuf,
-    process::Command,
     sync::{
         OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -8,29 +6,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
+
 pub(crate) fn runner_image_ref() -> &'static str {
     static RUNNER_IMAGE_REF: OnceLock<String> = OnceLock::new();
 
     RUNNER_IMAGE_REF.get_or_init(|| {
         let image_ref = format!("cockroach-migrate-runner-novice-{}", unique_suffix());
-        let output = Command::new("docker")
-            .args([
-                "build",
-                "-t",
-                &image_ref,
-                &repo_root().display().to_string(),
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker build runner novice image should start: {error}")
-            });
-        assert!(
-            output.status.success(),
-            "docker build runner novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
+        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
+            .provision_image_tag(&image_ref, "runner novice image");
         image_ref
     })
 }
@@ -40,36 +24,10 @@ pub(crate) fn verify_image_ref() -> &'static str {
 
     VERIFY_IMAGE_REF.get_or_init(|| {
         let image_ref = format!("cockroach-migrate-verify-novice-{}", unique_suffix());
-        let verify_root = repo_root().join("cockroachdb_molt/molt");
-        let output = Command::new("docker")
-            .args([
-                "build",
-                "-t",
-                &image_ref,
-                "-f",
-                &verify_root.join("Dockerfile").display().to_string(),
-                &verify_root.display().to_string(),
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker build verify novice image should start: {error}")
-            });
-        assert!(
-            output.status.success(),
-            "docker build verify novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
+        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
+            .provision_image_tag(&image_ref, "verify novice image");
         image_ref
     })
-}
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should resolve")
 }
 
 fn unique_suffix() -> String {

@@ -2,6 +2,8 @@
 mod verify_docker_contract_support;
 #[path = "support/verify_image_artifact_harness.rs"]
 mod verify_image_artifact_harness_support;
+#[path = "support/nix_image_artifact_harness.rs"]
+mod nix_image_artifact_harness_support;
 
 use serde_json::Value;
 use verify_image_artifact_harness_support::VerifyImageArtifactHarness;

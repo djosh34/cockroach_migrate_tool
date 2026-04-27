@@ -5,6 +5,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::nix_image_artifact_harness_support::{
+    NixImageArtifact, run_command_capture, run_command_output,
+};
 use crate::runner_docker_contract_support::RunnerDockerContract;
 
 pub struct RunnerImageArtifactHarness {
@@ -115,14 +118,8 @@ impl RunnerImageArtifactHarness {
     }
 
     fn build_runner_image(&self) {
-        run_command_capture(
-            Command::new("docker")
-                .args(RunnerDockerContract::docker_build_image_args(
-                    &self.image_tag,
-                ))
-                .arg(repo_root()),
-            "docker build runner image",
-        );
+        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
+            .provision_image_tag(&self.image_tag, "runner image");
     }
 }
 
@@ -143,13 +140,6 @@ impl Drop for RunnerImageArtifactHarness {
     }
 }
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should resolve")
-}
-
 fn unique_suffix() -> String {
     static UNIQUE_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -160,28 +150,6 @@ fn unique_suffix() -> String {
             .expect("time should move forward")
             .as_nanos(),
         UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed)
-    )
-}
-
-fn run_command_capture(command: &mut Command, context: &str) -> String {
-    let (stdout, _) = run_command_output(command, context);
-    stdout
-}
-
-fn run_command_output(command: &mut Command, context: &str) -> (String, String) {
-    let output = command
-        .output()
-        .unwrap_or_else(|error| panic!("{context} should start: {error}"));
-    assert!(
-        output.status.success(),
-        "{context} failed with status {}\nstdout:\n{}\nstderr:\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    (
-        String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
-        String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
     )
 }
 

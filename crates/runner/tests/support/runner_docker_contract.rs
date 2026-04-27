@@ -67,11 +67,6 @@ impl RunnerDockerContract {
             "runner image runtime filesystem must stay minimal and carry only the runner binary payload",
         );
     }
-
-    pub fn docker_build_image_args(image_tag: &str) -> Vec<OsString> {
-        vec!["build".into(), "-t".into(), image_tag.into()]
-    }
-
     pub fn docker_inspect_image_entrypoint_args(image_tag: &str) -> Vec<OsString> {
         vec![
             "image".into(),

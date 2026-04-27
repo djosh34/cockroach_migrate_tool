@@ -2,6 +2,8 @@
 mod runner_docker_contract_support;
 #[path = "support/runner_image_artifact_harness.rs"]
 mod runner_image_artifact_harness_support;
+#[path = "support/nix_image_artifact_harness.rs"]
+mod nix_image_artifact_harness_support;
 
 use runner_docker_contract_support::RunnerDockerContract;
 use runner_image_artifact_harness_support::RunnerImageArtifactHarness;

@@ -6,6 +6,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
+
 pub struct VerifyImageArtifactHarness {
     image_tag: String,
 }
@@ -171,12 +173,8 @@ impl VerifyImageArtifactHarness {
     }
 
     fn build_verify_image(&self) {
-        run_command_capture(
-            Command::new("docker").args(
-                crate::verify_docker_contract_support::docker_build_image_args(&self.image_tag),
-            ),
-            "docker build verify image",
-        );
+        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
+            .provision_image_tag(&self.image_tag, "verify image");
     }
 
     fn embedded_module_version(&self, module: &str) -> Option<String> {

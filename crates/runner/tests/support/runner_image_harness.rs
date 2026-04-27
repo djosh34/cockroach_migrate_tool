@@ -9,6 +9,7 @@ use std::{
 
 use reqwest::{Certificate, blocking::Client};
 
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
 use crate::runner_docker_contract::{RunnerDockerContract, RunnerRuntimeLaunch};
 
 const SHARED_TEST_NETWORK_NAME: &str = "cockroach-migrate-runner-e2e-shared";
@@ -113,14 +114,8 @@ impl RunnerImageHarness {
     }
 
     fn build_runner_image(&self) {
-        run_command_capture(
-            Command::new("docker")
-                .args(RunnerDockerContract::docker_build_image_args(
-                    &self.image_tag,
-                ))
-                .arg(repo_root()),
-            "docker build",
-        );
+        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
+            .provision_image_tag(&self.image_tag, "runner long-lane image");
     }
 
     fn create_network(&self) {
@@ -298,13 +293,6 @@ impl Drop for RunnerImageHarness {
             "docker image rm",
         );
     }
-}
-
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .canonicalize()
-        .expect("repo root should resolve")
 }
 
 fn fixtures_dir() -> PathBuf {

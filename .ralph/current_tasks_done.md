@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 01:10:07 CEST 2026
+Generated: Tue Apr 28 01:54:20 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -950,17 +950,6 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
-
-```
-## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02b-task-drive-three-image-github-pipeline-under-fifteen-minutes-with-native-arm64-and-workflow-restructure.md`
 
 ```
@@ -969,6 +958,17 @@ Must use tdd skill to complete
 <priority>ultra_high</priority>
 
 <description>
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-21-github-workflows-image-publish/02-task-massively-improve-image-build-speed-with-docker-layer-and-build-cache-reuse.md`
+
+```
+## Task: Massively improve image build speed with Docker layer reuse and shared Rust/Go dependency caches <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
 ```
 
 ==============
@@ -1029,17 +1029,6 @@ Must use tdd skill to complete
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md`
-
-```
-## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
-
-<description>
-Must use tdd skill to complete
-```
-
-==============
-
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22a-runner-metrics/01-task-expose-low-cardinality-runner-activity-timing-and-failure-metrics.md`
 
 ```
@@ -1055,6 +1044,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Add cached shadow-versus-real row-count and current reconcile-state metrics <status>completed</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-22-structured-json-logging/01-task-verify-all-images-support-structured-json-logging.md`
+
+```
+## Task: Verify every shipped image supports structured JSON logging and add any missing support needed for a consistent operator-facing logging contract <status>completed</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -1224,5 +1224,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Replace the current local build, run, test, check, and lint workflow with a fully reproducible Nix flake built around crane. The higher order goal is to make local development and CI share one Nix-native build graph where Rust artifacts are reused correctly and only the code that actually changed is rebuilt.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md`
+
+```
+## Task: Migrate Docker Image Generation To Nix <status>completed</status> <passes>true</passes>
+
+<description>
+**Goal:** Generate project Docker images with Nix instead of Dockerfiles, reusing the same crane/Nix build outputs that local builds and tests use. The higher order goal is to make container artifacts reproducible products of the Nix build graph rather than separate, drifting Dockerfile builds.
 ```
 

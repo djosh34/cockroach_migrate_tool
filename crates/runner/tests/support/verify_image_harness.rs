@@ -13,6 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
 
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
 use crate::e2e_harness::{
     investigation_ca_cert_path, investigation_server_cert_path, investigation_server_key_path,
 };
@@ -54,10 +55,8 @@ impl VerifyImageHarness {
     }
 
     fn build_verify_image(&self) {
-        run_command_capture(
-            Command::new("docker").args(docker_build_image_args(&self.image_tag)),
-            "docker build verify image",
-        );
+        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
+            .provision_image_tag(&self.image_tag, "verify long-lane image");
     }
 }
 
@@ -433,21 +432,4 @@ fn docker_logs(container: &str) -> String {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     )
-}
-
-fn docker_build_image_args(image_tag: &str) -> Vec<String> {
-    vec![
-        String::from("build"),
-        String::from("-t"),
-        image_tag.to_owned(),
-        String::from("-f"),
-        verify_slice_root().join("Dockerfile").display().to_string(),
-        verify_slice_root().display().to_string(),
-    ]
-}
-
-fn verify_slice_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("cockroachdb_molt/molt")
 }

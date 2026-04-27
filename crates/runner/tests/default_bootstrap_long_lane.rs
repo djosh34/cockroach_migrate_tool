@@ -8,6 +8,8 @@ mod e2e_harness;
 mod e2e_integrity;
 #[path = "support/multi_mapping_harness.rs"]
 mod multi_mapping_harness;
+#[path = "support/nix_image_artifact_harness.rs"]
+mod nix_image_artifact_harness_support;
 #[path = "support/verify_image_harness.rs"]
 mod verify_image_harness_support;
 #[path = "support/webhook_chaos_gateway.rs"]

@@ -1,4 +1,4 @@
-## Task: Migrate Docker Image Generation To Nix <status>not_started</status> <passes>false</passes>
+## Task: Migrate Docker Image Generation To Nix <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Generate project Docker images with Nix instead of Dockerfiles, reusing the same crane/Nix build outputs that local builds and tests use. The higher order goal is to make container artifacts reproducible products of the Nix build graph rather than separate, drifting Dockerfile builds.
@@ -26,11 +26,34 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] Nix produces each required project runtime image from the same crane-built artifacts used by local builds.
-- [ ] Dockerfile-based production image generation is removed from the canonical workflow.
-- [ ] Manual verification: each Nix image output builds successfully.
-- [ ] Manual verification: each Nix-built image can be loaded into Docker or exported in the format needed by CI.
-- [ ] Manual verification: each image starts successfully with its expected command/entrypoint and exposes the expected runtime behavior.
-- [ ] Obsolete Dockerfiles, Dockerfile-only scripts, and documentation references are removed unless explicitly retained for the non-Nix developer fallback task.
-- [ ] Task notes include the exact Nix commands used to build and inspect the images.
+- [x] Nix produces each required project runtime image from the same crane-built artifacts used by local builds.
+- [x] Dockerfile-based production image generation is removed from the canonical workflow.
+- [x] Manual verification: each Nix image output builds successfully.
+- [x] Manual verification: each Nix-built image can be loaded into Docker or exported in the format needed by CI.
+- [x] Manual verification: each image starts successfully with its expected command/entrypoint and exposes the expected runtime behavior.
+- [x] Obsolete Dockerfiles, Dockerfile-only scripts, and documentation references are removed unless explicitly retained for the non-Nix developer fallback task.
+- [x] Task notes include the exact Nix commands used to build and inspect the images.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix_plans/2026-04-28-nix-image-generation-plan.md</plan>
+
+<task_notes>
+- Manual image build commands used:
+  - `nix build .#runner-image --no-link --print-out-paths`
+  - `nix build .#verify-image --no-link --print-out-paths`
+- Manual Docker load commands used:
+  - `docker image load -i "$(nix build .#runner-image --no-link --print-out-paths)"`
+  - `docker image load -i "$(nix build .#verify-image --no-link --print-out-paths)"`
+- Manual image inspect commands used:
+  - `docker image inspect cockroach-migrate-runner:nix --format '{{json .Config.Entrypoint}}'`
+  - `docker image inspect cockroach-migrate-verify:nix --format '{{json .Config.Entrypoint}}'`
+- Manual runtime probes covered by focused ignored contracts:
+  - runner: `validate-config --log-format json` and minimal filesystem export
+  - verify: `verify-service validate-config --log-format json`, module-version inspection, and minimal filesystem export
+- Required repo gates passed on the final tree:
+  - `make check`
+  - `make lint`
+  - `make test`
+- Story follow-up left intentionally for Task 04:
+  - GitHub Actions publish workflow migration still needs to consume the flake image outputs instead of the removed Dockerfiles.
+</task_notes>

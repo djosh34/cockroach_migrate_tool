@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, path::PathBuf};
+use std::collections::BTreeSet;
 
 pub fn assert_image_entrypoint_is_direct_verify_surface(image_entrypoint_json: &str) {
     assert_eq!(
@@ -33,21 +33,4 @@ pub fn assert_runtime_filesystem_is_minimal(exported_paths: &[String]) {
         actual_paths, expected_paths,
         "verify image runtime filesystem must stay minimal and carry only the verify binary payload",
     );
-}
-
-pub fn docker_build_image_args(image_tag: &str) -> Vec<String> {
-    vec![
-        String::from("build"),
-        String::from("-t"),
-        image_tag.to_owned(),
-        String::from("-f"),
-        verify_slice_root().join("Dockerfile").display().to_string(),
-        verify_slice_root().display().to_string(),
-    ]
-}
-
-fn verify_slice_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
-        .join("cockroachdb_molt/molt")
 }
