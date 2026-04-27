@@ -8,6 +8,7 @@ use runner_image_artifact_harness_support::RunnerImageArtifactHarness;
 use serde_json::Value;
 
 #[test]
+#[ignore = "long lane"]
 fn runner_image_builds_from_the_root_runtime_slice() {
     let harness = RunnerImageArtifactHarness::start();
 
@@ -15,6 +16,7 @@ fn runner_image_builds_from_the_root_runtime_slice() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn runner_image_exposes_a_direct_runtime_only_entrypoint() {
     let harness = RunnerImageArtifactHarness::start();
 
@@ -24,6 +26,7 @@ fn runner_image_exposes_a_direct_runtime_only_entrypoint() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn runner_image_runtime_filesystem_contains_only_the_runner_payload() {
     let harness = RunnerImageArtifactHarness::start();
 
@@ -31,6 +34,7 @@ fn runner_image_runtime_filesystem_contains_only_the_runner_payload() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn runner_image_validate_config_supports_json_operator_logs() {
     let harness = RunnerImageArtifactHarness::start();
     let (stdout, stderr) = harness.validate_config_json_logs();

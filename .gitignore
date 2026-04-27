@@ -1,5 +1,7 @@
 __pycache__/
 *.pyc
 target/
+result
+result-*
 
 investigations/cockroach-webhook-cdc/output/

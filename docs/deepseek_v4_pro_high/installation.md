@@ -10,20 +10,21 @@ The repository no longer publishes a separate SQL-emitter image or binary.
 ## Build From Source
 
 ```bash
-cargo build --release -p runner
+nix build .#runner
+nix build .#verify-service
 ```
 
-`verify` is built from `cockroachdb_molt/molt`.
+`runner` is built through crane. `verify-service` is exposed through the `molt` Go module.
 
 ## Container Images
 
-Use the published `runner` and `verify` images from your registry of choice. The root `Dockerfile` builds the `runner` image.
+Use the published `runner` and `verify` images from your registry of choice. Local source builds are Nix-native; image-generation workflow is handled separately from this installation guide.
 
 ## Validation
 
 Recommended fast checks after local changes:
 
 ```bash
-make check
-make test
+nix run .#check
+nix run .#test
 ```

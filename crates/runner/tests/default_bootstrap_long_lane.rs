@@ -83,7 +83,8 @@ DELETE FROM public.parents WHERE id = 2;
 }
 
 #[test]
-fn verify_image_proves_default_e2e_correctness_through_the_real_http_contract() {
+#[ignore = "long lane"]
+fn ignored_long_lane_verify_image_proves_default_e2e_correctness_through_the_real_http_contract() {
     let harness = DefaultBootstrapHarness::start();
     let verify_image = VerifyImageHarness::start();
 
@@ -95,7 +96,9 @@ fn verify_image_proves_default_e2e_correctness_through_the_real_http_contract() 
 }
 
 #[test]
-fn verify_image_reports_selected_table_mismatches_through_the_real_http_contract() {
+#[ignore = "long lane"]
+fn ignored_long_lane_verify_image_reports_selected_table_mismatches_through_the_real_http_contract()
+{
     let harness = DefaultBootstrapHarness::start();
     let verify_image = VerifyImageHarness::start();
 

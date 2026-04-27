@@ -7,6 +7,7 @@ use serde_json::Value;
 use verify_image_artifact_harness_support::VerifyImageArtifactHarness;
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_builds_from_the_verify_slice() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -14,6 +15,7 @@ fn verify_image_builds_from_the_verify_slice() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_exposes_a_direct_verify_service_entrypoint() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -23,6 +25,7 @@ fn verify_image_exposes_a_direct_verify_service_entrypoint() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_embeds_pgx_at_or_above_the_security_floor() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -30,6 +33,7 @@ fn verify_image_embeds_pgx_at_or_above_the_security_floor() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_embeds_grpc_at_or_above_the_security_floor() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -37,6 +41,7 @@ fn verify_image_embeds_grpc_at_or_above_the_security_floor() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_keeps_x_crypto_out_of_vulnerable_runtime_versions() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -47,6 +52,7 @@ fn verify_image_keeps_x_crypto_out_of_vulnerable_runtime_versions() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_runtime_filesystem_contains_only_the_binary_payload() {
     let harness = VerifyImageArtifactHarness::start();
 
@@ -56,6 +62,7 @@ fn verify_image_runtime_filesystem_contains_only_the_binary_payload() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_image_validate_config_supports_json_operator_logs() {
     let harness = VerifyImageArtifactHarness::start();
     let (stdout, stderr) = harness.validate_config_json_logs();

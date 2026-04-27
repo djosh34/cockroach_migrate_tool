@@ -14,6 +14,7 @@ mod readme_operator_workspace_support;
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
 
 #[test]
+#[ignore = "long lane"]
 fn runner_readme_commands_work_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 
@@ -35,6 +36,7 @@ fn runner_readme_commands_work_from_a_repo_free_operator_workspace() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 
@@ -52,6 +54,7 @@ fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_compose_runtime_serves_the_https_api_with_readme_owned_mtls_material() {
     let harness = NoviceRegistryOnlyHarness::start();
     let verify_runtime = harness.start_verify_compose_runtime();
@@ -68,6 +71,7 @@ fn verify_compose_runtime_serves_the_https_api_with_readme_owned_mtls_material()
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_readme_http_flow_uses_the_flat_start_contract_and_surfaces_failures() {
     let harness = NoviceRegistryOnlyHarness::start();
     let verify_runtime = harness.start_verify_compose_runtime();
@@ -122,6 +126,7 @@ fn verify_readme_http_flow_uses_the_flat_start_contract_and_surfaces_failures() 
 }
 
 #[test]
+#[ignore = "long lane"]
 fn runner_readme_runtime_distinguishes_authentication_and_connectivity_failures() {
     let harness = NoviceRegistryOnlyHarness::start();
     let postgres = harness.start_runner_destination_postgres();
@@ -169,6 +174,7 @@ fn runner_readme_runtime_distinguishes_authentication_and_connectivity_failures(
 }
 
 #[test]
+#[ignore = "long lane"]
 fn verify_compose_runtime_shutdown_reports_cleanup_failures() {
     let harness = NoviceRegistryOnlyHarness::start();
     let verify_runtime = harness.start_verify_compose_runtime();

@@ -28,6 +28,12 @@ YAML parsing:
 
 The scripts prefer `yq` when it is present. If `yq` is not installed, they fall back to a built-in `python3` parser that supports the task's documented config shape.
 
+The repository Nix dev shell provides these dependencies:
+
+```bash
+nix develop
+```
+
 ## Usage
 
 ```bash

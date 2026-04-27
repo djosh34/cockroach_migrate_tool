@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 12:33:58 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/02-task-migrate-build-run-test-lint-to-crane.md`
-
-```
-## Task: Migrate Build Run Test And Lint To Crane <status>not_started</status> <passes>false</passes>
-
-<description>
-**Goal:** Replace the current local build, run, test, check, and lint workflow with a fully reproducible Nix flake built around crane. The higher order goal is to make local development and CI share one Nix-native build graph where Rust artifacts are reused correctly and only the code that actually changed is rebuilt.
-```
-
-==============
+Generated: Tue Apr 28 01:10:07 CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md`
 

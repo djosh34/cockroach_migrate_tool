@@ -70,8 +70,9 @@ fn path_without_yq() -> tempfile::TempDir {
         "bash", "base64", "dirname", "envsubst", "mkdir", "python3", "sort",
     ] {
         let target = find_command(command_name);
-        symlink(target, bin_dir.path().join(command_name))
-            .unwrap_or_else(|error| panic!("symlink for {command_name} should be created: {error}"));
+        symlink(target, bin_dir.path().join(command_name)).unwrap_or_else(|error| {
+            panic!("symlink for {command_name} should be created: {error}")
+        });
     }
     bin_dir
 }
@@ -144,9 +145,18 @@ fn generate_cockroach_setup_sql_merges_mappings_by_database_and_concatenates_com
     let combined_sql = fs::read_to_string(output_dir.path().join("cockroach-all-setup.sql"))
         .expect("combined sql file should be written");
 
-    assert_eq!(demo_a_sql, expected_fixture("cockroach-demo_a-merged.expected.sql"));
-    assert_eq!(demo_b_sql, expected_fixture("cockroach-demo_b-setup.expected.sql"));
-    assert_eq!(combined_sql, expected_fixture("cockroach-all-setup.expected.sql"));
+    assert_eq!(
+        demo_a_sql,
+        expected_fixture("cockroach-demo_a-merged.expected.sql")
+    );
+    assert_eq!(
+        demo_b_sql,
+        expected_fixture("cockroach-demo_b-setup.expected.sql")
+    );
+    assert_eq!(
+        combined_sql,
+        expected_fixture("cockroach-all-setup.expected.sql")
+    );
 }
 
 #[test]
@@ -202,7 +212,8 @@ fn generate_cockroach_setup_sql_help_prints_usage() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("Usage: ./scripts/generate-cockroach-setup-sql.sh"),
+        String::from_utf8_lossy(&output.stdout)
+            .contains("Usage: ./scripts/generate-cockroach-setup-sql.sh"),
         "help stdout should contain usage"
     );
 }
@@ -388,7 +399,8 @@ fn generate_postgres_grants_sql_help_prints_usage() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&output.stdout).contains("Usage: ./scripts/generate-postgres-grants-sql.sh"),
+        String::from_utf8_lossy(&output.stdout)
+            .contains("Usage: ./scripts/generate-postgres-grants-sql.sh"),
         "help stdout should contain usage"
     );
 }
