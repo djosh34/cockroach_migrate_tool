@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 12:21:28 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/01-task-install-nix-on-this-vm.md`
-
-```
-## Task: Install Nix On This VM <status>not_started</status> <passes>false</passes>
-
-<description>
-**Goal:** Install Nix on this VM so this repository can be built, tested, and developed through a reproducible Nix toolchain. The higher order goal is to prepare the local execution environment for a full migration to a Nix + crane setup without relying on host-installed language, Docker, or Make tooling.
-```
-
-==============
+Generated: Tue Apr 28 12:33:58 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/02-task-migrate-build-run-test-lint-to-crane.md`
 

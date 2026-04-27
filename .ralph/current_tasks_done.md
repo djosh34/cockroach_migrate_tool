@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 12:21:28 AM CEST 2026
+Generated: Tue Apr 28 12:33:58 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -1202,5 +1202,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Create two standalone bash scripts that read a simple YAML input file and produce SQL output files — one script for CockroachDB source setup SQL, one script for PostgreSQL destination grants SQL. The scripts must be clearly separated, well-documented, and produce SQL that matches what the docs (Task 02) describe.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/01-task-install-nix-on-this-vm.md`
+
+```
+## Task: Install Nix On This VM <status>done</status> <passes>true</passes>
+
+<description>
+**Goal:** Install Nix on this VM so this repository can be built, tested, and developed through a reproducible Nix toolchain. The higher order goal is to prepare the local execution environment for a full migration to a Nix + crane setup without relying on host-installed language, Docker, or Make tooling.
 ```
 
