@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 27 11:47:47 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/02-task-write-setup-sql-documentation.md`
-
-```
-## Task: Write clear, explanatory docs in `./docs/setup_sql/` covering what SQL must be run on each database and why <status>not_started</status> <passes>false</passes>
-
-<description>
-**Goal:** Create comprehensive, operator-friendly documentation at `./docs/setup_sql/` that explains exactly what SQL statements need to be executed on the source CockroachDB cluster and on the destination PostgreSQL cluster, with per-database/per-table template examples using a Jinja2-like syntax, and clear guidance on how to determine the values to fill in.
-```
-
-==============
+Generated: Mon Apr 27 11:59:56 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/03-task-create-bash-scripts-to-generate-sql-from-yaml.md`
 

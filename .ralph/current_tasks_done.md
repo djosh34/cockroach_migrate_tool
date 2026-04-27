@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Mon Apr 27 11:47:47 PM CEST 2026
+Generated: Mon Apr 27 11:59:56 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -1180,5 +1180,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Completely delete the `setup-sql` Rust binary crate and every reference to it across the entire repository — workspace members, test harnesses, Dockerfiles, compose artifacts, CI/CD image catalog + publish + promote workflows, documentation across all doc-generator directories, and the README.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/02-task-write-setup-sql-documentation.md`
+
+```
+## Task: Write clear, explanatory docs in `./docs/setup_sql/` covering what SQL must be run on each database and why <status>completed</status> <passes>true</passes>
+
+<description>
+**Goal:** Create comprehensive, operator-friendly documentation at `./docs/setup_sql/` that explains exactly what SQL statements need to be executed on the source CockroachDB cluster and on the destination PostgreSQL cluster, with per-database/per-table template examples using a Jinja2-like syntax, and clear guidance on how to determine the values to fill in.
 ```
 
