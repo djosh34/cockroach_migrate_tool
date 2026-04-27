@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Sat Apr 25 11:09:52 PM CEST 2026
+Generated: Mon Apr 27 11:22:32 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -31,6 +31,17 @@ Story 24 execution is blocked because the README cannot currently serve as the o
 
 <description>
 Story 24 verification found a blocking defect before the README-only public-image flow could be completed.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-remove-dumb-structure-and-file-content-tests.md`
+
+```
+## Bug: Remove dumb structure and file-content tests <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+The test suite contains many dumb tests that do not verify product behavior and instead lock down implementation structure, adjacent file contents, documentation phrasing, Dockerfile layout, workflow/compose YAML details, source-code markers, helper names, or exact strings in other files. These tests hinder development because they fail on harmless refactors and file reorganizations while providing little or no useful regression signal.
 ```
 
 ==============

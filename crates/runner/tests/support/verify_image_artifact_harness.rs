@@ -6,8 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::verify_docker_contract_support::VerifyDockerContract;
-
 pub struct VerifyImageArtifactHarness {
     image_tag: String,
 }
@@ -44,22 +42,6 @@ impl VerifyImageArtifactHarness {
                 "{{json .Config.Entrypoint}}",
             ]),
             "docker image inspect verify image entrypoint",
-        )
-    }
-
-    pub fn help_output(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args(["run", "--rm", &self.image_tag, "--help"]),
-            "docker run verify image --help",
-        )
-    }
-
-    pub fn command_help_output(&self, args: &[&str]) -> String {
-        run_command_capture(
-            Command::new("docker")
-                .args(["run", "--rm", &self.image_tag])
-                .args(args),
-            "docker run verify image command help",
         )
     }
 
@@ -190,7 +172,7 @@ impl VerifyImageArtifactHarness {
 
     fn build_verify_image(&self) {
         run_command_capture(
-            Command::new("docker").args(VerifyDockerContract::docker_build_image_args(
+            Command::new("docker").args(crate::verify_docker_contract_support::docker_build_image_args(
                 &self.image_tag,
             )),
             "docker build verify image",

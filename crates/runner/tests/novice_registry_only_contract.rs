@@ -2,10 +2,7 @@ use std::{
     any::Any,
     fs,
     panic::{self, AssertUnwindSafe},
-    path::PathBuf,
 };
-
-use serde_yaml::Value;
 
 #[path = "support/novice_registry_only_harness.rs"]
 mod novice_registry_only_harness_support;
@@ -15,121 +12,6 @@ mod published_image_refs_support;
 mod readme_operator_workspace_support;
 
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
-
-#[test]
-fn copied_verify_compose_artifact_mounts_the_listener_client_ca_contract() {
-    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../artifacts/compose/verify.compose.yml");
-    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
-        panic!(
-            "verify compose artifact should be readable at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
-        panic!(
-            "verify compose artifact should stay valid yaml at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-
-    let client_ca_config = compose["configs"]["verify-client-ca"]["file"]
-        .as_str()
-        .expect("verify compose artifact must declare the verify-client-ca config file");
-    assert_eq!(
-        client_ca_config, "./config/certs/client-ca.crt",
-        "verify compose artifact must source the listener client CA from the copied operator workspace",
-    );
-
-    let verify_config_mounts = compose["services"]["verify"]["configs"]
-        .as_sequence()
-        .expect("verify compose artifact must keep the verify service configs list");
-    assert!(
-        verify_config_mounts.iter().any(|mount| {
-            mount["source"].as_str() == Some("verify-client-ca")
-                && mount["target"].as_str() == Some("/config/certs/client-ca.crt")
-        }),
-        "verify compose artifact must mount the listener client CA at /config/certs/client-ca.crt",
-    );
-}
-
-#[test]
-fn copied_verify_compose_artifact_uses_the_shared_bridge_network_contract() {
-    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../artifacts/compose/verify.compose.yml");
-    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
-        panic!(
-            "verify compose artifact should be readable at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
-        panic!(
-            "verify compose artifact should stay valid yaml at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-
-    let network_mode = compose["services"]["verify"]["network_mode"].as_str().expect(
-        "verify compose artifact must declare an explicit Docker network contract for the single-service runtime",
-    );
-    assert_eq!(
-        network_mode, "bridge",
-        "verify compose artifact must reuse Docker's shared bridge network instead of allocating a project default network",
-    );
-}
-
-#[test]
-fn copied_setup_sql_compose_artifact_disables_project_network_allocation() {
-    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../artifacts/compose/setup-sql.compose.yml");
-    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
-        panic!(
-            "setup-sql compose artifact should be readable at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
-        panic!(
-            "setup-sql compose artifact should stay valid yaml at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-
-    let network_mode = compose["services"]["setup-sql"]["network_mode"].as_str().expect(
-        "setup-sql compose artifact must declare an explicit Docker network contract for the one-shot runtime",
-    );
-    assert_eq!(
-        network_mode, "none",
-        "setup-sql compose artifact must disable Docker networking instead of allocating a project default network",
-    );
-}
-
-#[test]
-fn copied_runner_compose_artifact_uses_the_shared_bridge_network_contract() {
-    let artifact_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../artifacts/compose/runner.compose.yml");
-    let compose_text = fs::read_to_string(&artifact_path).unwrap_or_else(|error| {
-        panic!(
-            "runner compose artifact should be readable at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-    let compose: Value = serde_yaml::from_str(&compose_text).unwrap_or_else(|error| {
-        panic!(
-            "runner compose artifact should stay valid yaml at `{}`: {error}",
-            artifact_path.display(),
-        )
-    });
-
-    let network_mode = compose["services"]["runner"]["network_mode"].as_str().expect(
-        "runner compose artifact must declare an explicit Docker network contract for the single-service runtime",
-    );
-    assert_eq!(
-        network_mode, "bridge",
-        "runner compose artifact must reuse Docker's shared bridge network instead of allocating a project default network",
-    );
-}
 
 #[test]
 fn setup_sql_compose_emits_sql_from_a_repo_free_operator_workspace() {

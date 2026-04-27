@@ -1,4 +1,4 @@
-## Bug: Remove dumb structure and file-content tests <status>not_started</status> <passes>false</passes> <priority>high</priority>
+## Bug: Remove dumb structure and file-content tests <status>completed</status> <passes>true</passes> <priority>high</priority>
 
 <description>
 The test suite contains many dumb tests that do not verify product behavior and instead lock down implementation structure, adjacent file contents, documentation phrasing, Dockerfile layout, workflow/compose YAML details, source-code markers, helper names, or exact strings in other files. These tests hinder development because they fail on harmless refactors and file reorganizations while providing little or no useful regression signal.
@@ -24,13 +24,13 @@ Do not use TDD to preserve documentation, Dockerfile, workflow, compose-file, or
 </mandatory_red_green_tdd>
 
 <acceptance_criteria>
-- [ ] Removed every dumb test that asserts source/test/helper structure, marker strings, documentation wording, Dockerfile/cache-layer layout, workflow/compose/OpenAPI file contents, or adjacent file text instead of behavior
-- [ ] Audited the whole tracked test suite for additional dumb tests beyond the initially detected examples and removed those too
-- [ ] Did not add replacement tests that scan files for strings, marker ordering, helper names, approved call-site lists, headings, word counts, or similar structural/textual details
-- [ ] Where a removed dumb test protected a real product behavior, replaced it with a behavioral test through the real boundary
-- [ ] For documentation, Dockerfile, compose, workflow, and OpenAPI changes, used manual/tool verification instead of adding text-assert tests
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` — passes cleanly
-- [ ] If this cleanup changes ultra-long test selection or support: `make test-long` — passes cleanly
+- [x] Removed every dumb test that asserts source/test/helper structure, marker strings, documentation wording, Dockerfile/cache-layer layout, workflow/compose/OpenAPI file contents, or adjacent file text instead of behavior
+- [x] Audited the whole tracked test suite for additional dumb tests beyond the initially detected examples and removed those too
+- [x] Did not add replacement tests that scan files for strings, marker ordering, helper names, approved call-site lists, headings, word counts, or similar structural/textual details
+- [x] Where a removed dumb test protected a real product behavior, replaced it with a behavioral test through the real boundary
+- [x] For documentation, Dockerfile, compose, workflow, and OpenAPI changes, used manual/tool verification instead of adding text-assert tests
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` — passes cleanly
+- [x] If this cleanup changes ultra-long test selection or support: `make test-long` — passes cleanly (not applicable; long-lane support was unchanged)
 </acceptance_criteria>

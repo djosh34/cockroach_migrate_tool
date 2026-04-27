@@ -42,13 +42,6 @@ impl RunnerImageArtifactHarness {
         )
     }
 
-    pub fn help_output(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args(["run", "--rm", &self.image_tag, "--help"]),
-            "docker run runner image --help",
-        )
-    }
-
     pub fn validate_config_json_logs(&self) -> (String, String) {
         let fixture_mount = format!(
             "{}:/config:ro",

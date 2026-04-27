@@ -6,8 +6,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::source_bootstrap_image_contract_support::SourceBootstrapImageContract;
-
 const CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
 
 pub struct SourceBootstrapImageHarness {
@@ -116,9 +114,11 @@ impl SourceBootstrapImageHarness {
 
     fn build_image(&self) {
         run_command_capture(
-            Command::new("docker").args(SourceBootstrapImageContract::docker_build_image_args(
-                &self.image_tag,
-            )),
+            Command::new("docker").args(
+                crate::source_bootstrap_image_contract_support::docker_build_image_args(
+                    &self.image_tag,
+                ),
+            ),
             "docker build setup-sql image",
         );
     }
