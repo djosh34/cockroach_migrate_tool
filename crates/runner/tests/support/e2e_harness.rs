@@ -1,8 +1,7 @@
 use std::{
     cell::RefCell,
     collections::BTreeSet,
-    fs::{self},
-    io,
+    fs, io,
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -13,7 +12,9 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use assert_cmd::cargo::cargo_bin;
+use base64::{Engine, engine::general_purpose::STANDARD};
+use ingest_contract::MappingIngestPath;
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
@@ -32,15 +33,15 @@ use runner_process::RunnerProcess;
 
 use crate::e2e_integrity::{
     CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
-    PostSetupSourceAudit, RuntimeShapeAudit, SourceBootstrapAudit, SourceCommandAudit,
-    VerifyCorrectnessAudit,
+    PostSetupSourceAudit, RuntimeShapeAudit, SourceCommandAudit, VerifyCorrectnessAudit,
 };
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
-pub(crate) const CHANGEFEED_CURSOR_PLACEHOLDER: &str = "__CHANGEFEED_CURSOR__";
+const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
+const CA_CERT_QUERY_ESCAPE: &AsciiSet = &CONTROLS.add(b'+').add(b'/').add(b'=');
 
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
@@ -62,8 +63,8 @@ pub struct CdcE2eHarnessConfig<'a> {
     pub destination_password: &'a str,
     pub reconcile_interval_secs: u64,
     pub selected_tables: &'a [&'a str],
-    pub source_setup_sql: &'a str,
-    pub destination_setup_sql: &'a str,
+    pub source_schema_sql: &'a str,
+    pub destination_schema_sql: &'a str,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -131,8 +132,8 @@ struct OwnedHarnessConfig {
     destination_password: String,
     reconcile_interval_secs: u64,
     selected_tables: Vec<String>,
-    source_setup_sql: String,
-    destination_setup_sql: String,
+    source_schema_sql: String,
+    destination_schema_sql: String,
 }
 
 impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
@@ -149,8 +150,8 @@ impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
                 .iter()
                 .map(|table| (*table).to_owned())
                 .collect(),
-            source_setup_sql: config.source_setup_sql.to_owned(),
-            destination_setup_sql: config.destination_setup_sql.to_owned(),
+            source_schema_sql: config.source_schema_sql.to_owned(),
+            destination_schema_sql: config.destination_schema_sql.to_owned(),
         }
     }
 }
@@ -170,12 +171,11 @@ pub struct CdcE2eHarness {
     webhook_sink_base_url: String,
     webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
-    source_bootstrap_config_path: PathBuf,
     wrapper_bin_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
-    bootstrap_source_command_count: RefCell<Option<usize>>,
+    bootstrap_command_count: RefCell<Option<usize>>,
     runner_process: RefCell<Option<RunnerRuntime>>,
 }
 
@@ -208,12 +208,12 @@ impl CdcE2eHarness {
         docker.start_postgres();
         docker.wait_for_cockroach();
         docker.wait_for_postgres();
-        docker.prepare_source_schema_and_seed(&config.source_setup_sql);
+        docker.prepare_source_schema_and_seed(&config.source_schema_sql);
         docker.prepare_destination_database(
             &config.destination_database,
             &config.destination_user,
             &config.destination_password,
-            &config.destination_setup_sql,
+            &config.destination_schema_sql,
         );
 
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
@@ -231,12 +231,11 @@ impl CdcE2eHarness {
             webhook_sink_base_url: String::new(),
             webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
-            source_bootstrap_config_path: PathBuf::new(),
             wrapper_bin_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
-            bootstrap_source_command_count: RefCell::new(None),
+            bootstrap_command_count: RefCell::new(None),
             runner_process: RefCell::new(None),
         };
         harness.materialize(webhook_sink_mode)
@@ -249,10 +248,9 @@ impl CdcE2eHarness {
             self.runner_port,
             || self.runner_logs(),
         );
-        let source_bootstrap_sql = self.render_source_bootstrap_sql();
-        self.apply_source_bootstrap_sql(&source_bootstrap_sql);
+        self.apply_initial_changefeed_sql();
         let bootstrap_command_count = self.read_source_command_count();
-        *self.bootstrap_source_command_count.borrow_mut() = Some(bootstrap_command_count);
+        *self.bootstrap_command_count.borrow_mut() = Some(bootstrap_command_count);
     }
 
     pub fn kill_runner(&self) {
@@ -365,17 +363,6 @@ impl CdcE2eHarness {
         );
     }
 
-    pub fn assert_explicit_source_bootstrap_commands(&self) {
-        let expected_tables = self
-            .config
-            .selected_tables
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>();
-        self.source_command_audit()
-            .assert_explicit_bootstrap_commands(&self.config.source_database, &expected_tables);
-    }
-
     pub fn runtime_shape_audit(&self) -> RuntimeShapeAudit {
         let apply_client_addr = self.destination_runtime_client_addr();
         let destination_runtime = {
@@ -410,7 +397,7 @@ impl CdcE2eHarness {
         };
         RuntimeShapeAudit::new(
             destination_runtime,
-            SourceBootstrapAudit::new(self.webhook_sink_base_url.clone()),
+            self.webhook_sink_base_url.clone(),
             CockroachRuntimeAudit::new(self.docker.cockroach_image()),
             DestinationRoleAudit::new(
                 self.config.destination_user.clone(),
@@ -979,7 +966,6 @@ impl CdcE2eHarness {
 
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
-        self.source_bootstrap_config_path = self.temp_dir.path().join("cockroach-setup.yml");
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
@@ -1001,7 +987,6 @@ impl CdcE2eHarness {
             }
         }
         self.write_runner_config();
-        self.write_source_bootstrap_config();
         self
     }
 
@@ -1027,21 +1012,14 @@ impl CdcE2eHarness {
         *self.runner_process.borrow_mut() = Some(child);
     }
 
-    fn render_source_bootstrap_sql(&self) -> String {
-        run_command_capture(
-            Command::new(cargo_bin("setup-sql")).args([
-                "emit-cockroach-sql",
-                "--config",
-                self.source_bootstrap_config_path
-                    .to_str()
-                    .expect("Cockroach setup config path should be utf-8"),
-            ]),
-            "setup-sql emit-cockroach-sql",
-        )
-    }
-
-    fn apply_source_bootstrap_sql(&self, sql: &str) {
-        apply_source_bootstrap_sql_statements(&self.wrapper_bin_dir, sql);
+    fn apply_initial_changefeed_sql(&self) {
+        run_audited_cockroach_sql(
+            &self.wrapper_bin_dir,
+            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
+        );
+        let cursor = self.current_source_changefeed_cursor();
+        let sql = self.render_changefeed_sql(&cursor, ChangefeedInitialScanMode::Yes);
+        run_audited_cockroach_sql(&self.wrapper_bin_dir, &sql);
     }
 
     fn current_source_changefeed_cursor(&self) -> String {
@@ -1064,21 +1042,17 @@ impl CdcE2eHarness {
             ChangefeedInitialScanMode::Yes => "yes",
             ChangefeedInitialScanMode::No => "no",
         };
-        self.rendered_bootstrap_changefeed_statement()
-            .replace(CHANGEFEED_CURSOR_PLACEHOLDER, cursor)
-            .replace(
-                "initial_scan = 'yes'",
-                &format!("initial_scan = '{initial_scan}'"),
-            )
-    }
-
-    fn rendered_bootstrap_changefeed_statement(&self) -> String {
-        source_bootstrap_sql_statements(&self.render_source_bootstrap_sql())
-            .into_iter()
-            .find(|statement| contains_non_comment_fragment(statement, "CREATE CHANGEFEED"))
-            .unwrap_or_else(|| {
-                panic!("source bootstrap SQL should contain a CREATE CHANGEFEED statement")
-            })
+        let table_list = self
+            .config
+            .selected_tables
+            .iter()
+            .map(|table| format!("{}.{}", self.config.source_database, table))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sink_url = self.changefeed_sink_url();
+        format!(
+            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = '{initial_scan}', envelope = 'enriched', enriched_properties = 'source', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
+        )
     }
 
     fn write_runner_config(&self) {
@@ -1127,43 +1101,6 @@ mappings:
             ),
         )
         .expect("runner config should be written");
-    }
-
-    fn write_source_bootstrap_config(&self) {
-        let selected_tables = self
-            .config
-            .selected_tables
-            .iter()
-            .map(|table| format!("        - {table}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        fs::write(
-            &self.source_bootstrap_config_path,
-            format!(
-                r#"cockroach:
-  url: {cockroach_url}
-webhook:
-  base_url: {webhook_sink_base_url}
-  ca_cert_path: {ca_cert_path}
-  resolved: 1s
-mappings:
-  - id: {mapping_id}
-    source:
-      database: {source_database}
-      tables:
-{selected_tables}
-"#,
-                cockroach_url = self
-                    .docker
-                    .source_bootstrap_cockroach_url(&self.config.source_database),
-                webhook_sink_base_url = self.webhook_sink_base_url,
-                ca_cert_path = investigation_ca_cert_path().display(),
-                mapping_id = self.config.mapping_id,
-                source_database = self.config.source_database,
-                selected_tables = selected_tables,
-            ),
-        )
-        .expect("Cockroach setup config should be written");
     }
 
     fn assert_runner_process_alive(&self) {
@@ -1222,7 +1159,7 @@ mappings:
 
     fn source_command_audit(&self) -> SourceCommandAudit {
         let bootstrap_command_count = self
-            .bootstrap_source_command_count
+            .bootstrap_command_count
             .borrow()
             .as_ref()
             .copied()
@@ -1235,6 +1172,19 @@ mappings:
 
     fn read_source_command_count(&self) -> usize {
         SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 0).command_count()
+    }
+
+    fn changefeed_sink_url(&self) -> String {
+        let ca_cert_bytes = fs::read(investigation_ca_cert_path())
+            .expect("changefeed CA certificate should be readable");
+        let ca_cert_query =
+            utf8_percent_encode(&STANDARD.encode(ca_cert_bytes), CA_CERT_QUERY_ESCAPE).to_string();
+        format!(
+            "webhook-{}{}?ca_cert={}",
+            self.webhook_sink_base_url,
+            MappingIngestPath::new(&self.config.mapping_id),
+            ca_cert_query,
+        )
     }
 }
 
@@ -1414,7 +1364,7 @@ impl DockerEnvironment {
         destination_database: &str,
         destination_user: &str,
         destination_password: &str,
-        destination_setup_sql: &str,
+        destination_schema_sql: &str,
     ) {
         self.exec_psql(
             "postgres",
@@ -1431,7 +1381,7 @@ impl DockerEnvironment {
             destination_database,
             &format!(
                 "SET ROLE {destination_user};
-                 {destination_setup_sql}"
+                 {destination_schema_sql}"
             ),
         );
     }
@@ -1541,17 +1491,6 @@ impl DockerEnvironment {
             "postgres container did not become ready after enabling ssl\n{}",
             docker_logs(&self.postgres_container)
         );
-    }
-
-    pub(crate) fn source_bootstrap_cockroach_url(&self, database: &str) -> String {
-        format!(
-            "postgresql://root@127.0.0.1:{port}/{database}?sslmode=verify-full&sslrootcert={ca}&sslcert={client_cert}&sslkey={client_key}",
-            port = self.cockroach_host_port,
-            database = database,
-            ca = self.cockroach_ca_cert_path().display(),
-            client_cert = self.cockroach_client_cert_path().display(),
-            client_key = self.cockroach_client_key_path().display(),
-        )
     }
 
     pub(crate) fn verify_source_url(&self, database: &str) -> String {
@@ -1923,43 +1862,6 @@ pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> St
     )
 }
 
-pub(crate) fn apply_source_bootstrap_sql_statements(wrapper_bin_dir: &Path, sql: &str) {
-    let mut captured_cursor = None;
-
-    for statement in source_bootstrap_sql_statements(sql) {
-        if contains_non_comment_fragment(&statement, "cluster_logical_timestamp()")
-            && !contains_non_comment_fragment(&statement, "CREATE CHANGEFEED")
-        {
-            let output = run_audited_cockroach_sql(wrapper_bin_dir, &statement);
-            captured_cursor = Some(parse_changefeed_cursor(&output));
-            continue;
-        }
-
-        let rendered_statement = if contains_non_comment_fragment(&statement, "CREATE CHANGEFEED")
-            && statement.contains(CHANGEFEED_CURSOR_PLACEHOLDER)
-        {
-            let cursor = captured_cursor.as_deref().unwrap_or_else(|| {
-                panic!(
-                    "bootstrap SQL must capture a cursor before using `{CHANGEFEED_CURSOR_PLACEHOLDER}`"
-                )
-            });
-            statement.replace(CHANGEFEED_CURSOR_PLACEHOLDER, cursor)
-        } else {
-            statement
-        };
-
-        run_audited_cockroach_sql(wrapper_bin_dir, &rendered_statement);
-    }
-}
-
-pub(crate) fn source_bootstrap_sql_statements(sql: &str) -> Vec<String> {
-    sql.split(';')
-        .map(str::trim)
-        .filter(|statement| !statement.is_empty())
-        .map(|statement| format!("{statement};"))
-        .collect()
-}
-
 fn parse_changefeed_cursor(output: &str) -> String {
     output
         .lines()
@@ -1980,13 +1882,6 @@ fn parse_changefeed_job_id(output: &str) -> String {
             panic!("CREATE CHANGEFEED output should include a job id row, got:\n{output}")
         })
         .to_owned()
-}
-
-fn contains_non_comment_fragment(statement: &str, fragment: &str) -> bool {
-    statement
-        .lines()
-        .map(str::trim_start)
-        .any(|line| !line.starts_with("--") && line.contains(fragment))
 }
 
 pub(crate) fn run_command_capture(command: &mut Command, context: &str) -> String {

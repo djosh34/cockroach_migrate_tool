@@ -13,9 +13,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::published_image_refs_support::{
-    runner_image_ref, setup_sql_image_ref, verify_image_ref,
-};
+use crate::published_image_refs_support::{runner_image_ref, verify_image_ref};
 use crate::readme_operator_workspace_support::ReadmeOperatorWorkspace;
 
 pub struct CommandOutput {
@@ -97,38 +95,9 @@ impl NoviceRegistryOnlyHarness {
         harness
             .readme_contract
             .materialize_operator_workspace(harness.root_dir());
-        harness.materialize_setup_sql_workspace();
         harness.materialize_runner_workspace();
         harness.materialize_verify_workspace();
         harness
-    }
-
-    pub fn run_setup_sql_compose_emit_cockroach_sql(&self) -> String {
-        let image_ref = setup_sql_image_ref();
-        let output = Command::new("docker")
-            .current_dir(self.root_dir())
-            .env("SETUP_SQL_IMAGE", image_ref)
-            .args([
-                "compose",
-                "-f",
-                "setup-sql.compose.yml",
-                "run",
-                "--rm",
-                "setup-sql",
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker compose run setup-sql should start: {error}");
-            });
-        assert!(
-            output.status.success(),
-            "docker compose run setup-sql failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-
-        String::from_utf8(output.stdout).expect("setup-sql compose stdout should be utf-8")
     }
 
     pub fn run_runner_readme_validate_config(&self) -> CommandOutput {
@@ -268,39 +237,6 @@ impl NoviceRegistryOnlyHarness {
         }
     }
 
-    pub fn run_setup_sql_compose_emit_postgres_grants(&self) -> String {
-        let output = Command::new("docker")
-            .current_dir(self.root_dir())
-            .env("SETUP_SQL_IMAGE", setup_sql_image_ref())
-            .args([
-                "compose",
-                "-f",
-                "setup-sql.compose.yml",
-                "run",
-                "--rm",
-                "setup-sql",
-                "emit-postgres-grants",
-                "--log-format",
-                "json",
-                "--config",
-                "/config/postgres-grants.yml",
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker compose run setup-sql emit-postgres-grants should start: {error}");
-            });
-        assert!(
-            output.status.success(),
-            "docker compose run setup-sql emit-postgres-grants failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("setup-sql compose postgres grants stdout should be utf-8")
-    }
-
     pub fn run_runner_compose_validate_config(&self) -> CommandOutput {
         run_command_output(
             Command::new("docker")
@@ -351,13 +287,6 @@ impl NoviceRegistryOnlyHarness {
             verify_image,
             verify_https_port,
         }
-    }
-
-    fn materialize_setup_sql_workspace(&self) {
-        let config_dir = self.root_dir().join("config");
-        fs::create_dir_all(&config_dir).expect("novice config dir should be created");
-
-        copy_file(&setup_sql_fixture("ca.crt"), &config_dir.join("ca.crt"));
     }
 
     fn materialize_runner_workspace(&self) {
@@ -809,12 +738,6 @@ fn repo_root() -> PathBuf {
         .join("../..")
         .canonicalize()
         .expect("repo root should resolve")
-}
-
-fn setup_sql_fixture(name: &str) -> PathBuf {
-    repo_root()
-        .join("crates/setup-sql/tests/fixtures")
-        .join(name)
 }
 
 fn runner_fixture(name: &str) -> PathBuf {

@@ -1,4 +1,4 @@
-## Task: Remove the setup-sql Rust binary, its crate, tests, Dockerfiles, compose artifacts, CI/CD workflow entries, and all code/branch/doc references to it <status>not_started</status> <passes>false</passes>
+## Task: Remove the setup-sql Rust binary, its crate, tests, Dockerfiles, compose artifacts, CI/CD workflow entries, and all code/branch/doc references to it <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Completely delete the `setup-sql` Rust binary crate and every reference to it across the entire repository — workspace members, test harnesses, Dockerfiles, compose artifacts, CI/CD image catalog + publish + promote workflows, documentation across all doc-generator directories, and the README.
@@ -41,18 +41,20 @@ Under no circumstances should the runner's production functionality be altered. 
 
 
 <acceptance_criteria>
-- [ ] `crates/setup-sql/` directory and all its contents are deleted
-- [ ] Root `Cargo.toml` no longer lists `crates/setup-sql` as a workspace member
-- [ ] `artifacts/compose/setup-sql.compose.yml` is deleted
-- [ ] `.github/workflows/image-catalog.yml` no longer contains the setup-sql image entry
-- [ ] `.github/workflows/publish-images.yml` no longer references `setup_sql_image_ref`
-- [ ] Root `Dockerfile` no longer copies `crates/setup-sql/Cargo.toml`
-- [ ] All runner test harness code referencing setup-sql / source_bootstrap / setup-sql compose is removed or adapted
-- [ ] All documentation files across `docs/*/` and `README.md` no longer reference setup-sql
-- [ ] Manual verification: `rg -l "setup.sql\|setup-sql\|source_bootstrap" --type-not md` returns no hits outside of `.ralph/tasks/story-28-*`
-- [ ] Manual verification: `cargo build --workspace` succeeds without the setup-sql crate
-- [ ] Manual verification: `cargo test --workspace` passes — all remaining tests succeed after removal of setup-sql-dependent test code
-- [ ] `make check` — passes cleanly
-- [ ] `make test` — passes cleanly
-- [ ] `make lint` — passes cleanly
+- [x] `crates/setup-sql/` directory and all its contents are deleted
+- [x] Root `Cargo.toml` no longer lists `crates/setup-sql` as a workspace member
+- [x] `artifacts/compose/setup-sql.compose.yml` is deleted
+- [x] `.github/workflows/image-catalog.yml` no longer contains the setup-sql image entry
+- [x] `.github/workflows/publish-images.yml` no longer references `setup_sql_image_ref`
+- [x] Root `Dockerfile` no longer copies `crates/setup-sql/Cargo.toml`
+- [x] All runner test harness code referencing setup-sql / source_bootstrap / setup-sql compose is removed or adapted
+- [x] All documentation files across `docs/*/` and `README.md` no longer reference setup-sql
+- [x] Manual verification: `rg -l "setup.sql\|setup-sql\|source_bootstrap" --type-not md` returns no hits outside of `.ralph/tasks/story-28-*`
+- [x] Manual verification: `cargo build --workspace` succeeds without the setup-sql crate
+- [x] Manual verification: `cargo test --workspace` passes — all remaining tests succeed after removal of setup-sql-dependent test code
+- [x] `make check` — passes cleanly
+- [x] `make test` — passes cleanly
+- [x] `make lint` — passes cleanly
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/01-task-remove-setup-sql-binary-and-all-references_plans/2026-04-27-remove-setup-sql-plan.md</plan>

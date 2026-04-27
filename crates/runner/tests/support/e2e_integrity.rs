@@ -660,64 +660,9 @@ impl SourceCommandAudit {
         self.commands.len()
     }
 
-    pub fn assert_bootstrap_command_count(&self, expected: usize) {
-        assert_eq!(
-            self.bootstrap_commands().len(),
-            expected,
-            "unexpected audited bootstrap source command count: {:?}",
-            self.bootstrap_commands(),
-        );
-    }
-
-    pub fn assert_bootstrap_contains(&self, fragment: &str, description: &str) {
-        assert!(
-            self.bootstrap_commands()
-                .iter()
-                .any(|command| command.sql.contains(fragment)),
-            "{description}: {:?}",
-            self.bootstrap_commands(),
-        );
-    }
-
-    pub fn assert_explicit_bootstrap_commands(
-        &self,
-        source_database: &str,
-        expected_tables: &[&str],
-    ) {
-        self.assert_bootstrap_command_count(3);
-        self.assert_bootstrap_contains(
-            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
-            "bootstrap should enable rangefeeds explicitly",
-        );
-        self.assert_bootstrap_contains(
-            "SELECT cluster_logical_timestamp() AS changefeed_cursor;",
-            "bootstrap should capture the start cursor explicitly",
-        );
-        let expected_changefeed_fragment = format!(
-            "CREATE CHANGEFEED FOR TABLE {}",
-            expected_tables
-                .iter()
-                .map(|table| format!("{source_database}.{table}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-        self.assert_bootstrap_contains(
-            &expected_changefeed_fragment,
-            "bootstrap should create the expected changefeed explicitly",
-        );
-        self.assert_bootstrap_contains(
-            "cursor = '",
-            "bootstrap should pass the explicit cursor into the changefeed creation statement",
-        );
-    }
-
     pub fn post_setup(&self) -> PostSetupSourceAudit {
         let commands = self.commands[self.bootstrap_command_count..].to_vec();
         PostSetupSourceAudit { commands }
-    }
-
-    fn bootstrap_commands(&self) -> &[RecordedSourceCommand] {
-        &self.commands[..self.bootstrap_command_count]
     }
 }
 
@@ -806,7 +751,7 @@ struct RecordedSourceCommand {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RuntimeShapeAudit {
     destination_runtime: DestinationRuntimeAudit,
-    source_bootstrap: SourceBootstrapAudit,
+    changefeed_sink_base_url: String,
     cockroach: CockroachRuntimeAudit,
     destination_role: DestinationRoleAudit,
 }
@@ -814,13 +759,13 @@ pub struct RuntimeShapeAudit {
 impl RuntimeShapeAudit {
     pub fn new(
         destination_runtime: DestinationRuntimeAudit,
-        source_bootstrap: SourceBootstrapAudit,
+        changefeed_sink_base_url: String,
         cockroach: CockroachRuntimeAudit,
         destination_role: DestinationRoleAudit,
     ) -> Self {
         Self {
             destination_runtime,
-            source_bootstrap,
+            changefeed_sink_base_url,
             cockroach,
             destination_role,
         }
@@ -857,11 +802,9 @@ impl RuntimeShapeAudit {
             self.destination_runtime,
         );
         assert!(
-            self.source_bootstrap
-                .webhook_sink_base_url
-                .starts_with("https://"),
-            "source bootstrap must target the destination runtime over HTTPS: {:?}",
-            self.source_bootstrap,
+            self.changefeed_sink_base_url.starts_with("https://"),
+            "changefeed sink must target the destination runtime over HTTPS: {}",
+            self.changefeed_sink_base_url,
         );
         assert_eq!(
             self.cockroach.image, EXPECTED_COCKROACH_IMAGE,
@@ -902,19 +845,6 @@ pub struct DestinationRuntimeAudit {
 pub enum DestinationRuntimeMode {
     HostProcess,
     SingleContainer,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SourceBootstrapAudit {
-    webhook_sink_base_url: String,
-}
-
-impl SourceBootstrapAudit {
-    pub fn new(webhook_sink_base_url: String) -> Self {
-        Self {
-            webhook_sink_base_url,
-        }
-    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

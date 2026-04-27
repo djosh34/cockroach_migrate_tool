@@ -14,22 +14,6 @@ mod readme_operator_workspace_support;
 use novice_registry_only_harness_support::NoviceRegistryOnlyHarness;
 
 #[test]
-fn setup_sql_compose_emits_sql_from_a_repo_free_operator_workspace() {
-    let harness = NoviceRegistryOnlyHarness::start();
-
-    let cockroach_sql = harness.run_setup_sql_compose_emit_cockroach_sql();
-
-    assert!(
-        cockroach_sql.starts_with("-- Source bootstrap SQL\n"),
-        "setup-sql compose contract must emit SQL from a copied operator workspace",
-    );
-    assert!(
-        cockroach_sql.contains("CREATE CHANGEFEED FOR TABLE demo_a.public.customers"),
-        "setup-sql compose contract must render the README-style Cockroach mapping",
-    );
-}
-
-#[test]
 fn runner_readme_commands_work_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
 
@@ -53,14 +37,6 @@ fn runner_readme_commands_work_from_a_repo_free_operator_workspace() {
 #[test]
 fn copied_compose_contracts_work_from_a_repo_free_operator_workspace() {
     let harness = NoviceRegistryOnlyHarness::start();
-
-    let grants_sql = harness.run_setup_sql_compose_emit_postgres_grants();
-    assert!(
-        grants_sql.contains(
-            r#"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "public"."customers" TO "migration_user_a";"#,
-        ),
-        "setup-sql compose contract must emit PostgreSQL grants from copied operator files",
-    );
 
     let runner_validate_output = harness.run_runner_compose_validate_config();
     assert!(

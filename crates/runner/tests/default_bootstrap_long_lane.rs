@@ -21,7 +21,7 @@ use e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
 use multi_mapping_harness::MultiMappingHarness;
 use verify_image_harness_support::VerifyImageHarness;
 
-const FK_HEAVY_SOURCE_SETUP_SQL: &str = r#"
+const FK_HEAVY_SOURCE_SCHEMA_SQL: &str = r#"
 CREATE DATABASE demo_a;
 USE demo_a;
 CREATE TABLE public.parents (
@@ -49,7 +49,7 @@ INSERT INTO public.grandchildren (id, child_id, name) VALUES
     (200, 20, 'beta grandchild');
 "#;
 
-const FK_HEAVY_DESTINATION_SETUP_SQL: &str = r#"
+const FK_HEAVY_DESTINATION_SCHEMA_SQL: &str = r#"
 CREATE TABLE public.parents (
     id bigint PRIMARY KEY,
     name text NOT NULL
@@ -124,7 +124,6 @@ fn ignored_long_lane_bootstraps_a_default_cockroach_source_into_real_postgres_ta
     harness
         .wait_for_selected_tables_to_match_via_verify_image(&verify_image)
         .assert_selected_tables_match();
-    harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_shadow_customers(2);
     harness
         .runtime_shape_audit()
@@ -405,8 +404,8 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         destination_password: "runner-secret-a",
         reconcile_interval_secs: 1,
         selected_tables: &["public.parents", "public.children", "public.grandchildren"],
-        source_setup_sql: FK_HEAVY_SOURCE_SETUP_SQL,
-        destination_setup_sql: FK_HEAVY_DESTINATION_SETUP_SQL,
+        source_schema_sql: FK_HEAVY_SOURCE_SCHEMA_SQL,
+        destination_schema_sql: FK_HEAVY_DESTINATION_SCHEMA_SQL,
     });
     let verify_image = VerifyImageHarness::start();
 
@@ -427,7 +426,6 @@ fn ignored_long_lane_handles_fk_heavy_initial_scan_and_live_catchup_into_real_po
         FK_HEAVY_CONSTRAINTS,
         "destination real tables should retain PK/FK constraints during initial scan",
     );
-    harness.assert_explicit_source_bootstrap_commands();
     apply_fk_heavy_live_source_changes(&harness);
     harness
         .wait_for_selected_tables_to_match_via_image(
@@ -568,7 +566,6 @@ fn ignored_long_lane_handles_composite_primary_keys_while_skipping_unselected_ta
 
     harness.bootstrap_migration();
     harness.wait_for_initial_scan(&verify_image);
-    harness.assert_explicit_source_bootstrap_commands();
     harness.apply_live_source_changes();
     harness.wait_for_live_catchup(&verify_image);
     harness.assert_included_tables_stable(&verify_image, Duration::from_secs(3));
@@ -583,7 +580,6 @@ fn ignored_long_lane_runs_multiple_large_multi_database_migrations_under_one_des
 
     harness.bootstrap_migration();
     harness.wait_for_initial_scan(&verify_image);
-    harness.assert_explicit_source_bootstrap_commands();
     harness.assert_helper_state_is_mapping_scoped();
     harness.apply_live_source_changes();
     harness.wait_for_live_catchup(&verify_image);

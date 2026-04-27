@@ -155,3 +155,4 @@
 .ralph/tasks/story-03-docs-api-contracts/task-09-docs-verify-job-lifecycle.md
 .ralph/tasks/story-03-docs-api-contracts/task-10-docs-tls-configuration-reference.md
 /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-remove-dumb-structure-and-file-content-tests.md
+.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/01-task-remove-setup-sql-binary-and-all-references.md

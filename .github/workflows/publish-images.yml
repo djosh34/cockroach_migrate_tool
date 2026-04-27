@@ -586,7 +586,6 @@ jobs:
     outputs:
       publish_manifest: ${{ steps.publish-manifest.outputs.publish_manifest }}
       runner_image_ref: ${{ steps.publish-manifest.outputs.runner_image_ref }}
-      setup_sql_image_ref: ${{ steps.publish-manifest.outputs.setup_sql_image_ref }}
       verify_image_ref: ${{ steps.publish-manifest.outputs.verify_image_ref }}
     steps:
       - uses: actions/checkout@v6

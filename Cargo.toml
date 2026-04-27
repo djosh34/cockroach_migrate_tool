@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ingest-contract", "crates/operator-log", "crates/runner", "crates/setup-sql"]
+members = ["crates/ingest-contract", "crates/operator-log", "crates/runner"]
 resolver = "2"
 
 [workspace.package]

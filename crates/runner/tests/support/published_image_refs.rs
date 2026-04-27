@@ -8,38 +8,6 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub(crate) fn setup_sql_image_ref() -> &'static str {
-    static SETUP_SQL_IMAGE_REF: OnceLock<String> = OnceLock::new();
-
-    SETUP_SQL_IMAGE_REF.get_or_init(|| {
-        let image_ref = format!("cockroach-migrate-setup-sql-novice-{}", unique_suffix());
-        let output = Command::new("docker")
-            .args([
-                "build",
-                "-t",
-                &image_ref,
-                "-f",
-                &repo_root()
-                    .join("crates/setup-sql/Dockerfile")
-                    .display()
-                    .to_string(),
-                &repo_root().display().to_string(),
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker build setup-sql novice image should start: {error}")
-            });
-        assert!(
-            output.status.success(),
-            "docker build setup-sql novice image failed with status {}\nstdout:\n{}\nstderr:\n{}",
-            output.status,
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
-        );
-        image_ref
-    })
-}
-
 pub(crate) fn runner_image_ref() -> &'static str {
     static RUNNER_IMAGE_REF: OnceLock<String> = OnceLock::new();
 

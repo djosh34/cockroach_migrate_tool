@@ -1,155 +1,12 @@
 # Cockroach Migrate Tool
 
-Run published `setup-sql`, `runner`, and `verify` images with inline configs.
+Run the published `runner` and `verify` images with inline configs.
 
-## Setup SQL Quick Start
-
-Pull `setup-sql`, render, apply.
-
-```bash
-export GITHUB_OWNER=<github-owner>
-export IMAGE_TAG=<published-commit-sha>
-export SETUP_SQL_IMAGE="ghcr.io/${GITHUB_OWNER}/cockroach-migrate-setup-sql:${IMAGE_TAG}"
-docker pull "${SETUP_SQL_IMAGE}"
-```
-
-Example Cockroach setup config:
-
-```yaml
-# config/cockroach-setup.yml
-cockroach:
-  url: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
-webhook:
-  base_url: https://runner.example.internal:8443
-  ca_cert_path: ca.crt
-  resolved: 5s
-mappings:
-  - id: app-a
-    source:
-      database: demo_a
-      tables:
-        - public.customers
-        - public.orders
-  - id: app-b
-    source:
-      database: demo_b
-      tables:
-        - public.invoices
-```
-
-Render the Cockroach bootstrap SQL:
-
-```bash
-docker run --rm \
-  -v "$(pwd)/config:/config:ro" \
-  "${SETUP_SQL_IMAGE}" \
-  emit-cockroach-sql \
-  --config /config/cockroach-setup.yml > cockroach-bootstrap.sql
-```
-
-Required args:
-
-- `emit-cockroach-sql`
-- `--config /config/cockroach-setup.yml`
-
-Optional args:
-
-- `--log-format json` for structured stderr logs while stdout stays reserved for SQL
-
-Apply after review:
-
-```bash
-cockroach sql \
-  --url 'postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require' \
-  --file cockroach-bootstrap.sql
-```
-
-SQL:
-
-- enables `kv.rangefeed.enabled`
-- uses `cluster_logical_timestamp()` as each changefeed `cursor`
-- creates one changefeed per source database at `/ingest/<mapping_id>`
-- emits SQL statements and SQL comments
-
-Example PostgreSQL grants config:
-
-```yaml
-# config/postgres-grants.yml
-mappings:
-  - id: app-a
-    destination:
-      database: app_a
-      runtime_role: migration_user_a
-      tables:
-        - public.customers
-        - public.orders
-```
-
-Render grants SQL:
-
-```bash
-docker run --rm \
-  -v "$(pwd)/config:/config:ro" \
-  "${SETUP_SQL_IMAGE}" \
-  emit-postgres-grants \
-  --config /config/postgres-grants.yml > postgres-grants.sql
-```
-
-Required args:
-
-- `emit-postgres-grants`
-- `--config /config/postgres-grants.yml`
-
-Optional args:
-
-- `--log-format json` for structured stderr logs while stdout stays reserved for SQL
-
-Apply the grant SQL:
-
-```bash
-psql \
-  "postgresql://postgres-admin@pg-a.example.internal:5432/app_a?sslmode=require" \
-  -f postgres-grants.sql
-```
-
-Save this as `setup-sql.compose.yml`:
-
-```yaml
-services:
-  setup-sql:
-    image: "${SETUP_SQL_IMAGE}"
-    network_mode: none
-    configs:
-      - source: cockroach-setup-config
-        target: /config/cockroach-setup.yml
-      - source: postgres-grants-config
-        target: /config/postgres-grants.yml
-      - source: source-ca-cert
-        target: /config/ca.crt
-    command:
-      - emit-cockroach-sql
-      - --config
-      - /config/cockroach-setup.yml
-
-configs:
-  cockroach-setup-config:
-    file: ./config/cockroach-setup.yml
-  postgres-grants-config:
-    file: ./config/postgres-grants.yml
-  source-ca-cert:
-    file: ./config/ca.crt
-```
-
-Compose commands:
-
-```bash
-docker compose -f setup-sql.compose.yml run --rm setup-sql > cockroach-bootstrap.sql
-docker compose -f setup-sql.compose.yml run --rm setup-sql emit-postgres-grants --config /config/postgres-grants.yml > postgres-grants.sql
-```
+Before you start the runtime, prepare your CockroachDB changefeeds and destination PostgreSQL grants with operator-managed SQL for your environment. This repository no longer ships a dedicated SQL-emitter binary or compose artifact.
 
 ## Runner Quick Start
 
-Pull runner image and write config. The example uses HTTP on `8080`; for HTTPS, set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
+Pull the runner image and write config. The example uses HTTP on `8080`; for HTTPS, set `mode: https` and mount `webhook.tls.cert_path` plus `webhook.tls.key_path`.
 
 `mappings[].source` rejects misrouted payloads.
 
@@ -229,7 +86,7 @@ Optional args:
 - `--log-format json` for structured stderr logs
 - `--deep` to verify destination connectivity and mapped tables
 
-Apply grants, then start runtime:
+Start the runtime after your source changefeeds and destination grants are already in place:
 
 ```bash
 docker run --rm \
@@ -483,7 +340,7 @@ configs:
     file: ./config/certs/server.key
 ```
 
-Compose API
+Compose API:
 
 ```bash
 docker compose -f verify.compose.yml up verify

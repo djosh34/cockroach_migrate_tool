@@ -172,9 +172,9 @@ impl VerifyImageArtifactHarness {
 
     fn build_verify_image(&self) {
         run_command_capture(
-            Command::new("docker").args(crate::verify_docker_contract_support::docker_build_image_args(
-                &self.image_tag,
-            )),
+            Command::new("docker").args(
+                crate::verify_docker_contract_support::docker_build_image_args(&self.image_tag),
+            ),
             "docker build verify image",
         );
     }

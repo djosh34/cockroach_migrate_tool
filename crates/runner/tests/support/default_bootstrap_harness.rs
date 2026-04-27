@@ -12,7 +12,7 @@ use crate::e2e_integrity::{
 use crate::verify_image_harness_support::VerifyImageHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
-const DEFAULT_SOURCE_SETUP_SQL: &str = r#"
+const DEFAULT_SOURCE_SCHEMA_SQL: &str = r#"
 CREATE DATABASE demo_a;
 USE demo_a;
 CREATE TABLE public.customers (
@@ -24,7 +24,7 @@ INSERT INTO public.customers (id, email) VALUES
     (2, 'bob@example.com');
 "#;
 
-const DEFAULT_DESTINATION_SETUP_SQL: &str = r#"
+const DEFAULT_DESTINATION_SCHEMA_SQL: &str = r#"
 CREATE TABLE public.customers (
     id bigint PRIMARY KEY,
     email text NOT NULL
@@ -131,10 +131,6 @@ impl DefaultBootstrapHarness {
 
     pub fn bootstrap_default_migration(&self) {
         self.inner.bootstrap_migration();
-    }
-
-    pub fn assert_explicit_source_bootstrap_commands(&self) {
-        self.inner.assert_explicit_source_bootstrap_commands();
     }
 
     pub fn assert_helper_shadow_customers(&self, expected_rows: usize) {
@@ -697,8 +693,8 @@ impl DefaultBootstrapHarness {
                 destination_password: "runner-secret-a",
                 reconcile_interval_secs,
                 selected_tables: &["public.customers"],
-                source_setup_sql: DEFAULT_SOURCE_SETUP_SQL,
-                destination_setup_sql: DEFAULT_DESTINATION_SETUP_SQL,
+                source_schema_sql: DEFAULT_SOURCE_SCHEMA_SQL,
+                destination_schema_sql: DEFAULT_DESTINATION_SCHEMA_SQL,
             },
             webhook_sink_mode,
             DestinationRuntimeMode::HostProcess,

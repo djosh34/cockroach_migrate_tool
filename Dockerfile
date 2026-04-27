@@ -27,7 +27,6 @@ COPY .cargo .cargo
 COPY crates/ingest-contract/Cargo.toml crates/ingest-contract/Cargo.toml
 COPY crates/operator-log/Cargo.toml crates/operator-log/Cargo.toml
 COPY crates/runner/Cargo.toml crates/runner/Cargo.toml
-COPY crates/setup-sql/Cargo.toml crates/setup-sql/Cargo.toml
 
 RUN cargo chef prepare --recipe-path recipe.json
 

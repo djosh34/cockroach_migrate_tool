@@ -3,7 +3,7 @@ use std::time::Duration;
 use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
 use crate::verify_image_harness_support::VerifyImageHarness;
 
-const SOURCE_SETUP_SQL: &str = r#"
+const SOURCE_SCHEMA_SQL: &str = r#"
 CREATE DATABASE demo_a;
 USE demo_a;
 CREATE TABLE public.customers (
@@ -32,7 +32,7 @@ INSERT INTO public.audit_events (event_id, event_type, details) VALUES
     (1, 'bootstrap', 'created before migration');
 "#;
 
-const DESTINATION_SETUP_SQL: &str = r#"
+const DESTINATION_SCHEMA_SQL: &str = r#"
 CREATE TABLE public.customers (
     id bigint PRIMARY KEY,
     email text NOT NULL
@@ -104,8 +104,8 @@ impl CompositePkExclusionHarness {
                 destination_password: "runner-secret-a",
                 reconcile_interval_secs: 1,
                 selected_tables: &["public.customers", "public.order_items"],
-                source_setup_sql: SOURCE_SETUP_SQL,
-                destination_setup_sql: DESTINATION_SETUP_SQL,
+                source_schema_sql: SOURCE_SCHEMA_SQL,
+                destination_schema_sql: DESTINATION_SCHEMA_SQL,
             }),
         }
     }
@@ -130,10 +130,6 @@ impl CompositePkExclusionHarness {
             EXPECTED_HELPER_TABLES,
             "helper table inventory for selected tables",
         );
-    }
-
-    pub fn assert_explicit_source_bootstrap_commands(&self) {
-        self.inner.assert_explicit_source_bootstrap_commands();
     }
 
     pub fn apply_live_source_changes(&self) {

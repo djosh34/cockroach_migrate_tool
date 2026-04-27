@@ -35,17 +35,6 @@ jobs:
               "build_kind": "rust-workspace-musl"
             },
             {
-              "image_id": "setup-sql",
-              "quay_repository": "setup-sql",
-              "ghcr_repository": "cockroach-migrate-setup-sql",
-              "dockerfile": "./crates/setup-sql/Dockerfile",
-              "context": ".",
-              "manifest_key": "setup_sql_image_ref",
-              "artifact_name": "published-image-setup-sql",
-              "cache_scope": "publish-image-setup-sql",
-              "build_kind": "rust-workspace-musl"
-            },
-            {
               "image_id": "verify",
               "quay_repository": "verify",
               "ghcr_repository": "cockroach-migrate-verify",

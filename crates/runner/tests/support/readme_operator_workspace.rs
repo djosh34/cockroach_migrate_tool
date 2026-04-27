@@ -19,22 +19,13 @@ impl ReadmeOperatorWorkspace {
         });
 
         let mut operator_files = BTreeMap::new();
-        for relative_path in [
-            "config/cockroach-setup.yml",
-            "config/postgres-grants.yml",
-            "config/runner.yml",
-            "config/verify-service.yml",
-        ] {
+        for relative_path in ["config/runner.yml", "config/verify-service.yml"] {
             operator_files.insert(
                 relative_path,
                 extract_inline_config(&readme_text, relative_path),
             );
         }
-        for relative_path in [
-            "setup-sql.compose.yml",
-            "runner.compose.yml",
-            "verify.compose.yml",
-        ] {
+        for relative_path in ["runner.compose.yml", "verify.compose.yml"] {
             operator_files.insert(
                 relative_path,
                 extract_named_yaml_block(&readme_text, relative_path),
