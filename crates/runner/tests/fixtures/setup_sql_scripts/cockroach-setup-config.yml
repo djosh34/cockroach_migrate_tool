@@ -1,0 +1,13 @@
+cockroach:
+  url: "postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require"
+webhook:
+  base_url: "https://runner.example.internal:8443"
+  ca_cert_path: "ca.crt"
+  resolved: "5s"
+mappings:
+  - id: "app-a"
+    source:
+      database: "demo_a"
+      tables:
+        - "public.customers"
+        - "public.orders"

@@ -1,0 +1,6 @@
+mappings:
+  - id: "app-a"
+    destination:
+      database: "app_a"
+      tables:
+        - "public.customers"

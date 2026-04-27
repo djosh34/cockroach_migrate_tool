@@ -1,4 +1,4 @@
-## Task: Create bash scripts that turn a YAML config file into SQL output files for CockroachDB and PostgreSQL separately <status>not_started</status> <passes>false</passes>
+## Task: Create bash scripts that turn a YAML config file into SQL output files for CockroachDB and PostgreSQL separately <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Create two standalone bash scripts that read a simple YAML input file and produce SQL output files — one script for CockroachDB source setup SQL, one script for PostgreSQL destination grants SQL. The scripts must be clearly separated, well-documented, and produce SQL that matches what the docs (Task 02) describe.
@@ -115,24 +115,26 @@ Decisions already made:
 </description>
 
 <acceptance_criteria>
-- [ ] `./scripts/generate-cockroach-setup-sql.sh` exists, is executable, and:
-  - [ ] Accepts a YAML file matching the documented CockroachDB config format
-  - [ ] Generates per-database `.sql` files and a combined `cockroach-all-setup.sql`
-  - [ ] Produces valid SQL matching the contract in `./docs/setup_sql/cockroachdb-source-setup.md`
-  - [ ] Has `--help`, `--dry-run`, `--output-dir` flags
-  - [ ] Handles multi-mapping merging (same database from multiple mapping IDs)
-  - [ ] Validates required YAML keys and exits with clear error if missing
-- [ ] `./scripts/generate-postgres-grants-sql.sh` exists, is executable, and:
-  - [ ] Accepts a YAML file matching the documented PostgreSQL grants config format
-  - [ ] Generates per-database `.sql` files and a combined `postgres-all-grants.sql`
-  - [ ] Produces valid SQL matching the contract in `./docs/setup_sql/postgresql-destination-grants.md`
-  - [ ] Has `--help`, `--dry-run`, `--output-dir` flags
-  - [ ] Deduplicates identical GRANT statements
-  - [ ] Validates required YAML keys and exits with clear error if missing
-- [ ] `./scripts/README.md` documents dependencies, usage, and examples
-- [ ] Manual verification: run both scripts against the example YAMLs above and confirm the output SQL matches the expected output exactly
-- [ ] Manual verification: run both scripts with `--dry-run` and confirm no files are written
-- [ ] Manual verification: run both scripts with missing/invalid YAML keys and confirm they exit non-zero with a readable error
-- [ ] `make check` — passes cleanly (scripts-only, no Rust code impacted)
-- [ ] `make lint` — passes cleanly (if shellcheck is in lint pipeline, scripts must pass shellcheck)
+- [x] `./scripts/generate-cockroach-setup-sql.sh` exists, is executable, and:
+  - [x] Accepts a YAML file matching the documented CockroachDB config format
+  - [x] Generates per-database `.sql` files and a combined `cockroach-all-setup.sql`
+  - [x] Produces valid SQL matching the contract in `./docs/setup_sql/cockroachdb-source-setup.md`
+  - [x] Has `--help`, `--dry-run`, `--output-dir` flags
+  - [x] Handles multi-mapping merging (same database from multiple mapping IDs)
+  - [x] Validates required YAML keys and exits with clear error if missing
+- [x] `./scripts/generate-postgres-grants-sql.sh` exists, is executable, and:
+  - [x] Accepts a YAML file matching the documented PostgreSQL grants config format
+  - [x] Generates per-database `.sql` files and a combined `postgres-all-grants.sql`
+  - [x] Produces valid SQL matching the contract in `./docs/setup_sql/postgresql-destination-grants.md`
+  - [x] Has `--help`, `--dry-run`, `--output-dir` flags
+  - [x] Deduplicates identical GRANT statements
+  - [x] Validates required YAML keys and exits with clear error if missing
+- [x] `./scripts/README.md` documents dependencies, usage, and examples
+- [x] Manual verification: run both scripts against the example YAMLs above and confirm the output SQL matches the expected output exactly
+- [x] Manual verification: run both scripts with `--dry-run` and confirm no files are written
+- [x] Manual verification: run both scripts with missing/invalid YAML keys and confirm they exit non-zero with a readable error
+- [x] `make check` — passes cleanly (scripts-only, no Rust code impacted)
+- [x] `make lint` — passes cleanly (if shellcheck is in lint pipeline, scripts must pass shellcheck)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/03-task-create-bash-scripts-to-generate-sql-from-yaml_plans/2026-04-28-generate-setup-sql-scripts-plan.md</plan>

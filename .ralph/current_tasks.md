@@ -1,22 +1,66 @@
 # Current Tasks Summary
 
-Generated: Mon Apr 27 11:59:56 PM CEST 2026
+Generated: Tue Apr 28 12:21:28 AM CEST 2026
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-28-replace-setup-sql-with-docs-and-bash-scripts/03-task-create-bash-scripts-to-generate-sql-from-yaml.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/01-task-install-nix-on-this-vm.md`
 
 ```
-## Task: Create bash scripts that turn a YAML config file into SQL output files for CockroachDB and PostgreSQL separately <status>not_started</status> <passes>false</passes>
+## Task: Install Nix On This VM <status>not_started</status> <passes>false</passes>
 
 <description>
-**Goal:** Create two standalone bash scripts that read a simple YAML input file and produce SQL output files — one script for CockroachDB source setup SQL, one script for PostgreSQL destination grants SQL. The scripts must be clearly separated, well-documented, and produce SQL that matches what the docs (Task 02) describe.
+**Goal:** Install Nix on this VM so this repository can be built, tested, and developed through a reproducible Nix toolchain. The higher order goal is to prepare the local execution environment for a full migration to a Nix + crane setup without relying on host-installed language, Docker, or Make tooling.
 ```
 
 ==============
 
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-optimize-rust-build-story/01-task-drastically-reduce-rust-dependency-footprint-and-compile-time.md`
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/02-task-migrate-build-run-test-lint-to-crane.md`
 
 ```
-## Task: Drastically Reduce Rust Dependency Footprint And Compile Time <status>not_started</status> <passes>false</passes>
+## Task: Migrate Build Run Test And Lint To Crane <status>not_started</status> <passes>false</passes>
+
+<description>
+**Goal:** Replace the current local build, run, test, check, and lint workflow with a fully reproducible Nix flake built around crane. The higher order goal is to make local development and CI share one Nix-native build graph where Rust artifacts are reused correctly and only the code that actually changed is rebuilt.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md`
+
+```
+## Task: Migrate Docker Image Generation To Nix <status>not_started</status> <passes>false</passes>
+
+<description>
+**Goal:** Generate project Docker images with Nix instead of Dockerfiles, reusing the same crane/Nix build outputs that local builds and tests use. The higher order goal is to make container artifacts reproducible products of the Nix build graph rather than separate, drifting Dockerfile builds.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md`
+
+```
+## Task: Migrate CI To Nix Only <status>not_started</status> <passes>false</passes>
+
+<description>
+**Goal:** Replace the existing GitHub workflow with a Nix-only CI and publish pipeline that uses the same Nix/crane build graph as local development and produces one tagged multi-platform image. The higher order goal is to eliminate CI/local drift while keeping the publish path efficient, secure, and verifiable.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/05-task-enable-development-without-host-nix.md`
+
+```
+## Task: Enable Development Without Host Nix <status>not_started</status> <passes>false</passes>
+
+<description>
+**Goal:** Add a Docker-based fallback for developers whose computers do not have Nix installed, where the container executes Nix inside the container and delegates to the same repository Nix flake used everywhere else. The higher order goal is to keep one canonical Nix workflow while still allowing contributors to build and test from machines that only have Docker.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-30-optimize-rust-build-story/01-task-optimize-nix-crane-rust-dependency-builds.md`
+
+```
+## Task: Optimize Nix Crane Rust Dependency Builds <status>not_started</status> <passes>false</passes>
 
 <description>
 Must use tdd skill to complete
