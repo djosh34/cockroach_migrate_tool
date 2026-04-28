@@ -38,8 +38,6 @@
             path: type:
             (craneLib.filterCargoSources path type)
             || (lib.hasInfix "/crates/runner/tests/fixtures/" path)
-            || (lib.hasInfix "/scripts/" path)
-            || (lib.hasSuffix "/README.md" path)
             || (lib.hasInfix "/investigations/cockroach-webhook-cdc/certs/" path);
         };
 
