@@ -1,0 +1,29 @@
+- `Verdict:` The documentation is sufficient for an experienced operator to deploy and operate the tool from published Docker images, with several ambiguities that could cause hesitation but no hard blockers.
+
+- `What worked:`
+  - GHCR pull commands and tag conventions (`image-references.md`)
+  - CockroachDB SQL setup — rangefeeds, cursor capture, changefeed creation with required options (`source-setup/cockroachdb-setup.md`)
+  - PostgreSQL grants — per-database/per-schema/per-table DDL with worked examples and checklist (`destination-setup/postgresql-grants.md`)
+  - Runner YAML configuration reference — complete field descriptions, all required/optional keys, CLI flags (`runner/configuration.md`)
+  - Runner validation and run commands — offline, deep, and live commands with exact docker run invocations (`runner/getting-started.md`)
+  - Runner HTTP endpoint documentation — request/response schemas, curl test batch (`runner/endpoints.md`)
+  - Verify-service YAML configuration reference — listener, source, destination, TLS, `raw_table_output` (`verify/configuration.md`)
+  - Verify-service validation and run commands — exact docker run invocations (`verify/getting-started.md`)
+  - Verify job lifecycle API — every endpoint, request/response bodies, job state machine, all error categories (`verify/job-lifecycle.md`)
+  - TLS reference — component mapping table, all TLS blocks across runner and verify (`tls-reference.md`)
+  - Troubleshooting guide — symptom → check → fix for common failures (`troubleshooting.md`)
+  - Consistent note that `verify-image` entrypoint is `molt` defaulting to `verify-service` subcommand, with explicit warnings against omitting it
+
+- `Blockers:`
+  - No example published SHA; operator must visit GHCR package pages and find a valid tag — if no image has ever been published, there is no way to proceed
+
+- `Ambiguities:`
+  - `verify.source` URL uses `postgresql://` scheme but docs never explicitly state this is the CockroachDB connection via its PostgreSQL wire-protocol endpoint — an operator unfamiliar with CockroachDB's PostgreSQL compatibility could point verify.source at the wrong database
+  - Certificate generation is never addressed; production operators would bring PKI-issued certs, but there is no "quickstart testing" path that shows how to generate self-signed certs or use `mkcert`
+  - The Docker Compose examples use the top-level `configs:` key with `file:` entries but do not mention the Compose schema version requirement (v3.3+) or that older `docker-compose` v1 does not support this outside swarm mode
+  - CockroachDB changefeed sink URL `ca_cert` parameter value (percent-encoded base64 PEM) is shown correctly in the encoding section, but the inline `example` value in the CREATE CHANGEFEED SQL (`LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0t...%3D%3D`) uses a placeholder without noting it must match the runner's server certificate CA
+  - The order-of-operations checklist in `cockroachdb-setup.md` places "Create destination PostgreSQL grants" as step 2 (before changefeeds) while the index workflow shows "Source Setup → Destination Grants → Runner" — consistent on inspection but the parallel placement across documents could cause an operator to wonder when exactly grants must be in place
+  - Verify-service Compose file mounts all certs (including optional mTLS `client-ca.crt`) without distinguishing required vs optional mounts, making it unclear which cert files are mandatory for a minimal deployment
+  - `--log-format` is a global flag before the subcommand for the runner but a flag on the subcommand for verify-service — correctly documented in both places but an easy trap when copying commands between the two
+
+- `Would you proceed in production?` Yes, but only after resolving the verify.source ambiguity (ensuring the source URL points to CockroachDB, not the destination) and verifying that the GHCR package actually has published images at a known SHA.

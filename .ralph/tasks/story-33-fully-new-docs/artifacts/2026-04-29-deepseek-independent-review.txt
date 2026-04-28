@@ -1,0 +1,35 @@
+## Verdict
+
+The documentation bundle contains irreconcilable contradictions and broken examples that would prevent an outside operator from successfully deploying from the published Docker images without making wrong moves.
+
+## What worked
+
+- Image pull commands with registry, authentication, and multi-platform support are clearly documented in `image-references.md`
+- CockroachDB changefeed SQL setup and sink URL encoding walkthrough in `source-setup/cockroachdb-setup.md` is complete with worked examples and a checklist
+- PostgreSQL grant SQL in `destination-setup/postgresql-grants.md` is correct with per-privilege rationale and a checklist
+- Runner YAML configuration reference in `runner/configuration.md` covers every field with rules for mutual exclusion
+- Verify-service YAML configuration reference in `verify/configuration.md` covers all fields
+- Verify job lifecycle API in `verify/job-lifecycle.md` is fully documented with request/response schemas, state machine, and error categories
+- TLS reference in `tls-reference.md` comprehensively covers all TLS modes across components
+- Troubleshooting section covers the most common symptoms and checks
+
+## Blockers
+
+1. **No discoverable image tags** — The docs say to use `<git-sha>` and "Find the SHA in the repository's commit history" but never tell an outside operator how to list available published tags from GHCR (no `docker pull` listing, no stable/semver tags, no link to package page)
+2. **Contradictory order of operations** — `cockroachdb-setup.md` says "Start the runner before creating changefeeds" but the overview README says "Start the runtime after your source changefeeds and destination grants are already in place" (the `<comment>` block in the setup doc explicitly flags this conflict)
+3. **Verify-service Compose example is broken** — `command: [run, ...]` would execute `molt run ...` instead of `molt verify-service run ...` because the image has `Entrypoint = ["molt"]` and `Cmd = ["verify-service"]` (flagged by two `<comment>` blocks)
+4. **Verify-service port mapping mismatch** — The Compose example maps `9443:8080` but the accompanying HTTPS configuration binds `listener.bind_addr` to `0.0.0.0:8443`, so the actual container port 8443 is never exposed
+
+## Ambiguities
+
+1. **`--log-format` flag position is wrong for verify-service** — Docs show `verify-service --log-format json validate-config` but comments say `--log-format` is registered on subcommands, making the correct form `verify-service validate-config --log-format json`; the runner docs show the inverse placement and the comments don't flag it, so an operator cannot tell which pattern is correct without reading source code
+2. **"Entrypoint is verify-service" is misleading** — The image entrypoint is `molt` with default command `verify-service`, so `docker run image --log-format json validate-config` would give `molt --log-format json validate-config` not `molt verify-service --log-format json validate-config`; the distinction matters for flag parsing but the docs consistently hide it
+3. **Quay mirror paths are placeholders** — Uses `<quay-organization>` and directs operators to "consult your organization's internal documentation"
+4. **Runner Compose is unverifiable** — No `<comment>` flags the runner image's Entrypoint, so an operator cannot know whether `command: [run, ...]` produces the correct binary invocation or the same broken-pattern as the verify-service
+5. **`mapping_id` uniqueness constraints** — Docs require unique mapping IDs but never state what happens if two mappings share the same source table (duplicate ingest, conflict, or error)
+6. **Resolved watermarks are unexplained** — The `/ingest/{mapping_id}` endpoint accepts `{"resolved": "..."}` payloads but the docs never say what the runner does with them or why they matter
+7. **No default value inventory** — `webhook.mode` defaults to `https` if omitted, but no other defaults are stated, and "mode defaults to https" is buried in a table note rather than a dedicated defaults section
+
+## Would you proceed in production?
+
+No — the verify-service Compose example is objectively broken (wrong `command` override, mismatched port mapping), the order-of-operations contradiction guarantees a wrong move on first deployment, and the missing tag-discovery mechanism makes the first pull step unexecutable for anyone without source-repo access.

@@ -1,0 +1,96 @@
+Now let me find all instances of the verify-image entrypoint wording and the "Related pages" headings.
+
+**Task 1: Standardize verify-image entrypoint wording**
+
+Looking at the current variations:
+
+1. `verify-service.md:41`: `> **Note:** The verify-image entrypoint is \`molt\` with default command \`verify-service\`. Both subcommands accept \`--log-format\` directly; it is not a global flag on the parent command.`
+
+2. `verify/getting-started.md:17`: `The verify-image entrypoint is \`molt\` with default command \`verify-service\`; you must include \`verify-service\` in the subcommand when overriding \`command\` in Docker or Compose.`
+
+3. `verify/getting-started.md:101`: `The entrypoint is \`verify-service\`. Subcommands:` — This incorrectly says the entrypoint is `verify-service`, which contradicts the other pages.
+
+4. `verify/getting-started.md:202`: `> **Note:** The verify-image entrypoint is \`molt\` with default command \`verify-service\`. When overriding \`command\` in Compose, include \`verify-service\` explicitly — otherwise the container would execute \`molt run ...\` instead of \`molt verify-service run ...\`.`
+
+5. `verify/configuration.md:3`: `The verify-image entrypoint is \`molt\` with default command \`verify-service\`; include \`verify-service\` explicitly when overriding \`command\` in Docker or Compose.`
+
+6. `image-references.md:82`: `> **Note:** The verify-image entrypoint is \`molt\` and its default command is \`verify-service\`. Always include the \`verify-service\` subcommand explicitly — especially when overriding \`command\` in Docker Compose.`
+
+The preferred wording is: `The verify image's entrypoint is \`molt\` and its default command is \`verify-service\`.`
+
+Let me now make all the edits. I need to update each instance to use the standardized wording while preserving the additional context specific to each page.
+
+**Task 2: Change "Related pages" to "See also"**
+
+- `verify-service.md:58`: `## Related pages` → `## See also`
+- `runner.md:45`: `## Related pages` → `## See also`
+
+**Task 3: Improve verify-service CLI notation consistency**
+
+The runner docs show `--log-format` as a global flag before the subcommand. The verify-service docs show `--log-format` as a subcommand flag. Looking at the runner CLI summary format:
+
+```
+runner [--log-format text|json] validate-config --config <PATH> [--deep]
+runner [--log-format text|json] run --config <PATH>
+```
+
+The verify-service CLI summary currently shows:
+
+```
+verify-service validate-config --log-format text|json --config <path>
+verify-service run --log-format text|json --config <path>
+```
+
+The note says `--log-format` is NOT a global flag on `molt` but is on the `verify-service` subcommands. The image-references.md already correctly differentiates this. Let me look at the verify-service.md CLI summary and the configuration.md CLI reference table.
+
+In `verify-service.md:33-36`:
+```
+verify-service validate-config --log-format text|json --config <path>
+verify-service run --log-format text|json --config <path>
+```
+
+In `verify/configuration.md:156-159`:
+The table shows `--log-format text|json` as optional flags.
+
+In `verify-service.md:41`, the note says: "Both subcommands accept `--log-format` directly; it is not a global flag on the parent command."
+
+The instruction says: "You may improve the typography or explanatory wording around optional flags, but do not move `--log-format` to the wrong place." and "Make verify-service CLI notation read more consistently with the runner docs."
+
+The runner docs use bracket notation for optional flags. The verify-service CLI summary should use similar notation. Let me make the CLI summary more consistent:
+
+```
+verify-service validate-config --config <path> [--log-format text|json]
+verify-service run --config <path> [--log-format text|json]
+```
+
+This puts `--config` (required) first and `--log-format` (optional) in brackets, consistent with how runner shows `[--deep]` as optional.
+
+Actually, let me reconsider. The runner docs format is:
+```
+runner [--log-format text|json] validate-config --config <PATH> [--deep]
+runner [--log-format text|json] run --config <PATH>
+```
+
+For verify-service, `--log-format` is a subcommand-level flag (not global like runner). So for verify-service it should be:
+```
+verify-service validate-config --config <path> [--log-format text|json]
+verify-service run --config <path> [--log-format text|json]
+```
+
+This is more consistent with the runner's pattern of putting required flags without brackets and optional flags in brackets.
+
+Now let me also check the `verify/getting-started.md:101` line: `The entrypoint is \`verify-service\`. Subcommands:` — This should say the entrypoint is `molt` with the default command being `verify-service`, consistent with the standardized wording.
+
+Let me now make all theNow I'll make all the edits. Let me start with the entrypoint standardization, navigation labels, and CLI notation.
+
+**1. `verify-service.md`** — entrypoint wording, `## Related pages` → `## See also`, CLI summary:
+Now **`verify/getting-started.md`** — entrypoint wording on line 17 and line 101, and line202:
+Now **`verify/configuration.md`** — entrypoint wording on line 3, and CLI reference table:
+Now **`image-references.md`** — entrypoint wording on line82:
+All three style passes are done:
+
+1. **Entrypoint wording** — Standardized across 5 locations in `verify-service.md`, `verify/getting-started.md` (2 places), `verify/configuration.md`, and `image-references.md` to: "The verify image's entrypoint is `molt` and its default command is `verify-service`."
+
+2. **Navigation labels** — Changed `## Related pages` → `## See also` in `verify-service.md` and `runner.md`.
+
+3. **CLI notation** — Reformatted the verify-service CLI summary in `verify-service.md` to use bracket notation for optional flags (`[--log-format text|json]`) and put required flags first, consistent with runner docs. Also fixed the incorrect "The entrypoint is `verify-service`" claim in `verify/getting-started.md` and "The verify-image default command" heading in `verify/configuration.md`.

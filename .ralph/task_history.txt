@@ -179,3 +179,4 @@ NONE
 NONE
 .ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/03-task-replace-magic-nix-cache-with-cachix.md
 .ralph/tasks/bugs/bug-investigate-transient-cachix-502-push-failures-in-publish-images-workflow.md
+.ralph/tasks/story-33-fully-new-docs/01-task-create-fully-new-docs-with-model-authored-writing-and-independent-setup-verification.md

@@ -1,0 +1,28 @@
+Now let me read the remaining files for fullcontext:
+Now I'll work through each file. Starting with `image-references.md`:
+Now fix `verify-service.md`:
+Now fix `verify/getting-started.md` — this has multipleissues:
+Now fix the Compose example — port mapping and command:
+Now fix `source-setup.md`:
+Now fix `source-setup/cockroachdb-setup.md` — three issues: trailing slash wording, order of operations, and removecomments:
+Now fix `verify/configuration.md` — entrypoint wording:
+Let me verify no residual `<comment>` blocks remain:
+All comments are resolved. Let me also verify the edited files read correctly end-to-end:
+I notice the image-references.md has a structural issue — the log-format table got separated from its section header. Let me fix that:
+The table and note are orphaned between sections. Let me restructure so the note is under "Running a container" and the table is under "Log format":
+Now let me also verify the verify-service.md and verify/configuration.md changes look right:
+All edits look correct. Let me now do a final sweep for any remaining inconsistencies — checking the `index.md` which mentions the ordering:
+The `index.md` has a note contradicting the new ordering. Let mefix it:
+All remediation edits are complete. Here's a summary of what was fixed across the 7 files:
+
+| File | Fixes |
+|------|-------|
+| `image-references.md` | Removed "default branch" claim (publishes on every push); added GHCR package page URLs for tag discovery; clarified Quay repo names come from CI variables; split log-format section into runner vs verify-service with correct flag placement; clarified verify-image entrypoint/cmd; removed all 3 resolved comments |
+| `verify-service.md` | Fixed CLI summary to place `--log-format` on subcommands; added note about entrypoint/cmd; removed resolved comment |
+| `verify/getting-started.md` | Corrected entrypoint/cmd description (`molt` + default cmd `verify-service`); fixed `validate-config` flag order (`--log-format` on subcommand); fixed `run` flag order; fixed Compose port from `9443:8080` to `9443:8443`; added `verify-service` to Compose command; replaced misleading note; removed all 3 resolved comments |
+| `source-setup.md` | Changed `BASE64_CA_CERT` placeholder to `PERCENT_ENCODED_BASE64_CA_CERT`; removed resolved comment |
+| `source-setup/cockroachdb-setup.md` | Changed trailing slash from hard failure to normalized behavior; reordered operations to match README (rangefeeds → grants → cursor → changefeeds → start runner); added note about retry behavior; removed all 2 resolved comments |
+| `verify/configuration.md` | Corrected entrypoint description to `molt` + default command `verify-service` |
+| `index.md` | Fixed order-of-operations note to match new bootstrap path |
+
+All `<comment>...</comment>` blocks have been removed (7 total across the docs).

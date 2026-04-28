@@ -1,0 +1,23 @@
+Now I'll rewrite `index.md` as the primary navigation hub, and then improve `README.md` to complement it without overlap.
+Now let me improve the detailed sub-pages. I'll start with the source CockroachDB setup page.
+All 17 files have been improved. Here's a summary of the second-pass changes:
+
+**Duplication removed (4 hub pages):**
+- `source-setup.md`, `destination-grants.md`, `runner.md`, `verify-service.md` — converted from full-content duplicates into concise hub pages with quick-reference snippets and links to the detailed sub-pages
+
+**Navigation and structure improved (3 top-level pages):**
+- `index.md` — added ASCII workflow diagram, clearer step numbering, full page index with one-line descriptions
+- `README.md` — streamlined to complement `index.md` without overlap, clearer workflow arrows
+- `image-references.md` — reorganized with clearer sections, added log format table, added cross-links
+
+**Readability and scanability improved (10 detail pages):**
+- `cockroachdb-setup.md` — added callout blocks for key warnings, restructured "Order of operations" into numbered flow, added "See also" section
+- `postgresql-grants.md` — added callout for "runner doesn't create DBs/schemas/tables" and for new-table grants, added privilege-purposes table, added "See also"
+- `runner/getting-started.md` — added "Before you begin" numbered prerequisites with cross-links, streamlined step flow, added "See also" section
+- `runner/configuration.md` — added rules callout blocks for webhook mode and destination forms, added `tls.mode` summary table, added "See also"
+- `runner/endpoints.md` — added "See also" section with cross-links
+- `verify/getting-started.md` — added callout about entrypoint command, added "See also" section
+- `verify/configuration.md` — added sslmode table, added rules callout blocks, added "See also"
+- `verify/job-lifecycle.md` — key constraints now in callout blocks, added metrics prefix mention, added "See also"
+- `tls-reference.md` — added rules callout blocks per section, added "See also" with cross-links
+- `troubleshooting.md` — added cross-link callouts to relevant detail pages per error section

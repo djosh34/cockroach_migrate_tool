@@ -1,0 +1,1737 @@
+Now I have comprehensive understanding of the codebase. Let me create the doAll 7 files are wAll 11 documentation files are written. Here is the file manifest with complete contents for every file:
+
+=== FILE: docs/public_image_operator_guide/index.md ===
+```markdown
+# Operator Guide: Published Images
+
+This guide covers everything an operator needs to deploy and run the CockroachDB-to-PostgreSQL migration tool from its published Docker images, end to end.
+
+## Image References
+
+All images are published on GHCR. Quay mirrors the same images but is not the primary source.
+
+| Image | Primary reference | Mirror |
+| --- | --- | --- |
+| Runner | `ghcr.io/<owner>/runner-image:<git-sha>` | `quay.io/<org>/runner-image:<git-sha>` |
+| Verify | `ghcr.io/<owner>/verify-image:<git-sha>` | `quay.io/<org>/verify-image:<git-sha>` |
+
+Replace `<owner>` with the GitHub repository owner and `<git-sha>` with the full commit SHA of the published build. Both images are multi-platform (amd64 and arm64).
+
+Example:
+
+```bash
+export GITHUB_OWNER=djosh34
+export IMAGE_TAG=abc123def4567890abc123def4567890abc1234
+
+docker pull "ghcr.io/${GITHUB_OWNER}/runner-image:${IMAGE_TAG}"
+docker pull "ghcr.io/${GITHUB_OWNER}/verify-image:${IMAGE_TAG}"
+```
+
+## Operator Path
+
+Follow these steps in order:
+
+1. **Prepare source CockroachDB** — Enable rangefeeds, capture cursors, create changefeeds. ([CockroachDB source setup](./source-setup/cockroachdb-setup.md))
+2. **Prepare destination PostgreSQL** — Grant the runtime role access to databases, schemas, and tables. ([PostgreSQL destination grants](./destination-setup/postgresql-grants.md))
+3. **Write and run runner config** — Validate and start the runner image. ([Runner getting started](./runner/getting-started.md))
+4. **Write and run verify-service config** — Validate and start the verify-service image. ([Verify getting started](./verify/getting-started.md))
+5. **Start, poll, and stop verify jobs** — Operate the verify API lifecycle. ([Verify job lifecycle](./verify/job-lifecycle.md))
+
+## Section Index
+
+| Page | What it covers |
+| --- | --- |
+| [Runner getting started](./runner/getting-started.md) | Pull the image, write config, validate, and run |
+| [Runner configuration](./runner/configuration.md) | Full YAML reference for runner config |
+| [Runner endpoints](./runner/endpoints.md) | HTTP endpoints exposed by the runner |
+| [Verify getting started](./verify/getting-started.md) | Pull the image, write config, validate, and run |
+| [Verify configuration](./verify/configuration.md) | Full YAML reference for verify-service config |
+| [Verify job lifecycle](./verify/job-lifecycle.md) | Start, poll, and stop verify jobs via the HTTP API |
+| [CockroachDB source setup](./source-setup/cockroachdb-setup.md) | Source-side SQL: rangefeeds, cursors, changefeeds |
+| [PostgreSQL destination grants](./destination-setup/postgresql-grants.md) | Destination-side SQL: database, schema, and table grants |
+| [TLS reference](./tls-reference.md) | TLS configuration for all components |
+| [Troubleshooting](./troubleshooting.md) | Common setup failures and their fixes |
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/runner/getting-started.md ===
+```markdown
+# Runner: Getting Started
+
+This page walks you through pulling the runner image, writing its configuration, validating it, and starting the runtime.
+
+## Before You Begin
+
+Make sure you have completed these steps first:
+
+- [CockroachDB source setup](../source-setup/cockroachdb-setup.md) — rangefeeds enabled, cursors captured, changefeeds created.
+- [PostgreSQL destination grants](../destination-setup/postgresql-grants.md) — the runtime role has `CONNECT`, `CREATE`, `USAGE`, and `SELECT`/`INSERT`/`UPDATE`/`DELETE` on every mapped table.
+
+The runner refuses to start correctly if changefeeds are not already pointing at it, or if the destination role cannot connect and write.
+
+## 1. Pull the Image
+
+```bash
+export GITHUB_OWNER=<owner>
+export IMAGE_TAG=<published-commit-sha>
+export RUNNER_IMAGE="ghcr.io/${GITHUB_OWNER}/runner-image:${IMAGE_TAG}"
+
+docker pull "${RUNNER_IMAGE}"
+```
+
+## 2. Write Configuration
+
+Create `config/runner.yml`. The minimal configuration for an HTTPS webhook listener is:
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+        - public.orders
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+```
+
+For a complete field reference, see [Runner configuration](./configuration.md).
+
+### HTTP mode (local development only)
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8080
+  mode: http
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+    destination:
+      url: postgresql://migration_user_a:runner-secret-a@pg-a:5432/app_a
+```
+
+## 3. Validate Configuration
+
+Always validate before running. Offline validation checks config structure and field values:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${RUNNER_IMAGE}" \
+  validate-config --config /config/runner.yml
+```
+
+To additionally verify that each destination database is reachable and every mapped table exists, add `--deep`:
+
+```bash
+docker run --rm \
+  --network host \
+  -v "$(pwd)/config:/config:ro" \
+  "${RUNNER_IMAGE}" \
+  validate-config --config /config/runner.yml --deep
+```
+
+`--deep` requires network access to the destination databases. The plain `validate-config` command is fully offline.
+
+## 4. Run
+
+```bash
+docker run --rm \
+  -p 8443:8443 \
+  -v "$(pwd)/config:/config:ro" \
+  "${RUNNER_IMAGE}" \
+  run --config /config/runner.yml
+```
+
+For structured JSON logs, add `--log-format json`:
+
+```bash
+docker run --rm \
+  -p 8443:8443 \
+  -v "$(pwd)/config:/config:ro" \
+  "${RUNNER_IMAGE}" \
+  run --log-format json --config /config/runner.yml
+```
+
+## 5. Confirm It Is Running
+
+Check the health endpoint:
+
+```bash
+curl -k https://localhost:8443/healthz
+```
+
+For HTTP mode:
+
+```bash
+curl http://localhost:8080/healthz
+```
+
+See [Runner endpoints](./endpoints.md) for all available endpoints.
+
+## Docker Compose
+
+Save as `runner.compose.yml`:
+
+```yaml
+services:
+  runner:
+    image: "${RUNNER_IMAGE}"
+    network_mode: bridge
+    ports:
+      - "${RUNNER_HTTPS_PORT:-8443}:8443"
+    configs:
+      - source: runner-config
+        target: /config/runner.yml
+      - source: runner-server-cert
+        target: /config/certs/server.crt
+      - source: runner-server-key
+        target: /config/certs/server.key
+    command:
+      - run
+      - --log-format
+      - json
+      - --config
+      - /config/runner.yml
+
+configs:
+  runner-config:
+    file: ./config/runner.yml
+  runner-server-cert:
+    file: ./config/certs/server.crt
+  runner-server-key:
+    file: ./config/certs/server.key
+```
+
+```bash
+docker compose -f runner.compose.yml run --rm runner validate-config --config /config/runner.yml
+docker compose -f runner.compose.yml up runner
+```
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/runner/configuration.md ===
+```markdown
+# Runner: Configuration Reference
+
+The runner reads a single YAML configuration file. Pass its path with `--config <PATH>`.
+
+## Top-Level Structure
+
+```yaml
+webhook: ...
+reconcile: ...
+mappings:
+  - id: ...
+    source: ...
+    destination: ...
+```
+
+All three top-level keys (`webhook`, `reconcile`, `mappings`) are required.
+
+## `webhook`
+
+Controls the HTTPS/HTTP listener that receives CockroachDB changefeed webhook batches.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bind_addr` | string | yes | Host and port to bind, e.g. `0.0.0.0:8443` or `127.0.0.1:8080` |
+| `mode` | string | no | `http` or `https`. Defaults to `https` if omitted. |
+| `tls` | object | yes when `mode: https` | TLS configuration. Must not appear when `mode: http`. |
+
+### `webhook.tls`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cert_path` | path | yes | Server certificate file path |
+| `key_path` | path | yes | Server private key file path |
+| `client_ca_path` | path | no | CA certificate to require and verify client certificates (mTLS). Omit for plain HTTPS. |
+
+### Examples
+
+HTTPS (production):
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+```
+
+HTTPS with mTLS:
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+```
+
+HTTP (development only):
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8080
+  mode: http
+```
+
+## `reconcile`
+
+Controls how often the runner performs a reconciliation pass over the destination tables.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `interval_secs` | integer | yes | Seconds between reconciliation passes. Must be greater than zero. |
+
+```yaml
+reconcile:
+  interval_secs: 30
+```
+
+## `mappings`
+
+A list of one or more mapping objects. Each mapping ties one source CockroachDB database and set of tables to one destination PostgreSQL database.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Stable identifier used in the ingest route `/ingest/<id>`. Must be unique across all mappings. |
+| `source` | object | yes | Source CockroachDB database and tables. |
+| `destination` | object | yes | Destination PostgreSQL connection. |
+
+### `source`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `database` | string | yes | Source CockroachDB database name. |
+| `tables` | list of strings | yes | Schema-qualified table names, e.g. `public.customers`. Must contain at least one entry. Must be unique within a mapping. |
+
+```yaml
+source:
+  database: demo_a
+  tables:
+    - public.customers
+    - public.orders
+```
+
+### `destination`
+
+The destination can be specified in two mutually exclusive forms: **URL** or **decomposed fields**. Never mix them.
+
+#### URL form
+
+```yaml
+destination:
+  url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a
+```
+
+For TLS connections, add `sslmode` and related query parameters:
+
+```yaml
+destination:
+  url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a?sslmode=verify-ca&sslrootcert=/config/certs/destination-ca.crt&sslcert=/config/certs/destination-client.crt&sslkey=/config/certs/destination-client.key
+```
+
+#### Decomposed form
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `host` | string | yes | PostgreSQL host |
+| `port` | integer | yes | PostgreSQL port |
+| `database` | string | yes | Database name |
+| `user` | string | yes | Login role |
+| `password` | string | yes | Login password |
+| `tls` | object | no | TLS configuration for the destination connection |
+
+```yaml
+destination:
+  host: pg-a.example.internal
+  port: 5432
+  database: app_a
+  user: migration_user_a
+  password: runner-secret-a
+```
+
+#### `destination.tls` (decomposed form only)
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mode` | string | yes | One of: `require`, `verify-ca`, `verify-full` |
+| `ca_cert_path` | path | required when `mode` is `verify-ca` or `verify-full` | CA certificate to verify the server certificate |
+| `client_cert_path` | path | no | Client certificate for mTLS to the destination |
+| `client_key_path` | path | no | Client key for mTLS; must appear together with `client_cert_path` |
+
+```yaml
+destination:
+  host: pg-a.example.internal
+  port: 5432
+  database: app_a
+  user: migration_user_a
+  password: runner-secret-a
+  tls:
+    mode: verify-full
+    ca_cert_path: /config/certs/destination-ca.crt
+    client_cert_path: /config/certs/destination-client.crt
+    client_key_path: /config/certs/destination-client.key
+```
+
+## CLI Reference
+
+| Command | Required flags | Optional flags |
+| --- | --- | --- |
+| `validate-config` | `--config <PATH>` | `--deep`, `--log-format text\|json` |
+| `run` | `--config <PATH>` | `--log-format text\|json` |
+
+- `validate-config` without `--deep` is offline. It checks config structure and field values.
+- `validate-config --deep` additionally verifies each destination database is reachable and that every mapped table exists.
+- `--log-format json` outputs structured JSON logs on stderr. Default is `text`.
+
+## Full Example
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+reconcile:
+  interval_secs: 30
+mappings:
+  - id: app-a
+    source:
+      database: demo_a
+      tables:
+        - public.customers
+        - public.orders
+    destination:
+      host: pg-a.example.internal
+      port: 5432
+      database: app_a
+      user: migration_user_a
+      password: runner-secret-a
+      tls:
+        mode: verify-full
+        ca_cert_path: /config/certs/destination-ca.crt
+        client_cert_path: /config/certs/destination-client.crt
+        client_key_path: /config/certs/destination-client.key
+  - id: app-b
+    source:
+      database: demo_b
+      tables:
+        - public.invoices
+    destination:
+      url: postgresql://migration_user_b:runner-secret-b@pg-b.example.internal:5432/app_b?sslmode=verify-ca&sslrootcert=/config/certs/destination-ca.crt
+```
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/runner/endpoints.md ===
+```markdown
+# Runner: HTTP Endpoints
+
+The runner exposes three HTTP endpoints on the address configured in `webhook.bind_addr`.
+
+## Health Check
+
+```
+GET /healthz
+```
+
+Returns `200 OK` when the runner process is alive and ready.
+
+```bash
+curl -k https://runner.example.internal:8443/healthz
+```
+
+Use this for container health checks, load-balancer probes, and readiness gates.
+
+## Metrics
+
+```
+GET /metrics
+```
+
+Returns Prometheus-formatted metrics as `text/plain`.
+
+```bash
+curl -k https://runner.example.internal:8443/metrics
+```
+
+## Ingest
+
+```
+POST /ingest/{mapping_id}
+```
+
+This is the endpoint that CockroachDB changefeeds post to. The route contract is exactly `/ingest/{mapping_id}`, where `{mapping_id}` matches the `id` field in a runner mapping.
+
+CockroachDB changefeeds send batches to this endpoint automatically. You do not call it manually under normal operation.
+
+### Request format
+
+Content-Type: `application/json`
+
+A row batch:
+
+```json
+{
+  "length": 2,
+  "payload": [
+    {
+      "after": {"id": 1, "email": "first@example.com"},
+      "key": {"id": 1},
+      "op": "c",
+      "source": {"database_name": "demo_a", "schema_name": "public", "table_name": "customers"}
+    },
+    {
+      "key": {"id": 2},
+      "op": "d",
+      "source": {"database_name": "demo_a", "schema_name": "public", "table_name": "customers"}
+    }
+  ]
+}
+```
+
+A resolved watermark:
+
+```json
+{"resolved": "1776526353000000000.0000000000"}
+```
+
+### Response codes
+
+| Status | Meaning |
+| --- | --- |
+| `200 OK` | Batch accepted |
+| `400 Bad Request` | Malformed batch (e.g. length mismatch) |
+| `404 Not Found` | Unknown `mapping_id` |
+| `500 Internal Server Error` | Processing failure |
+
+### Manual test
+
+You can send a test batch to verify the ingest path is wired end to end:
+
+```bash
+curl -k -X POST \
+  -H 'content-type: application/json' \
+  -d '{"length":1,"payload":[{"after":{"id":1,"name":"test"},"key":{"id":1},"op":"c","source":{"database_name":"demo_a","schema_name":"public","table_name":"customers"}}]}' \
+  https://localhost:8443/ingest/app-a
+```
+
+A `200` response confirms the runner received the batch for the `app-a` mapping.
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/verify/getting-started.md ===
+```markdown
+# Verify-Service: Getting Started
+
+This page walks you through pulling the verify-service image, writing its configuration, validating it, and starting the API.
+
+## 1. Pull the Image
+
+```bash
+export GITHUB_OWNER=<owner>
+export IMAGE_TAG=<published-commit-sha>
+export VERIFY_IMAGE="ghcr.io/${GITHUB_OWNER}/verify-image:${IMAGE_TAG}"
+
+docker pull "${VERIFY_IMAGE}"
+```
+
+## 2. Write Configuration
+
+Create `config/verify-service.yml`. The entrypoint command is `verify-service`.
+
+Minimal HTTP listener configuration:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8080
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+  destination:
+    url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+```
+
+HTTPS listener with optional mTLS:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
+  destination:
+    url: postgresql://verify_target:secret@destination.internal:5432/appdb?sslmode=verify-ca
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+```
+
+For a complete field reference, see [Verify configuration](./configuration.md).
+
+## 3. Validate Configuration
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${VERIFY_IMAGE}" \
+  verify-service validate-config --config /config/verify-service.yml
+```
+
+Add `--log-format json` for structured logs:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/config:/config:ro" \
+  "${VERIFY_IMAGE}" \
+  verify-service validate-config --log-format json --config /config/verify-service.yml
+```
+
+## 4. Run
+
+```bash
+docker run --rm \
+  -p 8080:8080 \
+  -v "$(pwd)/config:/config:ro" \
+  "${VERIFY_IMAGE}" \
+  verify-service run --config /config/verify-service.yml
+```
+
+For HTTPS with mTLS, mount the certificates and adjust the port mapping:
+
+```bash
+docker run --rm \
+  -p 9443:8443 \
+  -v "$(pwd)/config:/config:ro" \
+  "${VERIFY_IMAGE}" \
+  verify-service run --log-format json --config /config/verify-service.yml
+```
+
+### CLI Reference
+
+The entrypoint is `verify-service`. Subcommands:
+
+| Subcommand | Required flags | Optional flags |
+| --- | --- | --- |
+| `validate-config` | `--config <path>` | `--log-format text\|json` |
+| `run` | `--config <path>` | `--log-format text\|json` |
+
+## 5. Confirm It Is Running
+
+```bash
+curl -k https://localhost:9443/metrics
+```
+
+For HTTP:
+
+```bash
+curl http://localhost:8080/metrics
+```
+
+The OpenAPI default URL is `http://localhost:8080`, but the real host and port come from `listener.bind_addr`.
+
+## 6. Start a Verify Job
+
+See [Verify job lifecycle](./job-lifecycle.md) for the full job workflow. The quick version:
+
+```bash
+export VERIFY_API="https://localhost:9443"
+
+# Start
+JOB_ID=$(curl --silent --show-error --insecure \
+  -H 'content-type: application/json' \
+  -d '{}' \
+  "${VERIFY_API}/jobs" | jq -r '.job_id')
+
+# Poll
+curl --silent --show-error --insecure "${VERIFY_API}/jobs/${JOB_ID}"
+
+# Stop (if needed)
+curl --silent --show-error --insecure \
+  -H 'content-type: application/json' \
+  -d '{}' \
+  -X POST "${VERIFY_API}/jobs/${JOB_ID}/stop"
+```
+
+## Docker Compose
+
+Save as `verify.compose.yml`:
+
+```yaml
+services:
+  verify:
+    image: "${VERIFY_IMAGE}"
+    network_mode: bridge
+    ports:
+      - "${VERIFY_HTTPS_PORT:-9443}:8080"
+    configs:
+      - source: verify-service-config
+        target: /config/verify-service.yml
+      - source: verify-source-ca
+        target: /config/certs/source-ca.crt
+      - source: verify-source-client-cert
+        target: /config/certs/source-client.crt
+      - source: verify-source-client-key
+        target: /config/certs/source-client.key
+      - source: verify-destination-ca
+        target: /config/certs/destination-ca.crt
+      - source: verify-client-ca
+        target: /config/certs/client-ca.crt
+      - source: verify-server-cert
+        target: /config/certs/server.crt
+      - source: verify-server-key
+        target: /config/certs/server.key
+    command:
+      - run
+      - --log-format
+      - json
+      - --config
+      - /config/verify-service.yml
+
+configs:
+  verify-service-config:
+    file: ./config/verify-service.yml
+  verify-source-ca:
+    file: ./config/certs/source-ca.crt
+  verify-source-client-cert:
+    file: ./config/certs/source-client.crt
+  verify-source-client-key:
+    file: ./config/certs/source-client.key
+  verify-destination-ca:
+    file: ./config/certs/destination-ca.crt
+  verify-client-ca:
+    file: ./config/certs/client-ca.crt
+  verify-server-cert:
+    file: ./config/certs/server.crt
+  verify-server-key:
+    file: ./config/certs/server.key
+```
+
+```bash
+docker compose -f verify.compose.yml up verify
+```
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/verify/configuration.md ===
+```markdown
+# Verify-Service: Configuration Reference
+
+The verify-service reads a single YAML configuration file. Pass its path with `--config <path>`. The entrypoint command is `verify-service`.
+
+## Top-Level Structure
+
+```yaml
+listener: ...
+verify: ...
+```
+
+Both keys are required.
+
+## `listener`
+
+Controls the HTTP(S) listener for the verify API.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `bind_addr` | string | yes | Host and port, e.g. `0.0.0.0:8080` or `0.0.0.0:8443` |
+| `tls` | object | no | TLS configuration. Omit for plain HTTP. |
+
+### `listener.tls`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cert_path` | path | yes | Server certificate file path |
+| `key_path` | path | yes | Server private key file path |
+| `client_ca_path` | path | no | CA certificate to verify client certificates (mTLS). Omit for plain HTTPS. |
+
+When `listener.tls` is present, `cert_path` and `key_path` are both required. When `listener.tls` is omitted, the listener serves plain HTTP.
+
+### Examples
+
+HTTP listener:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8080
+```
+
+HTTPS listener:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+```
+
+HTTPS with mTLS:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+```
+
+## `verify`
+
+Controls the source and destination database connections and optional features.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | object | yes | Source database connection |
+| `destination` | object | yes | Destination database connection |
+| `raw_table_output` | boolean | no | Enable the `/tables/raw` endpoint. Defaults to `false`. |
+
+### `verify.source` and `verify.destination`
+
+Both use the same shape:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `url` | string | yes | PostgreSQL connection URL with `sslmode` query parameter |
+| `tls` | object | no | TLS certificate paths |
+
+The `url` must use the `postgres://` or `postgresql://` scheme.
+
+```yaml
+source:
+  url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+  tls:
+    ca_cert_path: /config/certs/source-ca.crt
+    client_cert_path: /config/certs/source-client.crt
+    client_key_path: /config/certs/source-client.key
+destination:
+  url: postgresql://verify_target:secret@destination.internal:5432/appdb?sslmode=verify-ca
+  tls:
+    ca_cert_path: /config/certs/destination-ca.crt
+```
+
+### `tls` under `source` or `destination`
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `ca_cert_path` | path | required when `sslmode` is `verify-ca` or `verify-full` | CA certificate to verify the server certificate |
+| `client_cert_path` | path | no | Client certificate for mTLS |
+| `client_key_path` | path | no | Client key for mTLS; must appear together with `client_cert_path` |
+
+When `sslmode=verify-ca` or `sslmode=verify-full` appears in `url`, `ca_cert_path` is required.
+
+`client_cert_path` and `client_key_path` must always be specified as a pair.
+
+Passwordless connections using client certificates are supported. Include the certificate paths in `tls` and omit or blank the password in the URL.
+
+### Passwordless example
+
+```yaml
+source:
+  url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+  tls:
+    ca_cert_path: /config/certs/source-ca.crt
+    client_cert_path: /config/certs/source-client.crt
+    client_key_path: /config/certs/source-client.key
+```
+
+## Full Example
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+verify:
+  raw_table_output: true
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
+  destination:
+    url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+      client_cert_path: /config/certs/destination-client.crt
+      client_key_path: /config/certs/destination-client.key
+```
+
+## CLI Reference
+
+The entrypoint is `verify-service`:
+
+| Subcommand | Required flags | Optional flags |
+| --- | --- | --- |
+| `validate-config` | `--config <path>` | `--log-format text\|json` |
+| `run` | `--config <path>` | `--log-format text\|json` |
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/verify/job-lifecycle.md ===
+```markdown
+# Verify-Service: Job Lifecycle
+
+The verify-service exposes an HTTP API to start, poll, and stop verification jobs. This page describes the full job lifecycle and every endpoint.
+
+## Key Constraints
+
+- **Only one job can run at a time.** Starting a second job while one is already running returns `409 Conflict`.
+- **Only the most recent completed job is retained.** Starting a new job evicts any previous completed job.
+- **Job state is in-memory.** If the verify-service process restarts, all job IDs return `404 Not Found`.
+
+## Endpoints
+
+### Start a verify job
+
+```
+POST /jobs
+Content-Type: application/json
+```
+
+Request body (optional filters):
+
+```json
+{
+  "include_schema": "^public$",
+  "include_table": "^(accounts|orders)$"
+}
+```
+
+All fields are optional POSIX regular expressions:
+
+| Field | Description |
+| --- | --- |
+| `include_schema` | Include schemas matching this regex |
+| `include_table` | Include tables matching this regex |
+| `exclude_schema` | Exclude schemas matching this regex |
+| `exclude_table` | Exclude tables matching this regex |
+
+To verify everything, send an empty object:
+
+```json
+{}
+```
+
+Response on success (`202 Accepted`):
+
+```json
+{"job_id": "job-000001", "status": "running"}
+```
+
+Response when a job is already running (`409 Conflict`):
+
+```json
+{"error": {"category": "job_state", "code": "job_already_running", "message": "a verify job is already running"}}
+```
+
+### Poll job status
+
+```
+GET /jobs/{job_id}
+```
+
+```bash
+curl --silent --show-error --insecure "${VERIFY_API}/jobs/${JOB_ID}"
+```
+
+Response while running (`200 OK`):
+
+```json
+{"job_id": "job-000001", "status": "running"}
+```
+
+Response on success (`200 OK`):
+
+```json
+{
+  "job_id": "job-000001",
+  "status": "succeeded",
+  "result": {
+    "summary": {
+      "tables_verified": 1,
+      "tables_with_data": 1,
+      "has_mismatches": false
+    },
+    "table_summaries": [
+      {
+        "schema": "public",
+        "table": "accounts",
+        "num_verified": 7,
+        "num_success": 7,
+        "num_missing": 0,
+        "num_mismatch": 0,
+        "num_column_mismatch": 0,
+        "num_extraneous": 0,
+        "num_live_retry": 0
+      }
+    ],
+    "findings": [],
+    "mismatch_summary": {
+      "has_mismatches": false,
+      "affected_tables": [],
+      "counts_by_kind": {}
+    }
+  }
+}
+```
+
+Response on failure — mismatches detected (`200 OK`):
+
+```json
+{
+  "job_id": "job-000001",
+  "status": "failed",
+  "failure": {
+    "category": "mismatch",
+    "code": "mismatch_detected",
+    "message": "verify detected mismatches in 1 table",
+    "details": [{"reason": "mismatch detected for public.accounts"}]
+  },
+  "result": {
+    "summary": {
+      "tables_verified": 1,
+      "tables_with_data": 1,
+      "has_mismatches": true
+    },
+    "table_summaries": [
+      {
+        "schema": "public",
+        "table": "accounts",
+        "num_verified": 7,
+        "num_success": 6,
+        "num_missing": 0,
+        "num_mismatch": 0,
+        "num_column_mismatch": 1,
+        "num_extraneous": 0,
+        "num_live_retry": 0
+      }
+    ],
+    "findings": [
+      {
+        "kind": "mismatching_column",
+        "schema": "public",
+        "table": "accounts",
+        "primary_key": {"id": "101"},
+        "mismatching_columns": ["balance"],
+        "source_values": {"balance": "17"},
+        "destination_values": {"balance": "23"},
+        "info": ["balance mismatch"]
+      }
+    ],
+    "mismatch_summary": {
+      "has_mismatches": true,
+      "affected_tables": [{"schema": "public", "table": "accounts"}],
+      "counts_by_kind": {"mismatching_column": 1}
+    }
+  }
+}
+```
+
+Response on failure — source access error (`200 OK`):
+
+```json
+{
+  "job_id": "job-000001",
+  "status": "failed",
+  "failure": {
+    "category": "source_access",
+    "code": "connection_failed",
+    "message": "source connection failed: dial tcp 127.0.0.1:5432: connect: connection refused",
+    "details": [{"reason": "dial tcp 127.0.0.1:5432: connect: connection refused"}]
+  }
+}
+```
+
+Response when job ID not found (`404 Not Found`):
+
+```json
+{"error": {"category": "job_state", "code": "job_not_found", "message": "job not found"}}
+```
+
+### Stop a running job
+
+```
+POST /jobs/{job_id}/stop
+Content-Type: application/json
+```
+
+The request body must be an empty JSON object: `{}`
+
+```bash
+curl --silent --show-error --insecure \
+  -H 'content-type: application/json' \
+  -d '{}' \
+  -X POST "${VERIFY_API}/jobs/${JOB_ID}/stop"
+```
+
+Immediate response (`200 OK`):
+
+```json
+{"job_id": "job-000001", "status": "stopping"}
+```
+
+The job transitions from `stopping` to `stopped` asynchronously. Poll `GET /jobs/{job_id}` until `status` is `stopped`.
+
+### Metrics
+
+```
+GET /metrics
+```
+
+Returns Prometheus-formatted metrics as `text/plain`.
+
+```bash
+curl --silent --show-error --insecure "${VERIFY_API}/metrics"
+```
+
+## Job States
+
+| Status | Meaning | Terminal |
+| --- | --- | --- |
+| `running` | Job is actively verifying | no |
+| `stopping` | Stop requested, winding down | no |
+| `succeeded` | Verification completed, no mismatches | yes |
+| `failed` | Verification completed with mismatches or an error | yes |
+| `stopped` | Job was cancelled by operator | yes |
+
+## Interpreting Results
+
+1. Check `result.summary.has_mismatches` first.
+2. If `has_mismatches` is `true`, inspect `result.mismatch_summary.affected_tables` for the list of affected tables.
+3. For each affected table, check `result.findings` for per-row detail including `mismatching_columns`, `source_values`, and `destination_values`.
+
+## Error Categories
+
+| Category | When it occurs |
+| --- | --- |
+| `request_validation` | Invalid filter, unknown field, or body too large |
+| `job_state` | Job already running, job not found |
+| `source_access` | Cannot connect to source database |
+| `mismatch` | Mismatches were detected during verification |
+| `verify_execution` | Internal verify execution failure |
+
+## Obsolete Job IDs After Restart
+
+Because job state lives in memory, restarting the verify-service process means all previous job IDs return `404 Not Found`. There is no persistent job history.
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/source-setup/cockroachdb-setup.md ===
+```markdown
+# CockroachDB Source Setup
+
+You must prepare the source CockroachDB cluster before starting the runner. The runner only receives webhook payloads — it does not create changefeeds for you.
+
+## What You Need
+
+- CockroachDB SQL access with permission to change cluster settings and create changefeeds.
+- The externally reachable HTTPS URL for the runner webhook, e.g. `runner.example.internal:8443`.
+- The CA certificate in PEM format that CockroachDB will trust when posting to the runner webhook.
+- The mapping IDs and source tables from your runner configuration.
+- A chosen resolved timestamp interval, e.g. `5s`.
+
+## Step 1: Enable Rangefeeds
+
+Run once per cluster, before any changefeed creation:
+
+```sql
+SET CLUSTER SETTING kv.rangefeed.enabled = true;
+```
+
+This is a cluster-wide setting. It only needs to be run once.
+
+## Step 2: Capture a Cursor Per Source Database
+
+Run this once per source database, immediately before creating changefeeds for that database:
+
+```sql
+USE demo_a;
+SELECT cluster_logical_timestamp() AS changefeed_cursor;
+```
+
+The result is a decimal value like `1745877420457561000.0000000000`. Paste this exact value into every `CREATE CHANGEFEED` statement for that database.
+
+**Important:** Capture the cursor once per database and reuse it across all mappings in that database. This keeps changefeeds aligned on the same start boundary.
+
+## Step 3: Create One Changefeed Per Mapping
+
+For each mapping in the runner config, create one changefeed:
+
+```sql
+CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders
+INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert=LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0t...%3D%3D'
+WITH cursor = '1745877420457561000.0000000000',
+     initial_scan = 'yes',
+     envelope = 'enriched',
+     resolved = '5s';
+```
+
+### Required changefeed options
+
+| Option | Value | Why |
+| --- | --- | --- |
+| `cursor` | The decimal returned by `cluster_logical_timestamp()` | Starts the changefeed at a consistent point |
+| `initial_scan` | `'yes'` | Snapshots existing data before live streaming |
+| `envelope` | `'enriched'` | The webhook payload format the runner expects |
+| `resolved` | An interval such as `'5s'` | Controls how often resolved watermarks are emitted |
+
+### Sink URL format
+
+The sink URL always follows this shape:
+
+```
+webhook-<base_url>/ingest/<mapping_id>?ca_cert=<percent-encoded-base64-cert>
+```
+
+- `<base_url>` is the externally reachable runner URL, e.g. `https://runner.example.internal:8443`.
+- `<mapping_id>` must match the `id` field in the runner mapping config exactly.
+- `<percent-encoded-base64-cert>` is the PEM-encoded CA certificate, base64-encoded, then percent-encoded for the URL query string.
+
+**Do not** include a trailing slash on the base URL. The runner appends `/ingest/<mapping_id>` exactly.
+
+## Worked Example: Two Databases, Two Mappings
+
+```sql
+-- Connect to: postgresql://root@crdb.example.internal:26257/defaultdb?sslmode=require
+
+-- Step 1: Enable rangefeeds (cluster-wide, run once)
+SET CLUSTER SETTING kv.rangefeed.enabled = true;
+
+-- Step 2: Database demo_a
+USE demo_a;
+SELECT cluster_logical_timestamp() AS changefeed_cursor;
+-- Suppose the result is 1745877420457561000.0000000000
+
+-- Step 3: Mapping app-a
+CREATE CHANGEFEED FOR TABLE demo_a.public.customers, demo_a.public.orders
+INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert=LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0t...%3D%3D'
+WITH cursor = '1745877420457561000.0000000000',
+     initial_scan = 'yes',
+     envelope = 'enriched',
+     resolved = '5s';
+
+-- Step 2: Database demo_b
+USE demo_b;
+SELECT cluster_logical_timestamp() AS changefeed_cursor;
+-- Suppose the result is 1745877420459999000.0000000000
+
+-- Step 3: Mapping app-b
+CREATE CHANGEFEED FOR TABLE demo_b.public.invoices, demo_b.public.invoice_lines
+INTO 'webhook-https://runner.example.internal:8443/ingest/app-b?ca_cert=LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0t...%3D%3D'
+WITH cursor = '1745877420459999000.0000000000',
+     initial_scan = 'yes',
+     envelope = 'enriched',
+     resolved = '5s';
+```
+
+## Checklist
+
+- [ ] `kv.rangefeed.enabled = true` is set on the source cluster.
+- [ ] One cursor captured per source database before creating changefeeds.
+- [ ] Every `CREATE CHANGEFEED` uses `cursor`, `initial_scan = 'yes'`, `envelope = 'enriched'`, and `resolved`.
+- [ ] Each sink URL ends with `/ingest/<mapping_id>` and the mapping ID matches the runner config.
+- [ ] Table names in the changefeed are fully qualified as `database.schema.table`.
+- [ ] The `ca_cert` query parameter contains properly percent-encoded base64 certificate data.
+- [ ] The runner HTTPS endpoint is reachable from the source cluster.
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/destination-setup/postgresql-grants.md ===
+```markdown
+# PostgreSQL Destination Grants
+
+You must grant the runtime role access to each destination PostgreSQL database before starting the runner. The runner creates its own helper schema and tracking tables after these grants are in place.
+
+## What You Need
+
+- PostgreSQL SQL access as the database owner, schema owner, table owner, or a superuser.
+- The destination database name for each mapping.
+- The runtime login role that the runner uses to connect.
+- Every mapped destination schema and table.
+
+The runner does not create the destination database, schemas, or tables. It only creates the `_cockroach_migration_tool` helper schema and its internal tracking tables.
+
+## Step 1: Grant Database Access
+
+Run once per destination database and runtime role:
+
+```sql
+GRANT CONNECT, CREATE ON DATABASE app_a TO migration_user_a;
+```
+
+- `CONNECT` lets the runtime log into the database.
+- `CREATE` lets the runtime create `_cockroach_migration_tool` inside that database.
+
+## Step 2: Grant Schema Usage
+
+Run once per mapped destination schema and runtime role:
+
+```sql
+GRANT USAGE ON SCHEMA public TO migration_user_a;
+```
+
+This lets the runtime role reference tables inside the `public` schema.
+
+## Step 3: Grant Table DML Privileges
+
+Run once per mapped destination table and runtime role:
+
+```sql
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.orders TO migration_user_a;
+```
+
+These four privileges cover all DML the reconciliation engine needs: read destination rows, insert new rows, update existing rows, and delete rows.
+
+## Worked Example: Two Databases, Two Mappings
+
+```sql
+-- Destination database app_a
+GRANT CONNECT, CREATE ON DATABASE app_a TO migration_user_a;
+GRANT USAGE ON SCHEMA public TO migration_user_a;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.customers TO migration_user_a;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.orders TO migration_user_a;
+
+-- Destination database app_b
+GRANT CONNECT, CREATE ON DATABASE app_b TO migration_user_b;
+GRANT USAGE ON SCHEMA public TO migration_user_b;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.invoices TO migration_user_b;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.invoice_lines TO migration_user_b;
+```
+
+## What the Runner Creates
+
+After the grants are in place, the runtime creates these objects itself:
+
+- Schema: `_cockroach_migration_tool`
+- Table: `_cockroach_migration_tool.stream_state`
+- Table: `_cockroach_migration_tool.table_sync_state`
+- Additional helper tables per mapping and mapped source table
+
+You do not need to grant privileges on `_cockroach_migration_tool` ahead of time because the runtime role owns the objects it creates there.
+
+## Checklist
+
+- [ ] Every destination database has `GRANT CONNECT, CREATE ON DATABASE <database> TO <runtime_role>`.
+- [ ] Every mapped schema has `GRANT USAGE ON SCHEMA <schema> TO <runtime_role>`.
+- [ ] Every mapped table has `GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE <schema>.<table> TO <runtime_role>`.
+- [ ] The runtime role exists and can authenticate against the destination PostgreSQL server.
+- [ ] The destination databases, schemas, and tables all exist before the runner starts.
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/tls-reference.md ===
+```markdown
+# TLS Configuration Reference
+
+This page covers every TLS setting across the runner and verify-service. Use it as a lookup when configuring HTTPS listeners, mTLS, or database connections with certificate verification.
+
+## Certificate Mounting Convention
+
+Mount PEM-encoded certificates and keys under `/config/certs/...` inside containers. The config file paths should reference these mount points:
+
+```
+/config/certs/server.crt
+/config/certs/server.key
+/config/certs/client-ca.crt
+/config/certs/destination-ca.crt
+/config/certs/destination-client.crt
+/config/certs/destination-client.key
+/config/certs/source-ca.crt
+/config/certs/source-client.crt
+/config/certs/source-client.key
+```
+
+## Runner Webhook Listener
+
+### HTTP mode (development only)
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8080
+  mode: http
+```
+
+No TLS configuration. Only suitable for trusted local networks.
+
+### HTTPS mode
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+```
+
+The server presents `server.crt` to connecting clients (CockroachDB changefeeds).
+
+### HTTPS with mTLS
+
+```yaml
+webhook:
+  bind_addr: 0.0.0.0:8443
+  mode: https
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+```
+
+The server additionally verifies that connecting clients present a certificate signed by `client-ca.crt`. Use this when CockroachDB changefeeds are configured with client certificates.
+
+### Key points
+
+- When `mode: https`, the `tls` block is required.
+- When `mode: http`, the `tls` block must not appear.
+- `mode` defaults to `https` if omitted.
+- `client_ca_path` is always optional. When omitted, the listener does not verify client certificates.
+
+## Runner Destination Connection
+
+The runner connects from the container to the PostgreSQL destination. Two configuration forms are available.
+
+### URL form with sslmode query parameters
+
+```yaml
+destination:
+  url: postgresql://migration_user_a:runner-secret-a@pg-a.example.internal:5432/app_a?sslmode=verify-ca&sslrootcert=/config/certs/destination-ca.crt&sslcert=/config/certs/destination-client.crt&sslkey=/config/certs/destination-client.key
+```
+
+The `sslmode` query parameter controls the TLS level:
+
+| sslmode | Behavior |
+| --- | --- |
+| `disable` | No TLS |
+| `require` | TLS enabled, no server certificate verification |
+| `verify-ca` | TLS enabled, server certificate verified against CA |
+| `verify-full` | TLS enabled, server certificate and hostname verified |
+
+### Decomposed form with explicit tls block
+
+```yaml
+destination:
+  host: pg-a.example.internal
+  port: 5432
+  database: app_a
+  user: migration_user_a
+  password: runner-secret-a
+  tls:
+    mode: verify-full
+    ca_cert_path: /config/certs/destination-ca.crt
+    client_cert_path: /config/certs/destination-client.crt
+    client_key_path: /config/certs/destination-client.key
+```
+
+TLS mode values in the decomposed form:
+
+| mode | Behavior | `ca_cert_path` required |
+| --- | --- | --- |
+| `require` | TLS enabled, no server certificate verification | no |
+| `verify-ca` | TLS enabled, server certificate verified against CA | yes |
+| `verify-full` | TLS enabled, server certificate and hostname verified | yes |
+
+Rules for the decomposed `tls` block:
+
+- `client_cert_path` and `client_key_path` must always appear together.
+- When `mode` is `verify-ca` or `verify-full`, `ca_cert_path` is required.
+
+## Verify-Service Listener
+
+### HTTP listener
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8080
+```
+
+### HTTPS listener
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+```
+
+### mTLS listener
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+```
+
+When `listener.tls` is present, `cert_path` and `key_path` are both required. When `listener.tls` is omitted, the listener serves plain HTTP.
+
+`client_ca_path` is optional. When present, callers must present a client certificate signed by this CA.
+
+## Verify-Service Database Connections
+
+Both `verify.source` and `verify.destination` use the same `url` plus `tls` block shape.
+
+### Source with verify-full and client certificates
+
+```yaml
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
+```
+
+### Destination with verify-ca (CA only)
+
+```yaml
+verify:
+  destination:
+    url: postgresql://verify_target:secret@destination.internal:5432/appdb?sslmode=verify-ca
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+```
+
+### Source with passwordless client certificate auth
+
+```yaml
+verify:
+  source:
+    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    tls:
+      ca_cert_path: /config/certs/source-a.crt
+```
+
+No password in the URL when using client certificate authentication.
+
+### Rules
+
+- When `sslmode=verify-ca` or `sslmode=verify-full` appears in the URL, `ca_cert_path` is required in the `tls` block.
+- `client_cert_path` and `client_key_path` must always appear together.
+
+## Quick Reference: TLS Component Mapping
+
+| Component | Config path | TLS fields |
+| --- | --- | --- |
+| Runner webhook listener | `webhook.mode`, `webhook.tls.*` | `cert_path`, `key_path`, `client_ca_path` (optional) |
+| Runner destination (URL form) | `mappings[].destination.url` | `sslmode`, `sslrootcert`, `sslcert`, `sslkey` in query params |
+| Runner destination (decomposed form) | `mappings[].destination.tls.*` | `mode`, `ca_cert_path`, `client_cert_path`, `client_key_path` |
+| Verify listener | `listener.tls.*` | `cert_path`, `key_path`, `client_ca_path` (optional) |
+| Verify source/destination | `verify.source.tls.*`, `verify.destination.tls.*` | `ca_cert_path`, `client_cert_path`, `client_key_path` |
+```
+
+=== END FILE ===
+
+=== FILE: docs/public_image_operator_guide/troubleshooting.md ===
+```markdown
+# Troubleshooting
+
+This page covers the most common setup failures and how to diagnose them.
+
+## Runner
+
+### `validate-config` fails locally
+
+**Symptom:** `docker run ... validate-config --config /config/runner.yml` exits nonzero with a parse or validation error.
+
+**Checks:**
+
+- All three top-level keys exist: `webhook`, `reconcile`, `mappings`.
+- `webhook.bind_addr` is a valid `host:port` string, e.g. `0.0.0.0:8443`.
+- When `webhook.mode` is `https`, the `webhook.tls` block with `cert_path` and `key_path` is present.
+- When `webhook.mode` is `http`, there is no `webhook.tls` block.
+- `reconcile.interval_secs` is a positive integer.
+- `mappings` contains at least one entry.
+- Each mapping has a unique `id`.
+- Each `mappings[].source.tables` entry is schema-qualified, e.g. `public.customers`, not just `customers`.
+- `mappings[].destination` is either a `url` string alone or decomposed fields (`host`, `port`, `database`, `user`, `password`) optionally with `tls`. Never both.
+- When using the decomposed `tls` block with `mode: verify-ca` or `mode: verify-full`, `ca_cert_path` is set.
+- `client_cert_path` and `client_key_path` always appear together.
+
+### `validate-config --deep` cannot reach destination
+
+**Symptom:** Connection refused or timeout when validating destination connectivity.
+
+**Checks:**
+
+- The Docker container can reach the destination host and port. Use `--network host` if the database is on the host network.
+- The destination PostgreSQL accepts connections from the runner container's IP.
+- `sslmode` is correct. If the database requires TLS, use `verify-ca` or `verify-full` and mount the CA certificate.
+- If using client certificates, both `client_cert_path` and `client_key_path` are mounted in the container and referenced correctly.
+
+### Runner starts but changefeeds get connection refused
+
+**Symptom:** CockroachDB changefeeds fail to post to the runner webhook.
+
+**Checks:**
+
+- The runner is listening on an address reachable from the CockroachDB cluster. `0.0.0.0` is the container default; `127.0.0.1` is only reachable locally.
+- The CockroachDB cluster can resolve the runner hostname and reach the port.
+- The `ca_cert` in the changefeed sink URL is the CA that signed the runner's server certificate, properly percent-encoded.
+- The sink URL uses `webhook-https://` (not `webhook-http://`) when the runner is in HTTPS mode.
+
+### Runner returns 404 Unknown Mapping
+
+**Symptom:** `POST /ingest/<mapping_id>` returns `404`.
+
+**Checks:**
+
+- The `mapping_id` in the changefeed sink URL exactly matches the `id` field in the runner config (case-sensitive).
+- The runner was restarted after the mapping was added to the config.
+
+### Runner returns 400 Bad Request
+
+**Symptom:** `POST /ingest/<mapping_id>` returns `400`.
+
+**Checks:**
+
+- The `length` field in the request body matches the number of entries in the `payload` array.
+- All required fields are present in each payload entry: `key`, `op`, `source` (with `database_name`, `schema_name`, `table_name`), and `after` for `c`, `u`, `r` operations.
+
+## Verify-Service
+
+### `verify-service validate-config` fails
+
+**Symptom:** Config validation exits nonzero.
+
+**Checks:**
+
+- Both `listener` and `verify` keys are present at the top level.
+- `listener.bind_addr` is a valid `host:port` string.
+- If `listener.tls` is present, both `cert_path` and `key_path` are set.
+- `verify.source.url` and `verify.destination.url` use the `postgres://` or `postgresql://` scheme.
+- When `sslmode=verify-ca` or `sslmode=verify-full` is in the URL, the corresponding `tls.ca_cert_path` is set.
+- `client_cert_path` and `client_key_path` always appear as a pair.
+
+### 409 Conflict when starting a job
+
+**Symptom:** `POST /jobs` returns `409 Conflict` with `job_already_running`.
+
+**Cause:** A verify job is already running. Only one job can run at a time.
+
+**Fix:** Either poll `GET /jobs/{job_id}` until the current job finishes, or stop it with `POST /jobs/{job_id}/stop`.
+
+### 404 Not Found for a job ID
+
+**Symptom:** `GET /jobs/{job_id}` returns `404`.
+
+**Cause:** The verify-service process has restarted since the job was created. Job state is in-memory and is lost on restart.
+
+**Fix:** Start a new job.
+
+### Job fails with source_access error
+
+**Symptom:** Job status is `failed` with `failure.category: source_access` and `failure.code: connection_failed`.
+
+**Checks:**
+
+- The verify-service container can reach the source database host and port.
+- The URL in `verify.source.url` is correct, including `sslmode`.
+- All required TLS certificate files are mounted and the paths in `verify.source.tls` match.
+- The source PostgreSQL user has permission to read the tables being verified.
+
+### Job fails with destination_access error
+
+**Symptom:** Same as source_access but for the destination.
+
+**Checks:**
+
+- Same connectivity checks as above, applied to `verify.destination`.
+
+### Job succeeds but reports mismatches
+
+**Symptom:** Job status is `failed` with `failure.category: mismatch` and `result.mismatch_summary.has_mismatches: true`.
+
+**Action:**
+
+1. Check `result.mismatch_summary.affected_tables` for the list of affected tables.
+2. Check `result.findings` for per-row detail including `mismatching_columns`, `source_values`, and `destination_values`.
+3. Decide whether to re-run verification after fixing the data, or accept the mismatches.
+
+## General
+
+### Container cannot access mounted certificates
+
+**Symptom:** "file not found" or "permission denied" on certificate paths.
+
+**Fix:**
+
+- Verify the volume mount: `docker run --rm -v "$(pwd)/config:/config:ro" ...` means local `./config` maps to `/config` inside the container.
+- Verify file permissions. The container process needs read access to all mounted certificates and keys.
+- Check that config paths reference the container mount target (e.g. `/config/certs/server.crt`), not the host path.
+
+### Port already in use
+
+**Symptom:** Runner or verify-service fails to start with "address already in use".
+
+**Fix:**
+
+- Change `webhook.bind_addr` or `listener.bind_addr` to a different port.
+- Or map a different host port in Docker: `-p 9443:8443` instead of `-p 8443:8443`.
+
+### Stale image tag
+
+**Symptom:** Unexpected behavior or missing features after pulling a new image.
+
+**Fix:**
+
+- Docker may cache an old layer. Use `docker pull ghcr.io/<owner>/runner-image:<git-sha>` to force a refresh.
+- Verify the image digest matches the published build.
+```
+
+=== END FILE ===

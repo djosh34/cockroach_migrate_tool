@@ -1,0 +1,16 @@
+**Overall impression:** The docs are well-structured, scanable, and maintain a clear, direct tone. Checklists, constraint callouts, and step-by-step SQL examples make the content easy to follow. The main issues are inconsistent naming and phrasing patterns across files that introduce slight friction when navigating the doc set.
+
+**High-value style suggestions:**
+
+- Standardize page titles that refer to the same component: `Source CockroachDB Setup` vs `CockroachDB Source Setup`, `Destination PostgreSQL Grants` vs `PostgreSQL Destination Grants`, and `Verify Service` vs `Verify-Service` (pick one form and apply it to `verify-service.md`, `verify/getting-started.md`, `verify/configuration.md`, and `verify/job-lifecycle.md`).
+- Standardize cross-reference section headings: some files use `## See also` while others use `## Related pages`; pick one convention.
+- Fix the repeated awkward phrasing describing the verify image entrypoint (`The verify-image entrypoint is molt with default command verify-service`). Rephrase consistently across pages to something like `The verify image's entrypoint is molt and its default command is verify-service.`
+- Use consistent CLI notation: `runner [--log-format text|json] validate-config ...` uses brackets for optionality, but `verify-service validate-config --log-format text\|json --config <path>` does not; align the verify-service examples with the runner's bracket style.
+- Standardize table-of-contents table headers: the first column is labeled `Document` in `README.md`, `Page` in `index.md`, and `Sub-pages` in `runner.md` / `verify-service.md`; use a single label for the same pattern.
+
+**Suggestions to ignore:**
+
+- Minor variations in callout labels (`> **Important:**` vs `> **Note:**` vs `> **Warning:**`).
+- Relative path conventions in internal links (`./` vs `../`).
+- Whether acronyms like GHCR are spelled out on first use.
+- Minor differences in `curl` example flags between the quick-start and job-lifecycle pages.

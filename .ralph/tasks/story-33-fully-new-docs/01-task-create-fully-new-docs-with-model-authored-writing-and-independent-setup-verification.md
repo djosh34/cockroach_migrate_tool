@@ -1,4 +1,4 @@
-## Task: Create fully new docs under a new `./docs/` directory using GLM 5.1 as the sole documentation author <status>not_started</status> <passes>false</passes>
+## Task: Create fully new docs under a new `./docs/` directory using GLM 5.1 as the sole documentation author <status>completed</status> <passes>true</passes>
 
 <description>
 Do not use TDD for this task because it is a documentation and manual verification task, not application code. Never run `cargo`; use Nix-backed validation commands only if local validation is needed.
@@ -82,3 +82,5 @@ Important project rules:
 - [ ] `make check` — passes cleanly, or the task fails with the full failing output recorded.
 - [ ] `make lint` — passes cleanly, or the task fails with the full failing output recorded.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-33-fully-new-docs/01-task-create-fully-new-docs-with-model-authored-writing-and-independent-setup-verification_plans/2026-04-28-fully-new-docs-plan.md</plan>
