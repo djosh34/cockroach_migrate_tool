@@ -41,6 +41,10 @@
           buildInputs = [
             # Add additional build inputs here
           ];
+
+          nativeBuildInputs = [
+            pkgs.postgresql_16
+          ];
         };
 
         # Build *just* the cargo dependencies, so we can reuse
@@ -49,7 +53,7 @@
 
         # Build the actual crate itself, reusing the dependency
         # artifacts from above.
-        my-crate = craneLib.buildPackage (
+        runner-crate = craneLib.buildPackage (
           commonArgs
           // {
             inherit cargoArtifacts;
@@ -60,7 +64,7 @@
       {
         checks = {
           # Build the crate as part of `nix flake check` for convenience
-          inherit my-crate;
+          inherit runner-crate;
 
           # Run clippy (and deny all warnings) on the crate source,
           # again, reusing the dependency artifacts from above.
@@ -68,7 +72,7 @@
           # Note that this is done as a separate derivation so that
           # we can block the CI if there are issues here, but not
           # prevent downstream consumers from building our crate by itself.
-          my-crate-clippy = craneLib.cargoClippy (
+          runner-crate-clippy = craneLib.cargoClippy (
             commonArgs
             // {
               inherit cargoArtifacts;
@@ -77,14 +81,14 @@
           );
 
           # Check formatting
-          my-crate-fmt = craneLib.cargoFmt {
+          runner-crate-fmt = craneLib.cargoFmt {
             inherit src;
           };
 
           # Run tests with cargo-nextest
-          # Consider setting `doCheck = false` on `my-crate` if you do not want
+          # Consider setting `doCheck = false` on `runner-crate` if you do not want
           # the tests to run twice
-          my-crate-nextest = craneLib.cargoNextest (
+          runner-crate-nextest = craneLib.cargoNextest (
             commonArgs
             // {
               inherit cargoArtifacts;
@@ -97,11 +101,11 @@
         };
 
         packages = {
-          default = my-crate;
+          default = runner-crate;
         };
 
         apps.default = flake-utils.lib.mkApp {
-          drv = my-crate;
+          drv = runner-crate;
         };
 
         devShells.default = craneLib.devShell {
