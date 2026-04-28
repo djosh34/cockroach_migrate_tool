@@ -168,12 +168,32 @@
           '';
         };
 
+        verify-image = pkgs.dockerTools.buildImage {
+          name = "verify-image";
+          tag = verify-binary.version;
+          config = {
+            User = "1000:1000";
+            Entrypoint = [ "${verify-binary}/bin/molt" ];
+            Cmd = [ "verify-service" ];
+          };
+        };
+
         molt-go-test = pkgs.buildGoModule {
           pname = "molt-go-test";
           version = "0.1.4";
           src = moltSrc;
           vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
           subPackages = [ "." ];
+          nativeBuildInputs = [ pkgs.binutils ];
+          env.CGO_ENABLED = "0";
+          tags = [
+            "netgo"
+            "osusergo"
+          ];
+          ldflags = [
+            "-s"
+            "-w"
+          ];
 
           checkPhase = ''
             runHook preCheck
@@ -232,7 +252,7 @@
         packages = {
           default = runner-crate;
           runner = runner-crate;
-          inherit verify-binary;
+          inherit verify-binary verify-image;
         };
 
         apps = {
