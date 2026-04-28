@@ -38,3 +38,5 @@ This task is only about GitHub Actions CI caching/publishing workflow changes un
 - [ ] The inspected workflow run confirms Cachix is configured and used for the Nix image build jobs.
 - [ ] If Cachix authentication fails, the error is reported directly and a bug task is created rather than being swallowed or worked around silently.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/03-task-replace-magic-nix-cache-with-cachix_plans/2026-04-28-cachix-workflow-replacement-plan.md</plan>
