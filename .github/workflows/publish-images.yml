@@ -77,7 +77,10 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+        with:
+          use-flakehub: false
+          use-gha-cache: true
       - name: Build immutable platform bundle
         env:
           BUILD_BUNDLE_JSON: ${{ toJson(matrix.build_bundle) }}
@@ -109,7 +112,10 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+        with:
+          use-flakehub: false
+          use-gha-cache: true
       - name: Download immutable platform bundle
         uses: actions/download-artifact@v8
         with:
@@ -172,7 +178,10 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@v13
+        with:
+          use-flakehub: false
+          use-gha-cache: true
       - name: Download immutable platform bundle
         uses: actions/download-artifact@v8
         with:
@@ -238,7 +247,7 @@ jobs:
     needs:
       - build-image
       - publish-catalog
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.publish-catalog.outputs.image_matrix) }}
@@ -373,7 +382,7 @@ jobs:
       - build-platform-bundle
       - build-image
       - publish-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -449,7 +458,7 @@ jobs:
   quay-security-gate:
     needs:
       - publish-image
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-24.04
     env:
       QUAY_SCAN_POLL_INTERVAL_SECONDS: "10"
@@ -782,7 +791,7 @@ jobs:
       - audit-immutable-identities
       - quay-security-gate
       - validate-fast
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-24.04
     permissions:
       contents: read

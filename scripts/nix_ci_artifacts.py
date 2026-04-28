@@ -55,6 +55,7 @@ def parse_bundle_json(bundle_json: str) -> dict:
     if not isinstance(metadata, dict):
         fail("bundle metadata must be a JSON object when provided")
 
+    bundle["metadata"] = metadata
     return bundle
 
 
