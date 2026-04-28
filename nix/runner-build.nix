@@ -28,13 +28,17 @@ flake-utils.lib.eachSystem systems (
 
     inherit (pkgs) lib;
 
-    rustToolchain =
-      p:
+    nativeTarget = targetForSystem.${system};
+
+    rustToolchainFor =
+      targets: p:
       p.rust-bin.stable.latest.default.override {
-        targets = lib.attrValues targetForSystem;
+        inherit targets;
       };
 
-    craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+    nativeRustToolchain = rustToolchainFor [ nativeTarget ];
+
+    craneLib = (crane.mkLib pkgs).overrideToolchain nativeRustToolchain;
 
     pkgsForTarget =
       target:
@@ -46,7 +50,8 @@ flake-utils.lib.eachSystem systems (
         overlays = [ (import rust-overlay) ];
       };
 
-    craneLibForTarget = target: (crane.mkLib (pkgsForTarget target)).overrideToolchain rustToolchain;
+    craneLibForTarget =
+      target: (crane.mkLib (pkgsForTarget target)).overrideToolchain (rustToolchainFor [ target ]);
 
     src = lib.fileset.toSource {
       inherit root;
@@ -87,11 +92,11 @@ flake-utils.lib.eachSystem systems (
         }
       );
 
-    nativeTarget = targetForSystem.${system};
-
     runnerCommonArgs = runnerCommonArgsFor nativeTarget;
 
-    runnerCargoArtifacts = (craneLibForTarget nativeTarget).buildDepsOnly runnerCommonArgs;
+    nativeCraneLib = craneLibForTarget nativeTarget;
+
+    runnerCargoArtifacts = nativeCraneLib.buildDepsOnly runnerCommonArgs;
 
     runner = buildRunnerFor nativeTarget runnerCargoArtifacts;
 
@@ -102,33 +107,31 @@ flake-utils.lib.eachSystem systems (
         ;
       commonArgs = runnerCommonArgs;
       cargoArtifacts = runnerCargoArtifacts;
-      craneLib = craneLibForTarget nativeTarget;
+      craneLib = nativeCraneLib;
     };
 
-    cargoArtifacts = craneLib.buildDepsOnly {
-      inherit src;
-      strictDeps = true;
-      pname = "runner";
-      version = "0.1.0";
-      cargoExtraArgs = "-p runner";
-    };
+    cargoArtifacts = nativeCraneLib.buildDepsOnly runnerCommonArgs;
 
-    cargoCheck = craneLib.mkCargoDerivation {
+    cargoCheck = nativeCraneLib.mkCargoDerivation {
       inherit src cargoArtifacts;
       strictDeps = true;
       pname = "runner";
       version = "0.1.0";
       pnameSuffix = "-check";
       buildPhaseCargoCommand = "cargoWithProfile check --locked -p runner --all-targets";
+      CARGO_BUILD_TARGET = nativeTarget;
+      CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
     };
 
-    cargoClippy = craneLib.cargoClippy {
+    cargoClippy = nativeCraneLib.cargoClippy {
       inherit src cargoArtifacts;
       strictDeps = true;
       pname = "runner";
       version = "0.1.0";
       cargoExtraArgs = "-p runner";
       cargoClippyExtraArgs = "--all-targets -- --deny warnings";
+      CARGO_BUILD_TARGET = nativeTarget;
+      CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
     };
 
     cargoFmt = craneLib.cargoFmt {
