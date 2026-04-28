@@ -174,3 +174,4 @@ NONE
 .ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed.md
 .ralph/tasks/story-31-nix-github-workflow-cache-and-image-artifacts/01-task-create-ultra-simple-nix-github-workflow-with-cached-parallel-builds.md
 /home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md
+.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/01-task-create-magic-nix-cache-matrix-workflow-and-combine-image-artifacts.md

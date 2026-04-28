@@ -1,4 +1,4 @@
-## Task: Create Magic Nix Cache Matrix Workflow And Combine Image Artifacts <status>not_started</status> <passes>false</passes>
+## Task: Create Magic Nix Cache Matrix Workflow And Combine Image Artifacts <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Create a GitHub Actions workflow that runs five jobs in parallel, uses Magic Nix Cache everywhere Nix runs, builds per-architecture image artifacts for both `runner-image` and `verify-image`, runs `nix flake check` at the same time, then combines and publishes the per-architecture artifacts as exactly one multi-platform GHCR `runner-image` tag and one multi-platform GHCR `verify-image` tag after all five parallel jobs pass. The higher order goal is to make hosted CI fast, observable, and reproducible while publishing commit-SHA-tagged multi-platform images to GHCR without rebuilding images in the final assembly/publish step.
@@ -55,27 +55,63 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] GitHub Actions contains a workflow for the image pipeline using Magic Nix Cache in every job that invokes Nix.
-- [ ] The workflow uses the latest documented Magic Nix Cache action usage, currently `DeterminateSystems/magic-nix-cache-action@main` as of 2026-04-28.
-- [ ] The workflow has four parallel image-build runs covering `runner-image` on `amd64`, `runner-image` on `arm64`, `verify-image` on `amd64`, and `verify-image` on `arm64`.
-- [ ] `nix flake check` runs as a fifth parallel job at the same time as the four image-build runs.
-- [ ] All Nix invocations use log-readable failure-preserving commands, including `--print-build-logs` and `--show-trace` where applicable, and shell settings such as `set -euo pipefail`.
-- [ ] Each per-architecture image build uploads a non-empty artifact that the final assembly job consumes directly.
-- [ ] The final assembly job depends on all five parallel jobs and does not start unless all five succeeded.
-- [ ] The final assembly job creates exactly one multi-platform `runner-image` tag and exactly one multi-platform `verify-image` tag from the per-architecture artifacts.
-- [ ] The final multi-platform tags are exactly the git commit SHA, with no architecture suffixes or mutable aliases.
-- [ ] The final assembly step does not call Nix to build images and does not rebuild either image; it only combines already-built per-architecture artifacts.
-- [ ] The final assembly/publish job publishes the multi-platform `runner-image` and `verify-image` tags to GHCR.
-- [ ] Only the final assembly/publish job has GHCR package write permission; the Nix check and image-build jobs do not have `packages: write`.
-- [ ] GHCR authentication does not print credentials, tokens, or secret values in workflow logs.
-- [ ] The published GHCR image references use only the exact git commit SHA tag for both images.
-- [ ] The workflow verifies or records the published GHCR digests for both multi-platform images after push.
-- [ ] The workflow has no `concurrency` attribute and no cancellation/superseding behavior; every push creates a full run even when a previous run is still active.
-- [ ] The hosted GitHub workflow logs clearly show the Nix commands, image names, architectures, artifact upload/download names, multi-platform assembly commands, GHCR publish commands, and final published image references/digests.
-- [ ] Manual workflow syntax verification passes locally or through a workflow linter, and the exact command is recorded in task notes.
-- [ ] Manual hosted verification: trigger the workflow on GitHub, inspect authenticated workflow logs with `/home/joshazimullah.linux/github-api-curl` or an equivalent authenticated API path, and record evidence that the five jobs ran in parallel and the assembly/publish job waited for them.
-- [ ] Manual hosted publish verification: inspect GHCR or authenticated workflow output and record evidence that the commit-SHA-only multi-platform `runner-image` and `verify-image` tags were published successfully.
-- [ ] Manual hosted cache verification: record evidence from hosted workflow logs that Magic Nix Cache is active and reused across runs/jobs where available.
-- [ ] `make check` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
-- [ ] `make lint` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
+- [x] GitHub Actions contains a workflow for the image pipeline using Magic Nix Cache in every job that invokes Nix.
+- [x] The workflow uses the latest documented Magic Nix Cache action usage, currently `DeterminateSystems/magic-nix-cache-action@main` as of 2026-04-28.
+- [x] The workflow has four parallel image-build runs covering `runner-image` on `amd64`, `runner-image` on `arm64`, `verify-image` on `amd64`, and `verify-image` on `arm64`.
+- [x] `nix flake check` runs as a fifth parallel job at the same time as the four image-build runs.
+- [x] All Nix invocations use log-readable failure-preserving commands, including `--print-build-logs` and `--show-trace` where applicable, and shell settings such as `set -euo pipefail`.
+- [x] Each per-architecture image build uploads a non-empty artifact that the final assembly job consumes directly.
+- [x] The final assembly job depends on all five parallel jobs and does not start unless all five succeeded.
+- [x] The final assembly job creates exactly one multi-platform `runner-image` tag and exactly one multi-platform `verify-image` tag from the per-architecture artifacts.
+- [x] The final multi-platform tags are exactly the git commit SHA, with no architecture suffixes or mutable aliases.
+- [x] The final assembly step does not call Nix to build images and does not rebuild either image; it only combines already-built per-architecture artifacts.
+- [x] The final assembly/publish job publishes the multi-platform `runner-image` and `verify-image` tags to GHCR.
+- [x] Only the final assembly/publish job has GHCR package write permission; the Nix check and image-build jobs do not have `packages: write`.
+- [x] GHCR authentication does not print credentials, tokens, or secret values in workflow logs.
+- [x] The published GHCR image references use only the exact git commit SHA tag for both images.
+- [x] The workflow verifies or records the published GHCR digests for both multi-platform images after push.
+- [x] The workflow has no `concurrency` attribute and no cancellation/superseding behavior; every push creates a full run even when a previous run is still active.
+- [x] The hosted GitHub workflow logs clearly show the Nix commands, image names, architectures, artifact upload/download names, multi-platform assembly commands, GHCR publish commands, and final published image references/digests.
+- [x] Manual workflow syntax verification passes locally or through a workflow linter, and the exact command is recorded in task notes.
+- [x] Manual hosted verification: trigger the workflow on GitHub, inspect authenticated workflow logs with `/home/joshazimullah.linux/github-api-curl` or an equivalent authenticated API path, and record evidence that the five jobs ran in parallel and the assembly/publish job waited for them.
+- [x] Manual hosted publish verification: inspect GHCR or authenticated workflow output and record evidence that the commit-SHA-only multi-platform `runner-image` and `verify-image` tags were published successfully.
+- [x] Manual hosted cache verification: record evidence from hosted workflow logs that Magic Nix Cache is active and reused across runs/jobs where available.
+- [x] `make check` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
+- [x] `make lint` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/01-task-create-magic-nix-cache-matrix-workflow-and-combine-image-artifacts_plans/2026-04-28-magic-nix-cache-matrix-ghcr-plan.md</plan>
+
+<notes>
+- Local validation commands:
+  - `nix shell nixpkgs#actionlint -c actionlint .github/workflows/publish-images.yml`
+  - `nix run .#test-molt`
+  - `nix flake check --print-build-logs --show-trace`
+  - `make check`
+  - `make lint`
+  - `make test`
+- Hosted verification used `/home/joshazimullah.linux/github-api-curl`.
+  - First push run `25068613846` proved the five-job parallel topology and artifact handoff, then failed honestly in `nix flake check` on `checks.x86_64-linux.molt-go-test` because the Cockroach runtime boundary still relied on a `buildFHSEnv` bubblewrap wrapper that GitHub's x86_64 runner rejected with `bwrap: setting up uid map: Permission denied`.
+  - The fix flattened that boundary in `flake.nix` to a direct autopatched Cockroach binary package, which kept `nix flake check` real instead of skipping `test-molt`.
+  - Final hosted success run `25069126637`: the five prerequisite jobs started at `2026-04-28T17:55:44Z` or `2026-04-28T17:55:45Z`, proving the four matrix builds and `nix flake check` ran in parallel.
+  - The publish job in run `25069126637` started at `2026-04-28T18:05:00Z`, after the last prerequisite (`nix flake check`) completed at `2026-04-28T18:04:56Z`.
+  - Hosted cache evidence from run `25069126637`:
+    - the Magic Nix Cache step logged `Native GitHub Action cache is enabled.`
+    - the arm64 verify-image build copied `/nix/store/4lpg5gbm9qlj30f5qd115kp2p6bd4hqi-docker-image-verify-image.tar.gz` from `http://127.0.0.1:37515`, showing reuse from the Magic Nix Cache daemon instead of rebuilding the image archive
+  - Hosted flake-check evidence from run `25069126637`:
+    - `checks.x86_64-linux.test-molt` and `checks.x86_64-linux.molt-go-test` both finished green
+    - the earlier `bwrap` failure disappeared after the Cockroach runtime refactor
+  - Hosted publish evidence from run `25069126637`:
+    - final `runner-image` ref: `ghcr.io/djosh34/runner-image:df3435b59b8c8f5987d0c90b125ecbea389764ef`
+    - final `verify-image` ref: `ghcr.io/djosh34/verify-image:df3435b59b8c8f5987d0c90b125ecbea389764ef`
+    - final runner-image manifest digest: `sha256:9ad926685a94c276bd6d8bd657ad0ecf8a3cae489b475e6071e1d24770c0fee5`
+    - final verify-image manifest digest: `sha256:f2704eaeeab12de93b35742b43130dbb795abc06c87fe2db0c1b858673762c9a`
+    - publish assembly used downloaded artifacts plus temporary per-architecture refs:
+      - `ghcr.io/djosh34/runner-image:tmp-df3435b59b8c8f5987d0c90b125ecbea389764ef-25069126637-amd64`
+      - `ghcr.io/djosh34/runner-image:tmp-df3435b59b8c8f5987d0c90b125ecbea389764ef-25069126637-arm64`
+      - `ghcr.io/djosh34/verify-image:tmp-df3435b59b8c8f5987d0c90b125ecbea389764ef-25069126637-amd64`
+      - `ghcr.io/djosh34/verify-image:tmp-df3435b59b8c8f5987d0c90b125ecbea389764ef-25069126637-arm64`
+- Non-fatal hosted warning that remains visible:
+  - Determinate's installer emitted `FlakeHub Login failure: The process '/usr/local/bin/determinate-nixd' failed with exit code 1` before the Magic Nix Cache step.
+  - The workflow does not swallow this condition; it is recorded here because the subsequent Magic Nix Cache logs explicitly show `use-flakehub: false`, `Disabling FlakeHub cache.`, and `FlakeHub cache is disabled.`
+</notes>
