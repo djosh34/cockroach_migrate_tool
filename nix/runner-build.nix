@@ -122,32 +122,63 @@ flake-utils.lib.eachSystem systems (
       version = "0.1.0";
     };
 
-    checkApp = pkgs.writeShellApplication {
+    successfulApp = name: pkgs.writeCBin name "int main(void) { return 0; }";
+
+    checkArtifacts = pkgs.linkFarm "check-artifacts" [
+      {
+        name = "runner";
+        path = runner;
+      }
+      {
+        name = "cargoCheck";
+        path = cargoCheck;
+      }
+      {
+        name = "cargoClippy";
+        path = cargoClippy;
+      }
+      {
+        name = "cargoFmt";
+        path = cargoFmt;
+      }
+    ];
+
+    check = pkgs.symlinkJoin {
       name = "check";
-      runtimeInputs = [ pkgs.nix ];
-      text = ''
-        nix build --no-link \
-          ${self}#checks.${system}.runner \
-          ${self}#checks.${system}.cargoCheck \
-          ${self}#checks.${system}.cargoClippy \
-          ${self}#checks.${system}.cargoFmt
-      '';
+      paths = [
+        (successfulApp "check")
+        checkArtifacts
+      ];
     };
 
-    lintApp = pkgs.writeShellApplication {
+    lintArtifacts = pkgs.linkFarm "lint-artifacts" [
+      {
+        name = "cargoClippy";
+        path = cargoClippy;
+      }
+    ];
+
+    lint = pkgs.symlinkJoin {
       name = "lint";
-      runtimeInputs = [ pkgs.nix ];
-      text = ''
-        nix build --no-link ${self}#checks.${system}.cargoClippy
-      '';
+      paths = [
+        (successfulApp "lint")
+        lintArtifacts
+      ];
     };
 
-    fmtApp = pkgs.writeShellApplication {
+    fmtArtifacts = pkgs.linkFarm "fmt-artifacts" [
+      {
+        name = "cargoFmt";
+        path = cargoFmt;
+      }
+    ];
+
+    fmt = pkgs.symlinkJoin {
       name = "fmt";
-      runtimeInputs = [ pkgs.nix ];
-      text = ''
-        nix build --no-link ${self}#checks.${system}.cargoFmt
-      '';
+      paths = [
+        (successfulApp "fmt")
+        fmtArtifacts
+      ];
     };
 
   in
@@ -155,6 +186,9 @@ flake-utils.lib.eachSystem systems (
     packages = {
       inherit
         runner
+        check
+        lint
+        fmt
         cargoCheck
         cargoClippy
         cargoFmt
@@ -181,15 +215,15 @@ flake-utils.lib.eachSystem systems (
       };
 
       check = flake-utils.lib.mkApp {
-        drv = checkApp;
+        drv = check;
       };
 
       lint = flake-utils.lib.mkApp {
-        drv = lintApp;
+        drv = lint;
       };
 
       fmt = flake-utils.lib.mkApp {
-        drv = fmtApp;
+        drv = fmt;
       };
     };
 
