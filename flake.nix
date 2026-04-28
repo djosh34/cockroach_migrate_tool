@@ -71,14 +71,23 @@
               srcs.${system}
                 or (throw "Unsupported system for CockroachDB runtime: ${system}");
           in
-          pkgs.buildFHSEnv {
+          pkgs.stdenvNoCC.mkDerivation {
             pname = "cockroachdb";
             inherit version;
+            inherit src;
+            nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+            buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+            dontConfigure = true;
+            dontBuild = true;
 
-            runScript = "${src}/cockroach";
+            installPhase = ''
+              runHook preInstall
 
-            extraInstallCommands = ''
-              cp -P $out/bin/cockroachdb $out/bin/cockroach
+              mkdir -p "$out/bin"
+              cp "$src/cockroach" "$out/bin/cockroach"
+              chmod 0555 "$out/bin/cockroach"
+
+              runHook postInstall
             '';
 
             meta = {
