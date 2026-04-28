@@ -1,0 +1,21 @@
+name: Setup Nix and Cachix
+description: Install Nix and configure the project's Cachix binary cache.
+
+inputs:
+  github-access-token:
+    description: GitHub token used by Nix when fetching GitHub-hosted sources.
+    required: true
+  cachix-auth-token:
+    description: Cachix auth token used to push to the project's cache.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: cachix/install-nix-action@v31
+      with:
+        github_access_token: ${{ inputs.github-access-token }}
+    - uses: cachix/cachix-action@v17
+      with:
+        name: djosh34
+        authToken: ${{ inputs.cachix-auth-token }}
