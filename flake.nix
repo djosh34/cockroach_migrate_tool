@@ -178,6 +178,18 @@
           };
         };
 
+        runner-image = pkgs.dockerTools.buildImage {
+          name = "runner-image";
+          tag = runner-crate.version;
+          copyToRoot = runner-crate;
+          uid = 1000;
+          gid = 1000;
+          config = {
+            User = "1000:1000";
+            Entrypoint = [ "/bin/runner" ];
+          };
+        };
+
         molt-go-test = pkgs.buildGoModule {
           pname = "molt-go-test";
           version = "0.1.4";
@@ -252,7 +264,7 @@
         packages = {
           default = runner-crate;
           runner = runner-crate;
-          inherit verify-binary verify-image;
+          inherit runner-image verify-binary verify-image;
         };
 
         apps = {
