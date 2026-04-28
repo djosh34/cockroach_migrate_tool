@@ -54,13 +54,58 @@
           quay_repository = "verify";
         }
       ];
-      githubPublishImageMatrix = {
+      githubCiBuildPlatforms = map (
+        platform:
+        platform
+        // {
+          build_bundle = {
+            artifact_name = "nix-build-bundle-${platform.platform_tag_suffix}";
+            bundle_id = "build-${platform.platform_tag_suffix}";
+            installables = [ ".#packages.${platform.system}.ci-build-bundle" ];
+          };
+        }
+      ) githubPublishPlatforms;
+      githubCiValidationLanes = [
+        {
+          build_bundle_artifact_name = "nix-build-bundle-amd64";
+          build_bundle_id = "build-amd64";
+          installables = [
+            ".#checks.x86_64-linux.runner-clippy"
+            ".#checks.x86_64-linux.runner-test"
+            ".#checks.x86_64-linux.verify-service-test"
+          ];
+          runner = "ubuntu-24.04";
+          system = "x86_64-linux";
+          validation_id = "fast";
+        }
+      ];
+      githubCiImageMatrix = {
         include = nixpkgs.lib.concatMap (
           image:
           map (platform: {
             inherit image platform;
+            build_bundle_artifact_name = "nix-build-bundle-${platform.platform_tag_suffix}";
+            build_bundle_id = "build-${platform.platform_tag_suffix}";
+            image_artifact_name = "nix-image-${image.image_id}-${platform.platform_tag_suffix}";
+            image_installable = ".#packages.${platform.system}.${image.package_attr}";
+            image_output_id = "${image.image_id}-${platform.platform_tag_suffix}";
           }) githubPublishPlatforms
         ) githubPublishImages;
+      };
+      githubCiWorkflowCatalog = {
+        audit = {
+          required_build_bundle_ids = map (platform: platform.build_bundle.bundle_id) githubCiBuildPlatforms;
+          required_image_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
+          required_publish_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
+        };
+        build_platform_matrix = {
+          include = githubCiBuildPlatforms;
+        };
+        image_matrix = githubCiImageMatrix;
+        release_image_catalog = githubPublishImages;
+        validation_matrix = {
+          include = githubCiValidationLanes;
+        };
       };
     in
     (flake-utils.lib.eachDefaultSystem (
@@ -385,6 +430,34 @@
           '';
         };
 
+        ciBuildBundleEntries =
+          [
+            {
+              name = "runner-runtime-deps";
+              path = runnerRuntimeCargoArtifacts;
+            }
+            {
+              name = "runner-runtime";
+              path = runnerRuntime;
+            }
+            {
+              name = "verify-runtime";
+              path = moltRuntime;
+            }
+          ]
+          ++ pkgs.lib.optionals (system == "x86_64-linux") [
+            {
+              name = "runner-clippy-deps";
+              path = runnerClippyCargoArtifacts;
+            }
+            {
+              name = "runner-test-deps";
+              path = runnerTestCargoArtifacts;
+            }
+          ];
+
+        ciBuildBundle = pkgs.linkFarm "ci-build-bundle-${system}" ciBuildBundleEntries;
+
         checkApp =
           mkNixBuildApp
             "check"
@@ -402,6 +475,7 @@
           default = runner;
           runner = runner;
           "cargo-artifacts" = cargoArtifacts;
+          "ci-build-bundle" = ciBuildBundle;
           check = checkApp;
           lint = lintApp;
           test = testApp;
@@ -452,11 +526,6 @@
       }
     ))
     // {
-      github.publishImageCatalog = {
-        platforms = githubPublishPlatforms;
-        images = githubPublishImages;
-        publish_image_matrix = githubPublishImageMatrix;
-        release_image_catalog = githubPublishImages;
-      };
+      github.ciWorkflowCatalog = githubCiWorkflowCatalog;
     };
 }

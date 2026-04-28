@@ -39,7 +39,7 @@ jobs:
         id: catalog
         run: |
           set -euo pipefail
-          release_image_catalog="$(nix eval --json .#github.publishImageCatalog.release_image_catalog)"
+          release_image_catalog="$(nix eval --json .#github.ciWorkflowCatalog.release_image_catalog)"
           {
             echo "release_image_catalog<<EOF"
             echo "${release_image_catalog}"

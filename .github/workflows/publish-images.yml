@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   GHCR_REGISTRY: ghcr.io
@@ -23,64 +24,224 @@ jobs:
   publish-catalog:
     runs-on: ubuntu-24.04
     outputs:
-      publish_image_matrix: ${{ steps.catalog.outputs.publish_image_matrix }}
+      audit_catalog: ${{ steps.catalog.outputs.audit_catalog }}
+      build_platform_matrix: ${{ steps.catalog.outputs.build_platform_matrix }}
+      image_matrix: ${{ steps.catalog.outputs.image_matrix }}
       release_image_catalog: ${{ steps.catalog.outputs.release_image_catalog }}
+      validation_matrix: ${{ steps.catalog.outputs.validation_matrix }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - name: Evaluate flake-owned publish catalog
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Evaluate flake-owned CI workflow catalog
         id: catalog
         run: |
           set -euo pipefail
-          publish_image_matrix="$(nix eval --json .#github.publishImageCatalog.publish_image_matrix)"
-          release_image_catalog="$(nix eval --json .#github.publishImageCatalog.release_image_catalog)"
+          audit_catalog="$(nix eval --json .#github.ciWorkflowCatalog.audit)"
+          build_platform_matrix="$(nix eval --json .#github.ciWorkflowCatalog.build_platform_matrix)"
+          image_matrix="$(nix eval --json .#github.ciWorkflowCatalog.image_matrix)"
+          release_image_catalog="$(nix eval --json .#github.ciWorkflowCatalog.release_image_catalog)"
+          validation_matrix="$(nix eval --json .#github.ciWorkflowCatalog.validation_matrix)"
           {
-            echo "publish_image_matrix<<EOF"
-            echo "${publish_image_matrix}"
+            echo "audit_catalog<<EOF"
+            echo "${audit_catalog}"
+            echo "EOF"
+            echo "build_platform_matrix<<EOF"
+            echo "${build_platform_matrix}"
+            echo "EOF"
+            echo "image_matrix<<EOF"
+            echo "${image_matrix}"
             echo "EOF"
             echo "release_image_catalog<<EOF"
             echo "${release_image_catalog}"
             echo "EOF"
+            echo "validation_matrix<<EOF"
+            echo "${validation_matrix}"
+            echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-  validate-fast:
-    runs-on: ubuntu-24.04
+  build-platform-bundle:
+    needs:
+      - publish-catalog
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.publish-catalog.outputs.build_platform_matrix) }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - name: Validate fast repository lanes through flake
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Build immutable platform bundle
+        env:
+          BUILD_BUNDLE_JSON: ${{ toJson(matrix.build_bundle) }}
+          BUNDLE_OUTPUT_DIR: ${{ runner.temp }}/nix-build-bundle
         run: |
           set -euo pipefail
-          nix run .#check
-          nix run .#lint
-          nix run .#test
+          python3 scripts/nix_ci_artifacts.py build-bundle \
+            --bundle-json "${BUILD_BUNDLE_JSON}" \
+            --output-dir "${BUNDLE_OUTPUT_DIR}"
+      - name: Upload immutable platform bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.build_bundle.artifact_name }}
+          path: ${{ runner.temp }}/nix-build-bundle
+          if-no-files-found: error
 
-  validate-images:
-    needs: publish-catalog
-    runs-on: ubuntu-24.04
+  validate-fast:
+    needs:
+      - publish-catalog
+      - build-platform-bundle
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.publish-catalog.outputs.validation_matrix) }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
-      - name: Build runtime image archives through flake
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Download immutable platform bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.build_bundle_artifact_name }}
+          path: ${{ runner.temp }}/build-bundle
+      - name: Import immutable platform bundle
         run: |
           set -euo pipefail
-          nix build --no-link .#runner-image .#verify-image
+          python3 scripts/nix_ci_artifacts.py import-bundle \
+            --bundle-dir "${{ runner.temp }}/build-bundle"
+      - name: Fail if validation would rebuild imported bundle outputs
+        env:
+          BUNDLE_MANIFEST: ${{ runner.temp }}/build-bundle/manifest.json
+          VALIDATION_INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          command = [
+              "python3",
+              "scripts/nix_ci_artifacts.py",
+              "assert-no-duplicate-build-plan",
+              "--bundle-manifest",
+              os.environ["BUNDLE_MANIFEST"],
+          ]
+          for installable in json.loads(os.environ["VALIDATION_INSTALLABLES_JSON"]):
+              command.extend(["--installable", installable])
+          subprocess.run(command, check=True)
+          PY
+      - name: Validate repository lanes through Nix
+        env:
+          VALIDATION_INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          command = ["nix", "build", "--no-link"]
+          command.extend(json.loads(os.environ["VALIDATION_INSTALLABLES_JSON"]))
+          subprocess.run(command, check=True)
+          PY
+
+  build-image:
+    needs:
+      - publish-catalog
+      - build-platform-bundle
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.publish-catalog.outputs.image_matrix) }}
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Download immutable platform bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.build_bundle_artifact_name }}
+          path: ${{ runner.temp }}/build-bundle
+      - name: Import immutable platform bundle
+        run: |
+          set -euo pipefail
+          python3 scripts/nix_ci_artifacts.py import-bundle \
+            --bundle-dir "${{ runner.temp }}/build-bundle"
+      - name: Fail if image build would rebuild imported bundle outputs
+        env:
+          BUNDLE_MANIFEST: ${{ runner.temp }}/build-bundle/manifest.json
+          IMAGE_INSTALLABLE: ${{ matrix.image_installable }}
+        run: |
+          set -euo pipefail
+          python3 scripts/nix_ci_artifacts.py assert-no-duplicate-build-plan \
+            --bundle-manifest "${BUNDLE_MANIFEST}" \
+            --installable "${IMAGE_INSTALLABLE}"
+      - name: Build immutable image archive bundle
+        env:
+          IMAGE_ARTIFACT_NAME: ${{ matrix.image_artifact_name }}
+          IMAGE_ID: ${{ matrix.image.image_id }}
+          IMAGE_INSTALLABLE: ${{ matrix.image_installable }}
+          IMAGE_OUTPUT_DIR: ${{ runner.temp }}/image-bundle
+          IMAGE_OUTPUT_ID: ${{ matrix.image_output_id }}
+          PLATFORM: ${{ matrix.platform.platform }}
+          SYSTEM: ${{ matrix.platform.system }}
+        run: |
+          set -euo pipefail
+          image_bundle_json="$(
+            python3 - <<'PY'
+          import json
+          import os
+
+          print(
+              json.dumps(
+                  {
+                      "artifact_name": os.environ["IMAGE_ARTIFACT_NAME"],
+                      "bundle_id": os.environ["IMAGE_OUTPUT_ID"],
+                      "installables": [os.environ["IMAGE_INSTALLABLE"]],
+                      "metadata": {
+                          "image_id": os.environ["IMAGE_ID"],
+                          "platform": os.environ["PLATFORM"],
+                          "system": os.environ["SYSTEM"],
+                      },
+                  }
+              )
+          )
+          PY
+          )"
+          python3 scripts/nix_ci_artifacts.py build-bundle \
+            --bundle-json "${image_bundle_json}" \
+            --output-dir "${IMAGE_OUTPUT_DIR}"
+      - name: Upload immutable image archive bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.image_artifact_name }}
+          path: ${{ runner.temp }}/image-bundle
+          if-no-files-found: error
 
   publish-image:
     needs:
+      - build-image
       - publish-catalog
-      - validate-fast
-      - validate-images
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.publish-catalog.outputs.publish_image_matrix) }}
+      matrix: ${{ fromJson(needs.publish-catalog.outputs.image_matrix) }}
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -91,56 +252,199 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install publish tools through Nix
         run: |
           set -euo pipefail
-          nix profile install nixpkgs#jq nixpkgs#skopeo
-      - name: Publish Nix-built image archive to Quay
+          nix profile install nixpkgs#skopeo
+      - name: Download immutable image archive bundle
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.image_artifact_name }}
+          path: ${{ runner.temp }}/image-bundle
+      - name: Import immutable image archive bundle
+        run: |
+          set -euo pipefail
+          python3 scripts/nix_ci_artifacts.py import-bundle \
+            --bundle-dir "${{ runner.temp }}/image-bundle"
+      - name: Publish prebuilt image archive to Quay
         env:
-          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
+          GHCR_REPOSITORY: ${{ matrix.image.ghcr_repository }}
+          IMAGE_ARTIFACT_NAME: ${{ matrix.image.artifact_name }}
+          IMAGE_ID: ${{ matrix.image.image_id }}
+          IMAGE_OUTPUT_ID: ${{ matrix.image_output_id }}
+          LOADED_IMAGE_REF: ${{ matrix.image.loaded_image_ref }}
+          MANIFEST_KEY: ${{ matrix.image.manifest_key }}
+          PLATFORM: ${{ matrix.platform.platform }}
+          PLATFORM_TAG_SUFFIX: ${{ matrix.platform.platform_tag_suffix }}
+          QUAY_REPOSITORY_NAME: ${{ matrix.image.quay_repository }}
           QUAY_ROBOT_PASSWORD: ${{ secrets.QUAY_ROBOT_PASSWORD }}
+          QUAY_ROBOT_USERNAME: ${{ secrets.QUAY_ROBOT_USERNAME }}
         run: |
           set -euo pipefail
           : "${QUAY_ORGANIZATION:?missing QUAY_ORGANIZATION GitHub repository variable}"
-          archive_path="$(nix build --no-link --print-out-paths ".#${{ matrix.image.package_attr }}")"
-          quay_repository="${QUAY_ORGANIZATION}/${{ matrix.image.quay_repository }}"
+          started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          readarray -t image_bundle_fields < <(
+            python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          manifest = json.loads(Path(os.environ["RUNNER_TEMP"], "image-bundle", "manifest.json").read_text())
+          root_record = manifest["root_records"][0]
+          print(manifest["bundle_id"])
+          print(root_record["out_path"])
+          print(root_record["nar_hash"])
+          PY
+          )
+          source_bundle_id="${image_bundle_fields[0]}"
+          archive_path="${image_bundle_fields[1]}"
+          source_nar_hash="${image_bundle_fields[2]}"
+          quay_repository="${QUAY_ORGANIZATION}/${QUAY_REPOSITORY_NAME}"
           final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
-          platform_image_ref="${final_image_ref}-${{ matrix.platform.platform_tag_suffix }}"
+          platform_image_ref="${final_image_ref}-${PLATFORM_TAG_SUFFIX}"
           mkdir -p "$(dirname "${PUBLISHED_IMAGE_REF_FILE}")"
           skopeo copy \
             --dest-creds "${QUAY_ROBOT_USERNAME}:${QUAY_ROBOT_PASSWORD}" \
-            "docker-archive:${archive_path}:${{ matrix.image.loaded_image_ref }}" \
+            "docker-archive:${archive_path}:${LOADED_IMAGE_REF}" \
             "docker://${platform_image_ref}"
-          skopeo inspect \
-            --creds "${QUAY_ROBOT_USERNAME}:${QUAY_ROBOT_PASSWORD}" \
-            "docker://${platform_image_ref}" >/dev/null
-          jq -n \
-            --arg artifact_name "${{ matrix.image.artifact_name }}" \
-            --arg final_image_ref "${final_image_ref}" \
-            --arg ghcr_repository "${{ matrix.image.ghcr_repository }}" \
-            --arg image_id "${{ matrix.image.image_id }}" \
-            --arg manifest_key "${{ matrix.image.manifest_key }}" \
-            --arg platform "${{ matrix.platform.platform }}" \
-            --arg platform_image_ref "${platform_image_ref}" \
-            --arg platform_tag_suffix "${{ matrix.platform.platform_tag_suffix }}" \
-            --arg quay_repository "${quay_repository}" \
-            "{
-              artifact_name: \$artifact_name,
-              final_image_ref: \$final_image_ref,
-              ghcr_repository: \$ghcr_repository,
-              image_id: \$image_id,
-              manifest_key: \$manifest_key,
-              platform: \$platform,
-              platform_image_ref: \$platform_image_ref,
-              platform_tag_suffix: \$platform_tag_suffix,
-              quay_repository: \$quay_repository
-            }" > "${PUBLISHED_IMAGE_REF_FILE}"
+          platform_digest="$(
+            skopeo inspect \
+              --creds "${QUAY_ROBOT_USERNAME}:${QUAY_ROBOT_PASSWORD}" \
+              "docker://${platform_image_ref}" \
+              | python3 -c 'import json, sys; print(json.load(sys.stdin)["Digest"])'
+          )"
+          completed_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          STARTED_AT_EPOCH_SECONDS="${started_at_epoch_seconds}" \
+          COMPLETED_AT_EPOCH_SECONDS="${completed_at_epoch_seconds}" \
+          FINAL_IMAGE_REF="${final_image_ref}" \
+          GHCR_REPOSITORY="${GHCR_REPOSITORY}" \
+          IMAGE_ARTIFACT_NAME="${IMAGE_ARTIFACT_NAME}" \
+          IMAGE_ID="${IMAGE_ID}" \
+          IMAGE_OUTPUT_ID="${IMAGE_OUTPUT_ID}" \
+          MANIFEST_KEY="${MANIFEST_KEY}" \
+          PLATFORM="${PLATFORM}" \
+          PLATFORM_DIGEST="${platform_digest}" \
+          PLATFORM_IMAGE_REF="${platform_image_ref}" \
+          PLATFORM_TAG_SUFFIX="${PLATFORM_TAG_SUFFIX}" \
+          PUBLISHED_IMAGE_REF_FILE="${PUBLISHED_IMAGE_REF_FILE}" \
+          QUAY_REPOSITORY="${quay_repository}" \
+          SOURCE_BUNDLE_ID="${source_bundle_id}" \
+          SOURCE_NAR_HASH="${source_nar_hash}" \
+          SOURCE_OUT_PATH="${archive_path}" \
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          started = float(os.environ["STARTED_AT_EPOCH_SECONDS"])
+          completed = float(os.environ["COMPLETED_AT_EPOCH_SECONDS"])
+          payload = {
+              "artifact_name": os.environ["IMAGE_ARTIFACT_NAME"],
+              "duration_seconds": completed - started,
+              "final_image_ref": os.environ["FINAL_IMAGE_REF"],
+              "ghcr_repository": os.environ["GHCR_REPOSITORY"],
+              "image_id": os.environ["IMAGE_ID"],
+              "image_output_id": os.environ["IMAGE_OUTPUT_ID"],
+              "manifest_key": os.environ["MANIFEST_KEY"],
+              "platform": os.environ["PLATFORM"],
+              "platform_digest": os.environ["PLATFORM_DIGEST"],
+              "platform_image_ref": os.environ["PLATFORM_IMAGE_REF"],
+              "platform_tag_suffix": os.environ["PLATFORM_TAG_SUFFIX"],
+              "quay_repository": os.environ["QUAY_REPOSITORY"],
+              "source_bundle_id": os.environ["SOURCE_BUNDLE_ID"],
+              "source_nar_hash": os.environ["SOURCE_NAR_HASH"],
+              "source_out_path": os.environ["SOURCE_OUT_PATH"],
+          }
+          output_path = Path(os.environ["PUBLISHED_IMAGE_REF_FILE"])
+          output_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+          PY
       - name: Upload published image ref artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.image.artifact_name }}-${{ matrix.platform.platform_tag_suffix }}
           path: ${{ env.PUBLISHED_IMAGE_REF_FILE }}
           if-no-files-found: error
+
+  audit-immutable-identities:
+    needs:
+      - publish-catalog
+      - build-platform-bundle
+      - build-image
+      - publish-image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Download immutable platform bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: nix-build-bundle-*
+          path: ${{ runner.temp }}/build-bundles
+      - name: Download immutable image archive bundles
+        uses: actions/download-artifact@v8
+        with:
+          pattern: nix-image-*
+          path: ${{ runner.temp }}/image-bundles
+      - name: Download published image refs
+        uses: actions/download-artifact@v8
+        with:
+          pattern: published-image-*
+          path: ${{ runner.temp }}/published-image-refs
+          merge-multiple: true
+      - name: Audit immutable build, image, and publish identities
+        env:
+          AUDIT_CATALOG_JSON: ${{ needs.publish-catalog.outputs.audit_catalog }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          audit_catalog = json.loads(os.environ["AUDIT_CATALOG_JSON"])
+          command = [
+              "python3",
+              "scripts/nix_ci_artifacts.py",
+              "audit-run",
+          ]
+
+          build_manifests = sorted(
+              Path(os.environ["RUNNER_TEMP"], "build-bundles").glob("*/manifest.json")
+          )
+          image_manifests = sorted(
+              Path(os.environ["RUNNER_TEMP"], "image-bundles").glob("*/manifest.json")
+          )
+          publish_manifests = sorted(
+              Path(os.environ["RUNNER_TEMP"], "published-image-refs").glob("*-image-ref.json")
+          )
+
+          if not build_manifests:
+              raise SystemExit("missing build bundle manifests")
+          if not image_manifests:
+              raise SystemExit("missing image bundle manifests")
+          if not publish_manifests:
+              raise SystemExit("missing publish manifests")
+
+          for manifest_path in build_manifests:
+              command.extend(["--build-manifest", str(manifest_path)])
+          for manifest_path in image_manifests:
+              command.extend(["--image-manifest", str(manifest_path)])
+          for manifest_path in publish_manifests:
+              command.extend(["--publish-manifest", str(manifest_path)])
+          for bundle_id in audit_catalog["required_build_bundle_ids"]:
+              command.extend(["--required-build-bundle-id", bundle_id])
+          for output_id in audit_catalog["required_image_output_ids"]:
+              command.extend(["--required-image-output-id", output_id])
+          for output_id in audit_catalog["required_publish_output_ids"]:
+              command.extend(["--required-publish-output-id", output_id])
+
+          subprocess.run(command, check=True)
+          PY
 
   quay-security-gate:
     needs:
@@ -152,6 +456,8 @@ jobs:
       QUAY_SCAN_TIMEOUT_SECONDS: "1800"
     steps:
       - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install security-gate tools through Nix
         run: |
           set -euo pipefail
@@ -473,7 +779,9 @@ jobs:
 
   publish-manifest:
     needs:
+      - audit-immutable-identities
       - quay-security-gate
+      - validate-fast
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     permissions:
@@ -486,6 +794,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install manifest-publish tools through Nix
         run: |
           set -euo pipefail
