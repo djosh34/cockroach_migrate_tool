@@ -135,8 +135,15 @@
         };
 
         checks = {
-          inherit runner cargoCheck cargoClippy cargoFmt;
+          inherit
+            runner
+            cargoCheck
+            cargoClippy
+            cargoFmt
+            ;
         };
+
+        formatter = pkgs.nixfmt;
 
         apps.default = flake-utils.lib.mkApp {
           drv = runner;
