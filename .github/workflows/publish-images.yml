@@ -73,19 +73,20 @@ jobs:
           use-gha-cache: true
       - name: Build platform foundation through Nix
         env:
-          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_PLATFORM_EVIDENCE_DIR: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}
+          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}/build-platform-evidence.json
           BUILD_OUTPUT_ID: ${{ matrix.build_output_id }}
-          BUILD_RESULT_JSON: ${{ runner.temp }}/build-platform-evidence/build-result.json
-          DRY_RUN_JSON: ${{ runner.temp }}/build-platform-evidence/dry-run.json
-          DRY_RUN_LOG: ${{ runner.temp }}/build-platform-evidence/dry-run.log
-          BUILD_LOG: ${{ runner.temp }}/build-platform-evidence/build.log
+          BUILD_RESULT_JSON: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}/build-result.json
+          DRY_RUN_JSON: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}/dry-run.json
+          DRY_RUN_LOG: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}/dry-run.log
+          BUILD_LOG: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}/build.log
           INSTALLABLE: ${{ matrix.installable }}
           PLATFORM: ${{ matrix.platform }}
           PLATFORM_TAG_SUFFIX: ${{ matrix.platform_tag_suffix }}
           SYSTEM: ${{ matrix.system }}
         run: |
           set -euo pipefail
-          mkdir -p "$(dirname "${BUILD_PLATFORM_EVIDENCE_FILE}")"
+          mkdir -p "${BUILD_PLATFORM_EVIDENCE_DIR}"
           started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
           python3 - <<'PY'
           import os
@@ -235,7 +236,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: build-platform-evidence-${{ matrix.system }}-${{ matrix.build_output_id }}
-          path: ${{ runner.temp }}/build-platform-evidence
+          path: ${{ runner.temp }}/build-platform-evidence/${{ matrix.build_output_id }}
           if-no-files-found: error
 
   validate-fast:
