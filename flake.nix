@@ -117,6 +117,14 @@
             cargoNextestPartitionsExtraArgs = "--run-ignored ignored-only --no-tests=fail";
           }
         );
+
+        verify-binary = pkgs.buildGoModule {
+          pname = "verify-binary";
+          version = "0.1.4";
+          src = ./cockroachdb_molt/molt;
+          vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
+          subPackages = [ "." ];
+        };
       in
       {
         checks = {
