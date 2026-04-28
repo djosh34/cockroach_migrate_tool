@@ -20,30 +20,6 @@
       ...
     }:
     let
-      ciImageCatalog = [
-        {
-          image_id = "runner";
-          image_name = "cockroach-migrate-runner";
-          package_attr = "runner-image";
-        }
-        {
-          image_id = "verify";
-          image_name = "cockroach-migrate-verify";
-          package_attr = "verify-image";
-        }
-      ];
-      ciPlatformBySystem = {
-        x86_64-linux = {
-          architecture = "amd64";
-          os = "linux";
-          platform = "linux/amd64";
-        };
-        aarch64-linux = {
-          architecture = "arm64";
-          os = "linux";
-          platform = "linux/arm64";
-        };
-      };
     in
     (flake-utils.lib.eachDefaultSystem (
       system:
@@ -58,8 +34,6 @@
         runnerManifest = builtins.fromTOML (builtins.readFile ./crates/runner/Cargo.toml);
         runnerPname = runnerManifest.package.name;
         runnerVersion = runnerManifest.package.version;
-        ciCurrentPlatform = ciPlatformBySystem.${system};
-        ciImageCatalogJson = builtins.toJSON ciImageCatalog;
         runnerMuslTarget =
           {
             x86_64-linux = "x86_64-unknown-linux-musl";
@@ -395,38 +369,6 @@
         testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
         fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.fmt-check";
         longTestApp = mkNixBuildApp "test-long" ".#packages.${system}.runner-long-test";
-        ciPlatformImageArtifactsApp = pkgs.writeShellApplication {
-          name = "ci-platform-image-artifacts";
-          runtimeInputs = [
-            pkgs.coreutils
-            pkgs.findutils
-            pkgs.gnugrep
-            pkgs.jq
-            pkgs.nix
-            pkgs.skopeo
-          ];
-          text = ''
-            export CI_IMAGE_SPECS_JSON='${ciImageCatalogJson}'
-            export CI_OCI_ARCHITECTURE='${ciCurrentPlatform.architecture}'
-            export CI_OCI_OS='${ciCurrentPlatform.os}'
-            export CI_OCI_PLATFORM='${ciCurrentPlatform.platform}'
-            exec ${./scripts/ci/image-artifacts.sh} export-platform "$@"
-          '';
-        };
-        ciMultiPlatformImageArtifactsApp = pkgs.writeShellApplication {
-          name = "ci-multi-platform-image-artifacts";
-          runtimeInputs = [
-            pkgs.coreutils
-            pkgs.findutils
-            pkgs.gnugrep
-            pkgs.jq
-            pkgs.skopeo
-          ];
-          text = ''
-            export CI_IMAGE_SPECS_JSON='${ciImageCatalogJson}'
-            exec ${./scripts/ci/image-artifacts.sh} assemble-multi-platform "$@"
-          '';
-        };
       in
       {
         packages = {
@@ -445,8 +387,6 @@
           "runner-test-deps" = runnerTestCargoArtifacts;
           "runner-image" = runnerImage;
           "runner-long-test" = runnerLongTest;
-          "ci-platform-image-artifacts" = ciPlatformImageArtifactsApp;
-          "ci-multi-platform-image-artifacts" = ciMultiPlatformImageArtifactsApp;
           "test-long" = longTestApp;
           "verify-image" = verifyImage;
           "verify-runtime-go-modules" = verifyRuntimeGoModules;
@@ -465,12 +405,6 @@
           test = flake-utils.lib.mkApp { drv = testApp; };
           fmt = flake-utils.lib.mkApp { drv = fmtApp; };
           "test-long" = flake-utils.lib.mkApp { drv = longTestApp; };
-          "ci-platform-image-artifacts" = flake-utils.lib.mkApp {
-            drv = ciPlatformImageArtifactsApp;
-          };
-          "ci-multi-platform-image-artifacts" = flake-utils.lib.mkApp {
-            drv = ciMultiPlatformImageArtifactsApp;
-          };
         };
 
         checks = {

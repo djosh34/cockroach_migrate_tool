@@ -19,54 +19,17 @@ jobs:
       - run: nix run .#check
       - run: nix run .#test
 
-  image-platform:
-    name: image-platform-${{ matrix.platform_id }}
-    runs-on: ${{ matrix.runner }}
+  image:
+    name: image-${{ matrix.image }}
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform_id: linux-amd64
-            runner: ubuntu-24.04
-          - platform_id: linux-arm64
-            runner: ubuntu-24.04-arm
+        image:
+          - runner-image
+          - verify-image
     steps:
       - uses: actions/checkout@v6
       - uses: DeterminateSystems/nix-installer-action@main
       - uses: DeterminateSystems/magic-nix-cache-action@main
-      - name: Export platform image artifacts
-        run: |
-          nix run .#ci-platform-image-artifacts -- \
-            --git-sha "${GITHUB_SHA}" \
-            --output-dir "${RUNNER_TEMP}/platform-image-artifacts"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: platform-image-artifacts-${{ matrix.platform_id }}
-          path: ${{ runner.temp }}/platform-image-artifacts
-          if-no-files-found: error
-          compression-level: 0
-
-  image-assemble:
-    name: image-assemble
-    runs-on: ubuntu-24.04
-    needs:
-      - image-platform
-    steps:
-      - uses: actions/checkout@v6
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      - uses: actions/download-artifact@v4
-        with:
-          path: ${{ runner.temp }}/downloaded-platform-artifacts
-      - name: Assemble multi-platform image artifacts
-        run: |
-          nix run .#ci-multi-platform-image-artifacts -- \
-            --git-sha "${GITHUB_SHA}" \
-            --input-dir "${RUNNER_TEMP}/downloaded-platform-artifacts" \
-            --output-dir "${RUNNER_TEMP}/final-image-artifacts"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: multi-platform-image-artifacts
-          path: ${{ runner.temp }}/final-image-artifacts
-          if-no-files-found: error
-          compression-level: 0
+      - run: nix build ".#${{ matrix.image }}"

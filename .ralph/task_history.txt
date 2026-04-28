@@ -171,3 +171,4 @@
 NONE
 .ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed.md
 .ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed.md
+.ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed.md

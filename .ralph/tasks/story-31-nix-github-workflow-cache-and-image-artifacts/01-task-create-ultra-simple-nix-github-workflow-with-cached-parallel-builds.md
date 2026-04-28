@@ -53,3 +53,5 @@ Decisions already made:
 - [ ] `make check` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
 - [ ] `make lint` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-31-nix-github-workflow-cache-and-image-artifacts/01-task-create-ultra-simple-nix-github-workflow-with-cached-parallel-builds_plans/2026-04-28-ultra-simple-nix-workflow-plan.md</plan>
