@@ -71,26 +71,36 @@
           }
         );
 
-        runner-crate-nextest = craneLib.cargoNextest (
+        # Only build the tests here via doCheck = false
+        runner-crate-nextest-build = craneLib.cargoNextest (
           commonArgs
           // {
-            src = testSrc;
             inherit cargoArtifacts;
-            doCheck = true;
-            nativeBuildInputs = [
-              pkgs.openssl
-              pkgs.postgresql_16
-            ];
+            doCheck = false;
             partitions = 1;
             partitionType = "count";
             cargoNextestPartitionsExtraArgs = "--no-tests=pass";
           }
         );
 
+        runner-crate-nextest = craneLib.cargoNextest (
+          commonArgs
+          // {
+            src = testSrc;
+            nativeBuildInputs = [
+              pkgs.openssl
+              pkgs.postgresql_16
+            ];
+            cargoArtifacts = runner-crate-nextest-build;
+            doCheck = true;
+          }
+        );
+
         runner-crate-nextest-long = craneLib.cargoNextest (
           commonArgs
           // {
-            cargoArtifacts = runner-crate-nextest;
+            src = testSrc;
+            cargoArtifacts = runner-crate-nextest-build;
             nativeBuildInputs = [
                 pkgs.docker
             ];

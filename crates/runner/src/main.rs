@@ -48,6 +48,7 @@ fn main() -> ExitCode {
             write_stderr_event(
                 LogEvent::error("runner", "command.failed", error.to_string()),
                 log_format,
+
             );
             ExitCode::FAILURE
         }
