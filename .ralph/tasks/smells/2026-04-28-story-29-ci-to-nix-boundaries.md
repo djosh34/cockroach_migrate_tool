@@ -1,4 +1,4 @@
-## Smell Set: 2026-04-28-story-29-ci-to-nix-boundaries <status>not_started</status> <passes>false</passes>
+## Smell Set: 2026-04-28-story-29-ci-to-nix-boundaries <status>completed</status> <passes>true</passes>
 
 Please refer to skill 'improve-code-boundaries' to see what smells there are.
 
@@ -9,7 +9,7 @@ Inside dirs:
 Solve each smell:
 
 ---
-- [ ] Smell 3, Wrong Place-ism
+- [x] Smell 3, Wrong Place-ism
 The repository flake now owns the runtime image build graph, but the GitHub workflow catalog still owns image identity, Dockerfile paths, build contexts, cache scopes, and publish metadata. That leaves the workflow as a second packaging authority and forces CI to remember implementation details that should live next to the Nix image outputs.
 
 code:
@@ -69,7 +69,7 @@ docker buildx build \
 ```
 
 ---
-- [ ] Smell 4, Display Not Strings
+- [x] Smell 4, Display Not Strings
 The workflow emits structured publish metadata by hand-building JSON and env files inside shell heredocs. That makes the CI contract stringly and brittle, and it duplicates typed information that could be emitted from a single structured Nix surface instead of being hand-rendered in YAML.
 
 code:
@@ -128,7 +128,7 @@ EOF
 ```
 
 ---
-- [ ] Smell 13, Multiple Functions With Large Overlap
+- [x] Smell 13, Multiple Functions With Large Overlap
 The workflow repeats the same setup boundary across validate jobs and publish jobs: checkout, system package install, Rust or Docker/Buildx/Nix bootstrap, then lane execution. The duplication makes CI policy changes fan out across several jobs instead of one honest setup boundary. After the Nix migration, the shared setup should collapse around one Nix bootstrap plus job-specific command surfaces rather than multiple near-copies.
 
 code:
@@ -200,5 +200,13 @@ validate-long:
     curl -fsSL "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-${buildx_arch}" \
       -o "${HOME}/.docker/cli-plugins/docker-buildx"
     chmod +x "${HOME}/.docker/cli-plugins/docker-buildx"
-    docker buildx version
+docker buildx version
 ```
+
+---
+
+Resolved by:
+- moving static publish metadata into `flake.nix` as `github.publishImageCatalog`
+- deleting the workflow-owned image catalog boundary and consuming `nix eval --json` outputs instead
+- replacing Dockerfile rebuild lanes with Nix-built image archives published through `skopeo`
+- collapsing hosted validation and publish bootstrap around Nix installs plus flake-defined command surfaces

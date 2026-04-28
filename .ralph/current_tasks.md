@@ -1,18 +1,6 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 03:11:21 AM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-ci-to-nix-boundaries.md`
-
-```
-## Smell Set: 2026-04-28-story-29-ci-to-nix-boundaries <status>not_started</status> <passes>false</passes>
-
-Please refer to skill 'improve-code-boundaries' to see what smells there are.
-
-Inside dirs:
-```
-
-==============
+Generated: Tue Apr 28 03:28:14 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-nix-image-generation-boundaries.md`
 
@@ -22,17 +10,6 @@ Inside dirs:
 Please refer to skill 'improve-code-boundaries' to see what smells there are.
 
 Inside dirs:
-```
-
-==============
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md`
-
-```
-## Task: Migrate CI To Nix Only <status>not_started</status> <passes>false</passes>
-
-<description>
-**Goal:** Replace the existing GitHub workflow with a Nix-only CI and publish pipeline that uses the same Nix/crane build graph as local development and produces one tagged multi-platform image. The higher order goal is to eliminate CI/local drift while keeping the publish path efficient, secure, and verifiable.
 ```
 
 ==============

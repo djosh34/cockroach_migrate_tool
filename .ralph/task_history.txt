@@ -163,3 +163,4 @@
 .ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix.md
 .ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md
 .ralph/tasks/bugs/bug-verify-image-amd64-has-quay-vulnerability-findings.md
+.ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md

@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 03:11:21 AM CEST 2026
+Generated: Tue Apr 28 03:28:14 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -176,6 +176,18 @@ Detected on 2026-04-18 during a reporting audit by running `make test`.
 
 <description>
 The documented registry-only novice-user flow for `verify.compose.yml` is broken.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-ci-to-nix-boundaries.md`
+
+```
+## Smell Set: 2026-04-28-story-29-ci-to-nix-boundaries <status>completed</status> <passes>true</passes>
+
+Please refer to skill 'improve-code-boundaries' to see what smells there are.
+
+Inside dirs:
 ```
 
 ==============
@@ -1247,5 +1259,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Generate project Docker images with Nix instead of Dockerfiles, reusing the same crane/Nix build outputs that local builds and tests use. The higher order goal is to make container artifacts reproducible products of the Nix build graph rather than separate, drifting Dockerfile builds.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md`
+
+```
+## Task: Migrate CI To Nix Only <status>completed</status> <passes>true</passes>
+
+<description>
+**Goal:** Replace the existing GitHub workflow with a Nix-only CI and publish pipeline that uses the same Nix/crane build graph as local development and produces one tagged multi-platform image. The higher order goal is to eliminate CI/local drift while keeping the publish path efficient, secure, and verifiable.
 ```
 
