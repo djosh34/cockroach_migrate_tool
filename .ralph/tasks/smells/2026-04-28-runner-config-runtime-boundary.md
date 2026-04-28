@@ -1,4 +1,4 @@
-## Smell Set: 2026-04-28-runner-config-runtime-boundary <status>not_started</status> <passes>false</passes>
+## Smell Set: 2026-04-28-runner-config-runtime-boundary <status>completed</status> <passes>true</passes>
 
 Please refer to skill 'improve-code-boundaries' to see what smells there are.
 
