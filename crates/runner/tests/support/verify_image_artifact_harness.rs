@@ -37,19 +37,6 @@ impl VerifyImageArtifactHarness {
         );
     }
 
-    pub fn image_entrypoint_json(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args([
-                "image",
-                "inspect",
-                &self.image_tag,
-                "--format",
-                "{{json .Config.Entrypoint}}",
-            ]),
-            "docker image inspect verify image entrypoint",
-        )
-    }
-
     pub fn validate_config_json_logs(&self) -> (String, String) {
         let fixture_mount = format!(
             "{}:/work/testdata:ro",
@@ -76,11 +63,6 @@ impl VerifyImageArtifactHarness {
             ]),
             "docker run verify image validate-config --log-format json",
         )
-    }
-
-    pub fn exported_runtime_paths(&self) -> Vec<String> {
-        DockerImageContainer::create(&self.image_tag, "verify image")
-            .exported_paths("docker export verify image")
     }
 
     pub fn assert_embedded_module_meets_minimum_version(

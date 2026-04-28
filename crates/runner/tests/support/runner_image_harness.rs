@@ -41,15 +41,6 @@ impl RunnerImageHarness {
         harness
     }
 
-    pub fn image_entrypoint_json(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args(
-                RunnerDockerContract::docker_inspect_image_entrypoint_args(&self.image_tag),
-            ),
-            "docker image inspect",
-        )
-    }
-
     pub fn validate_mounted_config(&self) -> String {
         let fixture_mount = format!("{}:/config:ro", fixtures_dir().display());
         run_command_capture(

@@ -8,7 +8,6 @@ use super::{
 use crate::nix_image_artifact_harness_support::NixImageArtifact;
 
 pub(crate) struct RunnerContainerProcess {
-    image_tag: String,
     container_name: String,
 }
 
@@ -39,10 +38,7 @@ impl RunnerContainerProcess {
             "docker run runner container",
         );
 
-        Self {
-            image_tag,
-            container_name,
-        }
+        Self { container_name }
     }
 
     pub(crate) fn assert_alive(&self) {
@@ -60,17 +56,6 @@ impl RunnerContainerProcess {
 
     pub(crate) fn logs(&self) -> String {
         docker_logs(&self.container_name)
-    }
-
-    pub(crate) fn image_entrypoint_json(&self) -> String {
-        run_command_capture(
-            std::process::Command::new("docker").args(
-                RunnerDockerContract::docker_inspect_image_entrypoint_args(&self.image_tag),
-            ),
-            "docker image inspect",
-        )
-        .trim()
-        .to_owned()
     }
 
     pub(crate) fn container_ip(&self) -> String {

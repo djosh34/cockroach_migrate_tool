@@ -20,34 +20,6 @@ impl DockerImageContainer {
         }
     }
 
-    pub(crate) fn exported_paths(&self, context: &str) -> Vec<String> {
-        let output = Command::new("bash")
-            .args([
-                "-lc",
-                &format!(
-                    "docker export {container_id} | tar -tf -",
-                    container_id = shell_escape(&self.container_id)
-                ),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("{context} should start: {error}"));
-        assert!(
-            output.status.success(),
-            "{context} failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("docker export output should be utf-8")
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect()
-    }
-
-    #[allow(dead_code)]
     pub(crate) fn copy_file(&self, container_path: &str, host_path: &Path, context: &str) {
         let host_path = host_path
             .to_str()
@@ -76,8 +48,4 @@ impl Drop for DockerImageContainer {
             &format!("docker rm {} temporary container", self.image_label),
         );
     }
-}
-
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }

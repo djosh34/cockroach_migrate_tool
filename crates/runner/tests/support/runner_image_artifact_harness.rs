@@ -5,11 +5,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::docker_image_container_harness_support::DockerImageContainer;
 use crate::nix_image_artifact_harness_support::{
     NixImageArtifact, run_command_capture, run_command_output,
 };
-use crate::runner_docker_contract_support::RunnerDockerContract;
 
 pub struct RunnerImageArtifactHarness {
     image_tag: String,
@@ -37,15 +35,6 @@ impl RunnerImageArtifactHarness {
         );
     }
 
-    pub fn image_entrypoint_json(&self) -> String {
-        run_command_capture(
-            Command::new("docker").args(
-                RunnerDockerContract::docker_inspect_image_entrypoint_args(&self.image_tag),
-            ),
-            "docker image inspect runner image entrypoint",
-        )
-    }
-
     pub fn validate_config_json_logs(&self) -> (String, String) {
         let fixture_mount = format!(
             "{}:/config:ro",
@@ -69,11 +58,6 @@ impl RunnerImageArtifactHarness {
             ]),
             "docker run runner image validate-config --log-format json",
         )
-    }
-
-    pub fn exported_runtime_paths(&self) -> Vec<String> {
-        DockerImageContainer::create(&self.image_tag, "runner image")
-            .exported_paths("docker export runner image")
     }
 
     fn build_runner_image(&self) {

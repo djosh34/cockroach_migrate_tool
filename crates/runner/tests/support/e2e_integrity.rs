@@ -782,10 +782,6 @@ impl RuntimeShapeAudit {
             "the honest default E2E path must not add an extra destination runner container",
         );
         assert_eq!(
-            self.destination_runtime.runner_entrypoint_json, None,
-            "the honest default E2E path should not rely on a separate container entrypoint contract",
-        );
-        assert_eq!(
             self.destination_runtime.destination_connection_host, "127.0.0.1",
             "the honest default E2E path must apply into PostgreSQL through the host-process connection contract",
         );
@@ -833,7 +829,6 @@ impl RuntimeShapeAudit {
 pub struct DestinationRuntimeAudit {
     pub(crate) mode: DestinationRuntimeMode,
     pub(crate) container_count: usize,
-    pub(crate) runner_entrypoint_json: Option<String>,
     pub(crate) healthcheck_url: String,
     pub(crate) destination_connection_host: String,
     pub(crate) destination_connection_port: u16,

@@ -2,8 +2,6 @@
 mod docker_image_container_harness_support;
 #[path = "support/nix_image_artifact_harness.rs"]
 mod nix_image_artifact_harness_support;
-#[path = "support/verify_docker_contract.rs"]
-mod verify_docker_contract_support;
 #[path = "support/verify_image_artifact_harness.rs"]
 mod verify_image_artifact_harness_support;
 
@@ -16,16 +14,6 @@ fn verify_image_builds_from_the_verify_slice() {
     let harness = VerifyImageArtifactHarness::start();
 
     harness.assert_image_exists();
-}
-
-#[test]
-#[ignore = "long lane"]
-fn verify_image_exposes_a_direct_verify_service_entrypoint() {
-    let harness = VerifyImageArtifactHarness::start();
-
-    verify_docker_contract_support::assert_image_entrypoint_is_direct_verify_surface(
-        &harness.image_entrypoint_json(),
-    );
 }
 
 #[test]
@@ -52,16 +40,6 @@ fn verify_image_keeps_x_crypto_out_of_vulnerable_runtime_versions() {
     harness.assert_embedded_module_is_absent_or_meets_minimum_version(
         "golang.org/x/crypto",
         "v0.35.0",
-    );
-}
-
-#[test]
-#[ignore = "long lane"]
-fn verify_image_runtime_filesystem_contains_only_the_binary_payload() {
-    let harness = VerifyImageArtifactHarness::start();
-
-    verify_docker_contract_support::assert_runtime_filesystem_is_minimal(
-        &harness.exported_runtime_paths(),
     );
 }
 

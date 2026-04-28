@@ -375,7 +375,6 @@ impl CdcE2eHarness {
                 Some(RunnerRuntime::Host(_)) => DestinationRuntimeAudit {
                     mode: DestinationRuntimeMode::HostProcess,
                     container_count: 0,
-                    runner_entrypoint_json: None,
                     healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
                     destination_connection_host: self
                         .destination_runtime_postgres_host()
@@ -387,7 +386,6 @@ impl CdcE2eHarness {
                 Some(RunnerRuntime::Container(process)) => DestinationRuntimeAudit {
                     mode: DestinationRuntimeMode::SingleContainer,
                     container_count: 1,
-                    runner_entrypoint_json: Some(process.image_entrypoint_json()),
                     healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
                     destination_connection_host: self
                         .destination_runtime_postgres_host()
