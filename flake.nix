@@ -38,20 +38,31 @@
       system:
       let
         pkgs = import nixpkgs {
-          inherit system;
+          localSystem = system;
           overlays = [ (import rust-overlay) ];
         };
 
         inherit (pkgs) lib;
 
-        rustTargets = lib.attrValues targetForSystem;
-
-        craneLib = (crane.mkLib pkgs).overrideToolchain (
+        rustToolchain =
           p:
           p.rust-bin.stable.latest.default.override {
-            targets = rustTargets;
-          }
-        );
+            targets = lib.attrValues targetForSystem;
+          };
+
+        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+
+        pkgsForTarget =
+          target:
+          import nixpkgs {
+            localSystem = system;
+            crossSystem = {
+              config = target;
+            };
+            overlays = [ (import rust-overlay) ];
+          };
+
+        craneLibForTarget = target: (crane.mkLib (pkgsForTarget target)).overrideToolchain rustToolchain;
 
         src = lib.fileset.toSource {
           root = ./.;
@@ -70,6 +81,7 @@
         buildRunnerFor =
           target:
           let
+            targetCraneLib = craneLibForTarget target;
             targetEnv = envForTarget target;
 
             commonArgs = targetEnv // {
@@ -81,9 +93,9 @@
               doCheck = false;
             };
 
-            cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+            cargoArtifacts = targetCraneLib.buildDepsOnly commonArgs;
           in
-          craneLib.buildPackage (
+          targetCraneLib.buildPackage (
             commonArgs
             // {
               inherit cargoArtifacts;
