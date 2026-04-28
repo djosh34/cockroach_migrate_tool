@@ -11,7 +11,7 @@ Build and run the supported binaries only:
 cargo build --release -p runner
 ```
 
-`verify` is built from the Go service under `cockroachdb_molt/molt`.
+`verify-binary` is the Go `molt` binary built from `cockroachdb_molt/molt` for verify-service use.
 
 ## Images
 

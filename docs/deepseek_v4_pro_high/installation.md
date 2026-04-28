@@ -11,10 +11,10 @@ The repository no longer publishes a separate SQL-emitter image or binary.
 
 ```bash
 nix build .#runner
-nix build .#verify
+nix build .#verify-binary
 ```
 
-`runner` is built through crane. `verify` is the Go `molt` binary used by both the local `verify-service` app and the verify image.
+`runner` is built through crane. `verify-binary` is the Go `molt` binary built from `cockroachdb_molt/molt` for verify-service use.
 
 ## Container Images
 

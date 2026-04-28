@@ -13,7 +13,7 @@
 Canonical local workflow is Nix-native. Do not use the old Make workflow as a contributor interface.
 
 - `nix build .#runner`: build the static Rust `runner` binary used by both the CLI and image.
-- `nix build .#verify`: build the static Go `molt` binary used by both `verify-service` and the verify image.
+- `nix build .#verify-binary`: build the static Go `molt` binary from `cockroachdb_molt/molt` for verify-service use.
 - `nix run .#runner -- --help`: inspect the `runner` CLI surface.
 - `nix run .#verify-service -- --help`: inspect the `verify-service` CLI surface.
 - `nix run .#check`: run the default fmt, lint, and test gates.

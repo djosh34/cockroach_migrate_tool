@@ -12,10 +12,10 @@ use ingest_contract::MappingIngestPath;
 use tempfile::TempDir;
 
 use crate::e2e_harness::{
-    encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
+    LocalDatabaseEnvironment, encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
     investigation_server_cert_path, investigation_server_key_path, lock_e2e_database_resources,
     pick_unused_port, read_file, run_audited_cockroach_sql, wait_for_runner_health,
-    write_cockroach_wrapper_script, LocalDatabaseEnvironment,
+    write_cockroach_wrapper_script,
 };
 use crate::e2e_integrity::VerifyCorrectnessAudit;
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};

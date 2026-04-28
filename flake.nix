@@ -38,12 +38,6 @@
           assert lib.hasPrefix "23.1." pkgs.cockroachdb.version;
           pkgs.cockroachdb;
 
-        molt = pkgs.buildGoModule {
-          pname = "molt";
-          version = "0.1.0";
-          src = ./cockroachdb_molt/molt;
-          vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
-        };
         cleanCargoSourceWith =
           extraFilters: source:
           lib.cleanSourceWith {
@@ -116,7 +110,7 @@
             cargoArtifacts = runner-crate-nextest-build;
             nativeBuildInputs = [
               cockroachdb
-              molt
+              verify-binary
               pkgs.openssl
               pkgs.postgresql_16
             ];
@@ -159,6 +153,8 @@
 
         packages = {
           default = runner-crate;
+          runner = runner-crate;
+          inherit verify-binary;
         };
 
         apps.default = (flake-utils.lib.mkApp {
