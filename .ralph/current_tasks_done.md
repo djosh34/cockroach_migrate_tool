@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 11:12:30 PM CEST 2026
+Generated: Tue Apr 28 11:29:37 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md`
 
@@ -1112,5 +1112,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Extend the image workflow after the GHCR publishing task so the same final multi-platform `runner-image` and `verify-image` images are also published to Quay. The higher order goal is to make the published images available from both GHCR and Quay while keeping the image build path single-source, avoiding rebuilds, and making Quay publish/security status visible directly in GitHub Actions logs.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/03-task-replace-magic-nix-cache-with-cachix.md`
+
+```
+## Task: Replace Magic Nix Cache and FlakeHub Touchpoints with Cachix <status>completed</status> <passes>true</passes>
+
+<description>
+Do not use TDD for this task because it is GitHub Actions/Nix workflow configuration, not application code. Do not run `cargo`; use Nix-backed commands only when local validation is needed.
 ```
 

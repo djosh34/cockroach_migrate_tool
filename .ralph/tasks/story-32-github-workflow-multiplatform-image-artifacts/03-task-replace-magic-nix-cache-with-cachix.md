@@ -1,4 +1,4 @@
-## Task: Replace Magic Nix Cache and FlakeHub Touchpoints with Cachix <status>not_started</status> <passes>false</passes>
+## Task: Replace Magic Nix Cache and FlakeHub Touchpoints with Cachix <status>completed</status> <passes>true</passes>
 
 <description>
 Do not use TDD for this task because it is GitHub Actions/Nix workflow configuration, not application code. Do not run `cargo`; use Nix-backed commands only when local validation is needed.
@@ -27,16 +27,38 @@ This task is only about GitHub Actions CI caching/publishing workflow changes un
 </description>
 
 <acceptance_criteria>
-- [ ] `.github/workflows/publish-images.yml` no longer references `DeterminateSystems/magic-nix-cache-action`.
-- [ ] `.github/workflows/publish-images.yml` no longer has FlakeHub-specific or Determinate login/cache setup in the Nix build jobs.
-- [ ] The Nix build jobs install Nix with a non-Determinate path suitable for Cachix, such as `cachix/install-nix-action`.
-- [ ] The Nix build jobs configure Cachix with cache name `djosh34` and auth token `${{ secrets.CACHIX_TOKEN }}`.
-- [ ] Any `id-token: write` permission used only for Determinate/FlakeHub cache auth is removed from the affected jobs.
-- [ ] `actions/download-artifact` is bumped to the current stable Node.js 24-compatible version available when implementing the task.
-- [ ] Workflow syntax is validated locally or with an appropriate GitHub Actions validation tool; errors must not be ignored.
-- [ ] A real GitHub Actions run of the updated workflow is inspected with authenticated workflow log access, such as `/home/joshazimullah.linux/github-api-curl`, and confirms there are no Magic Nix Cache rate-limit warnings and no FlakeHub login failures.
-- [ ] The inspected workflow run confirms Cachix is configured and used for the Nix image build jobs.
-- [ ] If Cachix authentication fails, the error is reported directly and a bug task is created rather than being swallowed or worked around silently.
+- [x] `.github/workflows/publish-images.yml` no longer references `DeterminateSystems/magic-nix-cache-action`.
+- [x] `.github/workflows/publish-images.yml` no longer has FlakeHub-specific or Determinate login/cache setup in the Nix build jobs.
+- [x] The Nix build jobs install Nix with a non-Determinate path suitable for Cachix, such as `cachix/install-nix-action`.
+- [x] The Nix build jobs configure Cachix with cache name `djosh34` and auth token `${{ secrets.CACHIX_TOKEN }}`.
+- [x] Any `id-token: write` permission used only for Determinate/FlakeHub cache auth is removed from the affected jobs.
+- [x] `actions/download-artifact` is bumped to the current stable Node.js 24-compatible version available when implementing the task.
+- [x] Workflow syntax is validated locally or with an appropriate GitHub Actions validation tool; errors must not be ignored.
+- [x] A real GitHub Actions run of the updated workflow is inspected with authenticated workflow log access, such as `/home/joshazimullah.linux/github-api-curl`, and confirms there are no Magic Nix Cache rate-limit warnings and no FlakeHub login failures.
+- [x] The inspected workflow run confirms Cachix is configured and used for the Nix image build jobs.
+- [x] If Cachix authentication fails, the error is reported directly and a bug task is created rather than being swallowed or worked around silently.
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/03-task-replace-magic-nix-cache-with-cachix_plans/2026-04-28-cachix-workflow-replacement-plan.md</plan>
+
+<implementation_notes>
+- Upstream action versions verified before editing:
+  - `actions/download-artifact`: latest stable release `v8.0.1`, workflow updated to `@v8`
+  - `cachix/install-nix-action`: latest stable release `v31.10.5`, workflow uses `@v31`
+  - `cachix/cachix-action`: latest stable release `v17`, workflow uses `@v17`
+- Implemented one local composite action at `.github/actions/setup-nix-cachix/action.yml` so workflow jobs keep orchestration concerns while shared Nix/Cachix vendor setup lives in one boundary.
+- Local validation passed:
+  - `nix shell nixpkgs#actionlint -c actionlint .github/workflows/publish-images.yml`
+  - `make check`
+  - `make lint`
+  - `make test`
+- Hosted validation passed on run `25077991160` for commit `4194d3738366caa09a0334d55eeeef103e1b06a8`:
+  - URL: `https://github.com/djosh34/cockroach_migrate_tool/actions/runs/25077991160`
+  - All five Nix jobs and the final publish job completed successfully.
+  - The downloaded authenticated logs contain no `Magic Nix Cache`, `FlakeHub`, `determinate-nixd`, or `DeterminateSystems` strings.
+  - The Nix job logs show `cachix/install-nix-action@v31`, `cachix/cachix-action@v17`, `Cache name: djosh34`, and `Cache URI: https://djosh34.cachix.org`.
+  - The publish job logs show `actions/download-artifact@v8` downloading all four architecture/image artifacts successfully.
+- Follow-up bug created for non-auth transient Cachix upload errors that still appeared in the successful hosted run:
+  - `.ralph/tasks/bugs/bug-investigate-transient-cachix-502-push-failures-in-publish-images-workflow.md`
+  - This was not a Cachix authentication failure, but the repeated `502 Bad Gateway` / `Failed to push /nix/store/...` lines must be tracked explicitly rather than ignored.
+</implementation_notes>

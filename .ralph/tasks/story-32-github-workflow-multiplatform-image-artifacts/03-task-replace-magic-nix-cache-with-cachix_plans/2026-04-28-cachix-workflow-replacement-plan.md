@@ -114,55 +114,52 @@
 
 ### Slice 1: Verify Upstream Action Versions Before Editing
 
-- [ ] Check the current stable upstream version guidance for:
+- [x] Check the current stable upstream version guidance for:
   - `actions/download-artifact`
   - `cachix/install-nix-action`
   - `cachix/cachix-action`
-- [ ] Use official upstream sources only and record the exact chosen versions in task notes.
-- [ ] Treat any ambiguity about the latest stable Node.js 24-compatible `actions/download-artifact` major as a blocker that must be resolved from the upstream action docs/releases before editing.
+- [x] Use official upstream sources only and record the exact chosen versions in task notes.
+- [x] Treat any ambiguity about the latest stable Node.js 24-compatible `actions/download-artifact` major as a blocker that must be resolved from the upstream action docs/releases before editing.
 - Stop condition:
   - if upstream docs/releases conflict or do not clearly show the supported stable version, switch this plan back to `TO BE VERIFIED`
 
 ### Slice 2: Replace The Workflow Bootstrap Boundary
 
-- [ ] Add the local `setup-nix-cachix` composite action if it is the cleanest way to centralize Nix + Cachix setup.
+- [x] Add the local `setup-nix-cachix` composite action if it is the cleanest way to centralize Nix + Cachix setup.
 - [ ] Otherwise, inline the Cachix-compatible setup directly in the workflow and explicitly note why the helper boundary was rejected.
-- [ ] Update `nix-flake-check` to use the new bootstrap path.
-- [ ] Update `build-images` to use the new bootstrap path.
-- [ ] Remove `DeterminateSystems/nix-installer-action`.
-- [ ] Remove `DeterminateSystems/magic-nix-cache-action`.
-- [ ] Remove any `use-flakehub` or other FlakeHub/Determinate login-cache configuration from the workflow.
-- [ ] Remove `id-token: write` from affected jobs if it is no longer required after the bootstrap swap.
-- [ ] Run local workflow linting immediately after these edits:
+- [x] Update `nix-flake-check` to use the new bootstrap path.
+- [x] Update `build-images` to use the new bootstrap path.
+- [x] Remove `DeterminateSystems/nix-installer-action`.
+- [x] Remove `DeterminateSystems/magic-nix-cache-action`.
+- [x] Remove any `use-flakehub` or other FlakeHub/Determinate login-cache configuration from the workflow.
+- [x] Remove `id-token: write` from affected jobs if it is no longer required after the bootstrap swap.
+- [x] Run local workflow linting immediately after these edits:
   - `nix shell nixpkgs#actionlint -c actionlint .github/workflows/publish-images.yml`
 - Stop condition:
   - if the Cachix action setup requires materially different permissions, environment layout, or runner assumptions than planned here, switch back to `TO BE VERIFIED`
 
 ### Slice 3: Bump Artifact Download Action And Re-Validate
 
-- [ ] Update `actions/download-artifact` in the publish job to the verified stable major from Slice 1.
-- [ ] Re-run:
+- [x] Update `actions/download-artifact` in the publish job to the verified stable major from Slice 1.
+- [x] Re-run:
   - `nix shell nixpkgs#actionlint -c actionlint .github/workflows/publish-images.yml`
-- [ ] Keep the publish job behavior unchanged apart from the verified action version bump.
+- [x] Keep the publish job behavior unchanged apart from the verified action version bump.
 - Stop condition:
   - if the newer `download-artifact` major requires workflow-contract changes that affect artifact layout or publish semantics, switch back to `TO BE VERIFIED`
 
 ### Slice 4: Hosted Red/Green Verification
 
-- [ ] Push the workflow changes through the normal GitHub `push` trigger.
-- [ ] Inspect the hosted run with `/home/joshazimullah.linux/github-api-curl`.
+- [x] Push the workflow changes through the normal GitHub `push` trigger.
+- [x] Inspect the hosted run with `/home/joshazimullah.linux/github-api-curl`.
 - [ ] Treat any of the following as real RED:
   - Magic Nix Cache still appears in the logs
   - FlakeHub login failures still appear
   - Cachix setup/authentication fails
   - the Nix jobs do not show Cachix usage/configuration
   - the workflow no longer reaches a successful publish path after the cache/bootstrap swap
-- [ ] If Cachix authentication fails:
-  - do not work around it silently
-  - create a bug task with the `add-bug` skill
-  - record the exact hosted failure evidence in task notes
-  - leave the task honest rather than pretending success
-- [ ] Hosted success evidence to capture:
+- [x] If Cachix authentication fails:
+  - Authentication did not fail in run `25077991160`; a separate bug was created for non-auth transient Cachix `502 Bad Gateway` push errors instead.
+- [x] Hosted success evidence to capture:
   - exact workflow run URL or run id
   - proof that there are no Magic Nix Cache rate-limit warnings
   - proof that there are no FlakeHub login failures
@@ -171,11 +168,11 @@
 
 ### Slice 5: Final Repository Validation And Boundary Review
 
-- [ ] Run `make check`
-- [ ] Run `make lint`
-- [ ] Run `make test`
-- [ ] Do not run `make test-long`
-- [ ] Final `improve-code-boundaries` review:
+- [x] Run `make check`
+- [x] Run `make lint`
+- [x] Run `make test`
+- [x] Do not run `make test-long`
+- [x] Final `improve-code-boundaries` review:
   - Nix/cache vendor details live in one clear boundary
   - workflow YAML remains orchestration-focused
   - no swallowed errors or fallback hacks such as `|| true`
