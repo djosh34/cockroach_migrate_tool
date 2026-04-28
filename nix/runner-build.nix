@@ -62,22 +62,23 @@ flake-utils.lib.eachSystem systems (
       CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
     };
 
-    buildRunnerFor =
+    runnerCommonArgsFor =
       target:
+      (envForTarget target)
+      // {
+        inherit src;
+        strictDeps = true;
+        pname = "runner";
+        version = "0.1.0";
+        cargoExtraArgs = "-p runner";
+        doCheck = false;
+      };
+
+    buildRunnerFor =
+      target: cargoArtifacts:
       let
         targetCraneLib = craneLibForTarget target;
-        targetEnv = envForTarget target;
-
-        commonArgs = targetEnv // {
-          inherit src;
-          strictDeps = true;
-          pname = "runner";
-          version = "0.1.0";
-          cargoExtraArgs = "-p runner";
-          doCheck = false;
-        };
-
-        cargoArtifacts = targetCraneLib.buildDepsOnly commonArgs;
+        commonArgs = runnerCommonArgsFor target;
       in
       targetCraneLib.buildPackage (
         commonArgs
@@ -88,7 +89,21 @@ flake-utils.lib.eachSystem systems (
 
     nativeTarget = targetForSystem.${system};
 
-    runner = buildRunnerFor nativeTarget;
+    runnerCommonArgs = runnerCommonArgsFor nativeTarget;
+
+    runnerCargoArtifacts = (craneLibForTarget nativeTarget).buildDepsOnly runnerCommonArgs;
+
+    runner = buildRunnerFor nativeTarget runnerCargoArtifacts;
+
+    runnerTest = import ./runner-test.nix {
+      inherit
+        pkgs
+        flake-utils
+        ;
+      commonArgs = runnerCommonArgs;
+      cargoArtifacts = runnerCargoArtifacts;
+      craneLib = craneLibForTarget nativeTarget;
+    };
 
     cargoArtifacts = craneLib.buildDepsOnly {
       inherit src;
@@ -194,9 +209,18 @@ flake-utils.lib.eachSystem systems (
         cargoFmt
         ;
       default = runner;
-      runner-x86_64-linux = buildRunnerFor targetForSystem.x86_64-linux;
-      runner-aarch64-linux = buildRunnerFor targetForSystem.aarch64-linux;
-    };
+      runner-x86_64-linux =
+        let
+          target = targetForSystem.x86_64-linux;
+        in
+        buildRunnerFor target ((craneLibForTarget target).buildDepsOnly (runnerCommonArgsFor target));
+      runner-aarch64-linux =
+        let
+          target = targetForSystem.aarch64-linux;
+        in
+        buildRunnerFor target ((craneLibForTarget target).buildDepsOnly (runnerCommonArgsFor target));
+    }
+    // runnerTest.packages;
 
     checks = {
       inherit
@@ -205,7 +229,8 @@ flake-utils.lib.eachSystem systems (
         cargoClippy
         cargoFmt
         ;
-    };
+    }
+    // runnerTest.checks;
 
     formatter = pkgs.nixfmt;
 
@@ -225,7 +250,8 @@ flake-utils.lib.eachSystem systems (
       fmt = flake-utils.lib.mkApp {
         drv = fmt;
       };
-    };
+    }
+    // runnerTest.apps;
 
     devShells.default = craneLib.devShell {
       checks = self.checks.${system};
