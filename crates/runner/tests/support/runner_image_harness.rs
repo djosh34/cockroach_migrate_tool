@@ -114,8 +114,7 @@ impl RunnerImageHarness {
     }
 
     fn build_runner_image(&self) {
-        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
-            .provision_image_tag(&self.image_tag, "runner long-lane image");
+        NixImageArtifact::runner().provision_image_tag(&self.image_tag, "runner long-lane image");
     }
 
     fn create_network(&self) {

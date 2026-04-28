@@ -1,4 +1,6 @@
-## Smell Set: 2026-04-28-story-29-nix-image-generation-boundaries <status>not_started</status> <passes>false</passes>
+## Smell Set: 2026-04-28-story-29-nix-image-generation-boundaries <status>completed</status> <passes>true</passes>
+
+<plan>.ralph/tasks/story-29-migrate-to-nix-crane/03-task-migrate-docker-image-generation-to-nix_plans/2026-04-28-nix-image-generation-boundaries-follow-up-plan.md</plan>
 
 Please refer to skill 'improve-code-boundaries' to see what smells there are.
 
@@ -10,7 +12,7 @@ Inside dirs:
 Solve each smell:
 
 ---
-- [ ] Smell 3, Wrong Place-ism
+- [x] Smell 3, Wrong Place-ism
 Image assembly knowledge lives in the wrong modules. `flake.nix` owns binary builds, Dockerfiles own production image assembly, workflow metadata points at Dockerfile paths, and test harnesses know how to build those Dockerfiles directly. That forces the repo to keep two packaging truths alive at once.
 
 code:
@@ -63,7 +65,7 @@ let output = Command::new("docker")
 ```
 
 ---
-- [ ] Smell 13, Multiple functions with large overlap
+- [x] Smell 13, Multiple functions with large overlap
 Runner and verify image harnesses repeat the same image-artifact lifecycle with only small differences in tag names and image-specific assertions. A third copy exists in `published_image_refs.rs`. The shared concern is "load a local test image artifact into Docker," but the code repeats build/create/export/remove plumbing in multiple files.
 
 code:
@@ -108,7 +110,7 @@ RUNNER_IMAGE_REF.get_or_init(|| {
 ```
 
 ---
-- [ ] Smell 10, Remove The Damn Helpers
+- [x] Smell 10, Remove The Damn Helpers
 There is Dockerfile-shape contract support that no longer has an honest caller or boundary. It tests implementation text markers rather than runtime behavior, and it appears to be dead code. Keeping it around increases the chance that image migration preserves the Dockerfile as an implementation detail instead of removing it.
 
 code:

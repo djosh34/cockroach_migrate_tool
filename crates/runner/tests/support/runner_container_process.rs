@@ -1,11 +1,11 @@
 use std::{path::Path, sync::OnceLock};
 
-use crate::nix_image_artifact_harness_support::NixImageArtifact;
 use super::{
     container_running, docker_inspect_format, docker_logs, investigation_server_cert_path,
     run_command_capture,
     runner_docker_contract::{RunnerDockerContract, RunnerRuntimeLaunch},
 };
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
 
 pub(crate) struct RunnerContainerProcess {
     image_tag: String,
@@ -100,8 +100,7 @@ fn shared_runner_image_tag() -> &'static str {
 
     RUNNER_IMAGE_TAG.get_or_init(|| {
         let image_tag = "cockroach-migrate-runner-e2e-local".to_owned();
-        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
-            .provision_image_tag(&image_tag, "runner e2e image");
+        NixImageArtifact::runner().provision_image_tag(&image_tag, "runner e2e image");
         image_tag
     })
 }

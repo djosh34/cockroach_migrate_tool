@@ -13,12 +13,25 @@ impl<'a> NixImageArtifact<'a> {
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) const fn runner() -> Self {
+        Self::new("runner-image", "cockroach-migrate-runner:nix")
+    }
+
+    #[allow(dead_code)]
+    pub(crate) const fn verify() -> Self {
+        Self::new("verify-image", "cockroach-migrate-verify:nix")
+    }
+
     pub(crate) fn provision_image_tag(&self, image_tag: &str, context: &str) {
         let package_selector = format!(".#{}", self.package_attr);
         let build_output = run_command_capture(
-            Command::new("nix")
-                .current_dir(repo_root())
-                .args(["build", "--no-link", "--print-out-paths", &package_selector]),
+            Command::new("nix").current_dir(repo_root()).args([
+                "build",
+                "--no-link",
+                "--print-out-paths",
+                &package_selector,
+            ]),
             &format!("nix build {package_selector} for {context}"),
         );
         let image_archive_path = build_output.trim();

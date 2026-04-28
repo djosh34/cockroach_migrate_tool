@@ -164,3 +164,4 @@
 .ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md
 .ralph/tasks/bugs/bug-verify-image-amd64-has-quay-vulnerability-findings.md
 .ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md
+.ralph/tasks/smells/2026-04-28-story-29-nix-image-generation-boundaries.md

@@ -5,6 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use crate::docker_image_container_harness_support::DockerImageContainer;
 use crate::nix_image_artifact_harness_support::{
     NixImageArtifact, run_command_capture, run_command_output,
 };
@@ -71,55 +72,12 @@ impl RunnerImageArtifactHarness {
     }
 
     pub fn exported_runtime_paths(&self) -> Vec<String> {
-        let container_id = run_command_capture(
-            Command::new("docker").args(["create", &self.image_tag]),
-            "docker create runner image",
-        );
-        let container_id = container_id.trim().to_owned();
-
-        let output = Command::new("bash")
-            .args([
-                "-lc",
-                &format!(
-                    "docker export {container_id} | tar -tf -",
-                    container_id = shell_escape(&container_id)
-                ),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("docker export runner image should start: {error}"));
-
-        let cleanup_output = Command::new("docker")
-            .args(["rm", "-f", &container_id])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker rm runner image export container should start: {error}")
-            });
-        assert!(
-            cleanup_output.status.success(),
-            "docker rm runner image export container failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&cleanup_output.stdout),
-            String::from_utf8_lossy(&cleanup_output.stderr)
-        );
-
-        assert!(
-            output.status.success(),
-            "docker export runner image failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("docker export runner image output should be utf-8")
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect()
+        DockerImageContainer::create(&self.image_tag, "runner image")
+            .exported_paths("docker export runner image")
     }
 
     fn build_runner_image(&self) {
-        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
-            .provision_image_tag(&self.image_tag, "runner image");
+        NixImageArtifact::runner().provision_image_tag(&self.image_tag, "runner image");
     }
 }
 
@@ -151,8 +109,4 @@ fn unique_suffix() -> String {
             .as_nanos(),
         UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed)
     )
-}
-
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }

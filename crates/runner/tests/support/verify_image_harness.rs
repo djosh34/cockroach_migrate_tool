@@ -13,11 +13,11 @@ use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::nix_image_artifact_harness_support::NixImageArtifact;
 use crate::e2e_harness::{
     investigation_ca_cert_path, investigation_server_cert_path, investigation_server_key_path,
 };
 use crate::e2e_integrity::{VerifyCorrectnessAudit, VerifyJobResponse};
+use crate::nix_image_artifact_harness_support::NixImageArtifact;
 
 pub struct VerifyImageHarness {
     image_tag: String,
@@ -55,8 +55,7 @@ impl VerifyImageHarness {
     }
 
     fn build_verify_image(&self) {
-        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
-            .provision_image_tag(&self.image_tag, "verify long-lane image");
+        NixImageArtifact::verify().provision_image_tag(&self.image_tag, "verify long-lane image");
     }
 }
 

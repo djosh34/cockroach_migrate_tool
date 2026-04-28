@@ -13,8 +13,7 @@ pub(crate) fn runner_image_ref() -> &'static str {
 
     RUNNER_IMAGE_REF.get_or_init(|| {
         let image_ref = format!("cockroach-migrate-runner-novice-{}", unique_suffix());
-        NixImageArtifact::new("runner-image", "cockroach-migrate-runner:nix")
-            .provision_image_tag(&image_ref, "runner novice image");
+        NixImageArtifact::runner().provision_image_tag(&image_ref, "runner novice image");
         image_ref
     })
 }
@@ -24,8 +23,7 @@ pub(crate) fn verify_image_ref() -> &'static str {
 
     VERIFY_IMAGE_REF.get_or_init(|| {
         let image_ref = format!("cockroach-migrate-verify-novice-{}", unique_suffix());
-        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
-            .provision_image_tag(&image_ref, "verify novice image");
+        NixImageArtifact::verify().provision_image_tag(&image_ref, "verify novice image");
         image_ref
     })
 }

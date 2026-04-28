@@ -6,7 +6,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::nix_image_artifact_harness_support::NixImageArtifact;
+use crate::docker_image_container_harness_support::DockerImageContainer;
+use crate::nix_image_artifact_harness_support::{
+    NixImageArtifact, run_command_capture, run_command_output,
+};
 
 pub struct VerifyImageArtifactHarness {
     image_tag: String,
@@ -76,50 +79,8 @@ impl VerifyImageArtifactHarness {
     }
 
     pub fn exported_runtime_paths(&self) -> Vec<String> {
-        let container_id = run_command_capture(
-            Command::new("docker").args(["create", &self.image_tag]),
-            "docker create verify image",
-        );
-        let container_id = container_id.trim().to_owned();
-
-        let output = Command::new("bash")
-            .args([
-                "-lc",
-                &format!(
-                    "docker export {container_id} | tar -tf -",
-                    container_id = shell_escape(&container_id)
-                ),
-            ])
-            .output()
-            .unwrap_or_else(|error| panic!("docker export verify image should start: {error}"));
-
-        let cleanup_output = Command::new("docker")
-            .args(["rm", "-f", &container_id])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker rm verify image export container should start: {error}")
-            });
-        assert!(
-            cleanup_output.status.success(),
-            "docker rm verify image export container failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&cleanup_output.stdout),
-            String::from_utf8_lossy(&cleanup_output.stderr)
-        );
-
-        assert!(
-            output.status.success(),
-            "docker export verify image failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-
-        String::from_utf8(output.stdout)
-            .expect("docker export verify image output should be utf-8")
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(str::to_owned)
-            .collect()
+        DockerImageContainer::create(&self.image_tag, "verify image")
+            .exported_paths("docker export verify image")
     }
 
     pub fn assert_embedded_module_meets_minimum_version(
@@ -173,8 +134,7 @@ impl VerifyImageArtifactHarness {
     }
 
     fn build_verify_image(&self) {
-        NixImageArtifact::new("verify-image", "cockroach-migrate-verify:nix")
-            .provision_image_tag(&self.image_tag, "verify image");
+        NixImageArtifact::verify().provision_image_tag(&self.image_tag, "verify image");
     }
 
     fn embedded_module_version(&self, module: &str) -> Option<String> {
@@ -243,43 +203,12 @@ impl ExtractedVerifyBinary {
         });
 
         let binary_path = temp_dir.join("molt");
-        let container_id = run_command_capture(
-            Command::new("docker").args(["create", image_tag]),
-            "docker create verify image extraction container",
-        );
-        let container_id = container_id.trim().to_owned();
-
-        let copy_result = Command::new("docker")
-            .args([
-                "cp",
-                &format!("{container_id}:/usr/local/bin/molt"),
-                binary_path
-                    .to_str()
-                    .expect("temporary binary path should be valid utf-8"),
-            ])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker cp verify binary from image should start: {error}")
-            });
-
-        let cleanup_output = Command::new("docker")
-            .args(["rm", "-f", &container_id])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker rm verify image extraction container should start: {error}")
-            });
-        assert!(
-            cleanup_output.status.success(),
-            "docker rm verify image extraction container failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&cleanup_output.stdout),
-            String::from_utf8_lossy(&cleanup_output.stderr)
-        );
-
-        assert!(
-            copy_result.status.success(),
-            "docker cp verify binary from image failed:\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&copy_result.stdout),
-            String::from_utf8_lossy(&copy_result.stderr)
+        let container =
+            DockerImageContainer::create(image_tag, "verify image extraction container");
+        container.copy_file(
+            "/usr/local/bin/molt",
+            &binary_path,
+            "docker cp verify binary from image",
         );
 
         Self {
@@ -317,32 +246,6 @@ struct GoSemver {
     minor: u64,
     patch: u64,
     pre_release: bool,
-}
-
-fn run_command_capture(command: &mut Command, context: &str) -> String {
-    let (stdout, _) = run_command_output(command, context);
-    stdout
-}
-
-fn run_command_output(command: &mut Command, context: &str) -> (String, String) {
-    let output = command
-        .output()
-        .unwrap_or_else(|error| panic!("{context} should start: {error}"));
-    assert!(
-        output.status.success(),
-        "{context} failed with status {}\nstdout:\n{}\nstderr:\n{}",
-        output.status,
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    (
-        String::from_utf8(output.stdout).expect("command stdout should be utf-8"),
-        String::from_utf8(output.stderr).expect("command stderr should be utf-8"),
-    )
-}
-
-fn shell_escape(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
 fn verify_slice_root() -> PathBuf {
