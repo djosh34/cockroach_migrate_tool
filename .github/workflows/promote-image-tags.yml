@@ -20,33 +20,39 @@ env:
   GHCR_REGISTRY: ghcr.io
 
 jobs:
-  image-catalog:
-    uses: ./.github/workflows/image-catalog.yml
-
   promote-release-tags:
-    needs: image-catalog
     runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
       packages: write
-    env:
-      IMAGE_CATALOG_JSON: ${{ needs.image-catalog.outputs.release_image_catalog }}
-      REQUESTED_VERSION: ${{ inputs.version }}
-      SET_LATEST: ${{ inputs.set_latest }}
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@v31
+      - name: Install promotion tools through Nix
+        run: |
+          set -euo pipefail
+          nix profile install nixpkgs#jq nixpkgs#skopeo
+      - name: Evaluate flake-owned publish catalog
+        id: catalog
+        run: |
+          set -euo pipefail
+          release_image_catalog="$(nix eval --json .#github.publishImageCatalog.release_image_catalog)"
+          {
+            echo "release_image_catalog<<EOF"
+            echo "${release_image_catalog}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
       - name: Validate dispatch ref
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/master"
-
-      - name: Install promotion dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install --yes jq skopeo
-
       - name: Validate promotion inputs
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          SET_LATEST: ${{ inputs.set_latest }}
         run: |
           set -euo pipefail
           version="${REQUESTED_VERSION}"
@@ -67,27 +73,13 @@ jobs:
               exit 1
               ;;
           esac
-
-      - name: Mask derived GHCR publish credentials
+      - name: Promote published GHCR images
         env:
           GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          derived_registry_auth="$(printf '%s' "${GITHUB_ACTOR}:${GHCR_PASSWORD}" | base64 -w0)"
-          echo "::add-mask::${derived_registry_auth}"
-          printf 'GHCR publish auth (masked): %s\n' "${derived_registry_auth}"
-
-      - name: Login to GHCR
-        env:
-          GHCR_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          printf '%s' "${GHCR_PASSWORD}" | docker login "${{ env.GHCR_REGISTRY }}" --username "${{ github.actor }}" --password-stdin
-
-      - name: Resolve latest successful published source SHA
-        id: resolve-source-sha
-        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_CATALOG_JSON: ${{ steps.catalog.outputs.release_image_catalog }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+          SET_LATEST: ${{ inputs.set_latest }}
         run: |
           set -euo pipefail
           runs_api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/publish-images.yml/runs?branch=master&status=success&event=push&per_page=1"
@@ -96,46 +88,39 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             --header "X-GitHub-Api-Version: 2022-11-28" \
             "${runs_api}")"
-          source_sha="$(jq -r '.workflow_runs[0].head_sha // empty' <<< "${runs_json}")"
+          source_sha="$(jq -r ".workflow_runs[0].head_sha // empty" <<< "${runs_json}")"
           if [[ -z "${source_sha}" ]]; then
             printf 'no successful publish-images push run exists on master, so there is no truthful GHCR source_sha to promote\n' >&2
             exit 1
           fi
-          printf 'source_sha=%s\n' "${source_sha}" >> "${GITHUB_OUTPUT}"
-
-      - name: Promote published GHCR images
-        run: |
-          set -euo pipefail
-          source_sha="${{ steps.resolve-source-sha.outputs.source_sha }}"
-          : "${source_sha:?missing resolved source_sha}"
 
           promote_tag() {
             local source_ref="$1"
             local target_ref="$2"
-            skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${source_ref}" >/dev/null
+            skopeo inspect --creds "${{ github.actor }}:${GHCR_PASSWORD}" "docker://${source_ref}" >/dev/null
             skopeo copy \
               --all \
-              --src-authfile "${HOME}/.docker/config.json" \
-              --dest-authfile "${HOME}/.docker/config.json" \
+              --src-creds "${{ github.actor }}:${GHCR_PASSWORD}" \
+              --dest-creds "${{ github.actor }}:${GHCR_PASSWORD}" \
               "docker://${source_ref}" \
               "docker://${target_ref}"
-            skopeo inspect --authfile "${HOME}/.docker/config.json" "docker://${target_ref}" >/dev/null
+            skopeo inspect --creds "${{ github.actor }}:${GHCR_PASSWORD}" "docker://${target_ref}" >/dev/null
           }
 
-          jq -e 'length > 0' <<< "${IMAGE_CATALOG_JSON}" >/dev/null
+          jq -e "length > 0" <<< "${IMAGE_CATALOG_JSON}" >/dev/null
 
           {
             echo "## GHCR Release Promotion"
             echo
-            printf -- '- Source publish SHA: `%s`\n' "${source_sha}"
+            printf -- '- Source publish SHA: %s\n' "\`${source_sha}\`"
             echo
             echo "| Image | Source commit tag | Version tag | Latest tag |"
             echo "| --- | --- | --- | --- |"
           } >> "${GITHUB_STEP_SUMMARY}"
 
           while IFS= read -r image_target; do
-            image_id="$(jq -r '.image_id' <<< "${image_target}")"
-            ghcr_repository="$(jq -r '.ghcr_repository' <<< "${image_target}")"
+            image_id="$(jq -r ".image_id" <<< "${image_target}")"
+            ghcr_repository="$(jq -r ".ghcr_repository" <<< "${image_target}")"
             : "${image_id:?missing image_id in image catalog}"
             : "${ghcr_repository:?missing ghcr_repository in image catalog}"
             source_ref="${GHCR_REGISTRY}/${{ github.repository_owner }}/${ghcr_repository}:${source_sha}"
@@ -150,9 +135,9 @@ jobs:
               latest_summary="\`${latest_ref}\`"
             fi
 
-            printf '| `%s` | `%s` | `%s` | %s |\n' \
-              "${image_id}" \
-              "${source_ref}" \
-              "${version_ref}" \
+            printf '| %s | %s | %s | %s |\n' \
+              "\`${image_id}\`" \
+              "\`${source_ref}\`" \
+              "\`${version_ref}\`" \
               "${latest_summary}" >> "${GITHUB_STEP_SUMMARY}"
-          done < <(jq -cr '.[]' <<< "${IMAGE_CATALOG_JSON}")
+          done < <(jq -cr ".[]" <<< "${IMAGE_CATALOG_JSON}")

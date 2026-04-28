@@ -19,7 +19,51 @@
       rust-overlay,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    let
+      githubPublishPlatforms = [
+        {
+          system = "x86_64-linux";
+          platform = "linux/amd64";
+          platform_tag_suffix = "amd64";
+          runner = "ubuntu-24.04";
+        }
+        {
+          system = "aarch64-linux";
+          platform = "linux/arm64";
+          platform_tag_suffix = "arm64";
+          runner = "ubuntu-24.04-arm";
+        }
+      ];
+      githubPublishImages = [
+        {
+          artifact_name = "published-image-runner";
+          ghcr_repository = "cockroach-migrate-runner";
+          image_id = "runner";
+          loaded_image_ref = "cockroach-migrate-runner:nix";
+          manifest_key = "runner_image_ref";
+          package_attr = "runner-image";
+          quay_repository = "runner";
+        }
+        {
+          artifact_name = "published-image-verify";
+          ghcr_repository = "cockroach-migrate-verify";
+          image_id = "verify";
+          loaded_image_ref = "cockroach-migrate-verify:nix";
+          manifest_key = "verify_image_ref";
+          package_attr = "verify-image";
+          quay_repository = "verify";
+        }
+      ];
+      githubPublishImageMatrix = {
+        include = nixpkgs.lib.concatMap (
+          image:
+          map (platform: {
+            inherit image platform;
+          }) githubPublishPlatforms
+        ) githubPublishImages;
+      };
+    in
+    (flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
@@ -38,13 +82,12 @@
             aarch64-linux = "aarch64-unknown-linux-musl";
           }
           .${system};
-        craneLibMusl =
-          (crane.mkLib pkgs).overrideToolchain (
-            p:
-            p.rust-bin.stable.latest.default.override {
-              targets = [ runnerMuslTarget ];
-            }
-          );
+        craneLibMusl = (crane.mkLib pkgs).overrideToolchain (
+          p:
+          p.rust-bin.stable.latest.default.override {
+            targets = [ runnerMuslTarget ];
+          }
+        );
         goVersion = "0.1.0";
         runnerTestInputs = [
           pkgs.gettext
@@ -234,8 +277,7 @@
 
         checkApp = mkNixBuildApp "check" ".#checks.${system}.runner-clippy";
         lintApp = mkNixBuildApp "lint" ".#checks.${system}.runner-clippy";
-        testApp =
-          mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
+        testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
         fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.fmt-check";
         longTestApp = mkNixBuildApp "test-long" ".#packages.${system}.runner-long-test";
       in
@@ -290,5 +332,13 @@
 
         formatter = pkgs.nixfmt-rfc-style;
       }
-    );
+    ))
+    // {
+      github.publishImageCatalog = {
+        platforms = githubPublishPlatforms;
+        images = githubPublishImages;
+        publish_image_matrix = githubPublishImageMatrix;
+        release_image_catalog = githubPublishImages;
+      };
+    };
 }

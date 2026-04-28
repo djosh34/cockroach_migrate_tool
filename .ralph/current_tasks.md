@@ -1,6 +1,18 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 01:55:06 AM CEST 2026
+Generated: Tue Apr 28 02:16:22 AM CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-ci-to-nix-boundaries.md`
+
+```
+## Smell Set: 2026-04-28-story-29-ci-to-nix-boundaries <status>not_started</status> <passes>false</passes>
+
+Please refer to skill 'improve-code-boundaries' to see what smells there are.
+
+Inside dirs:
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-nix-image-generation-boundaries.md`
 
