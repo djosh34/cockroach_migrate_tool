@@ -54,9 +54,7 @@
             # Add additional build inputs here
           ];
 
-          nativeBuildInputs = [
-            pkgs.postgresql_16
-          ];
+          nativeBuildInputs = [ ];
         };
 
         # Build *just* the cargo dependencies, so we can reuse
@@ -95,6 +93,8 @@
           # Check formatting
           runner-crate-fmt = craneLib.cargoFmt {
             inherit src;
+            pname = "runner";
+            version = "0.1.0";
           };
 
           # Run tests with cargo-nextest
@@ -106,6 +106,10 @@
               src = testSrc;
               inherit cargoArtifacts;
               doCheck = true;
+              nativeBuildInputs = [
+                pkgs.openssl
+                pkgs.postgresql_16
+              ];
               partitions = 1;
               partitionType = "count";
               cargoNextestPartitionsExtraArgs = "--no-tests=pass";
@@ -117,8 +121,12 @@
           default = runner-crate;
         };
 
-        apps.default = flake-utils.lib.mkApp {
+        apps.default = (flake-utils.lib.mkApp {
           drv = runner-crate;
+        }) // {
+          meta = {
+            description = "CockroachDB to PostgreSQL migration runner";
+          };
         };
 
         devShells.default = craneLib.devShell {
