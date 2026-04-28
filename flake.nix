@@ -31,15 +31,17 @@
         inherit (pkgs) lib;
 
         craneLib = crane.mkLib pkgs;
-        src = craneLib.cleanCargoSource ./.;
-        testSrc = lib.cleanSourceWith {
-          src = ./.;
-          filter =
-            path: type:
-            (craneLib.filterCargoSources path type)
-            || (lib.hasInfix "/crates/runner/tests/fixtures/" path)
-            || (lib.hasInfix "/investigations/cockroach-webhook-cdc/certs/" path);
-        };
+        cleanCargoSourceWith =
+          extraFilters: source:
+          lib.cleanSourceWith {
+            src = lib.cleanSource source;
+            filter = path: type: (craneLib.filterCargoSources path type) || lib.any (filter: filter path type) extraFilters;
+          };
+        src = cleanCargoSourceWith [ ] ./.;
+        testSrc = cleanCargoSourceWith [
+          (path: _type: lib.hasInfix "/crates/runner/tests/fixtures/" path)
+          (path: _type: lib.hasInfix "/investigations/cockroach-webhook-cdc/certs/" path)
+        ] ./.;
 
         # Common arguments can be set here to avoid repeating them later
         commonArgs = {
@@ -66,6 +68,33 @@
           // {
             inherit cargoArtifacts;
             doCheck = false;
+          }
+        );
+
+        runner-crate-nextest = craneLib.cargoNextest (
+          commonArgs
+          // {
+            src = testSrc;
+            inherit cargoArtifacts;
+            doCheck = true;
+            nativeBuildInputs = [
+              pkgs.openssl
+              pkgs.postgresql_16
+            ];
+            partitions = 1;
+            partitionType = "count";
+            cargoNextestPartitionsExtraArgs = "--no-tests=pass";
+          }
+        );
+
+        runner-crate-nextest-long = craneLib.cargoNextest (
+          commonArgs
+          // {
+            cargoArtifacts = runner-crate-nextest;
+            nativeBuildInputs = [
+                pkgs.docker
+            ];
+            cargoNextestPartitionsExtraArgs = "--run-ignored ignored-only --no-tests=fail";
           }
         );
       in
@@ -95,24 +124,11 @@
             version = "0.1.0";
           };
 
-          # Run tests with cargo-nextest
-          # Consider setting `doCheck = false` on `runner-crate` if you do not want
-          # the tests to run twice
-          runner-crate-nextest = craneLib.cargoNextest (
-            commonArgs
-            // {
-              src = testSrc;
-              inherit cargoArtifacts;
-              doCheck = true;
-              nativeBuildInputs = [
-                pkgs.openssl
-                pkgs.postgresql_16
-              ];
-              partitions = 1;
-              partitionType = "count";
-              cargoNextestPartitionsExtraArgs = "--no-tests=pass";
-            }
-          );
+          # Run tests with cargo-nextest. The long lane uses the regular nextest
+          # derivation as its cargoArtifacts input so it only runs after the
+          # default nextest lane succeeds.
+          inherit runner-crate-nextest runner-crate-nextest-long;
+          test-long = runner-crate-nextest-long;
         };
 
         packages = {
