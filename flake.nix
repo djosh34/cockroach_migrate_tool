@@ -414,31 +414,20 @@
           '';
         };
 
-        ciBuildBundleEntries =
-          [
-            {
-              name = "runner-runtime-deps";
-              path = runnerRuntimeCargoArtifacts;
-            }
-            {
-              name = "runner-runtime";
-              path = runnerRuntime;
-            }
-            {
-              name = "verify-runtime";
-              path = moltRuntime;
-            }
-          ]
-          ++ pkgs.lib.optionals (system == "x86_64-linux") [
-            {
-              name = "runner-clippy-deps";
-              path = runnerClippyCargoArtifacts;
-            }
-            {
-              name = "runner-test-deps";
-              path = runnerTestCargoArtifacts;
-            }
-          ];
+        ciBuildBundleEntries = [
+          {
+            name = "runner-runtime-deps";
+            path = runnerRuntimeCargoArtifacts;
+          }
+          {
+            name = "runner-runtime";
+            path = runnerRuntime;
+          }
+          {
+            name = "verify-runtime";
+            path = moltRuntime;
+          }
+        ];
 
         ciBuildBundle = pkgs.linkFarm "ci-build-bundle-${system}" ciBuildBundleEntries;
 
