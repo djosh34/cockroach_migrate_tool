@@ -20,131 +20,28 @@
       ...
     }:
     let
-      githubPublishPlatforms = [
+      ciImageCatalog = [
         {
-          system = "x86_64-linux";
-          platform = "linux/amd64";
-          platform_tag_suffix = "amd64";
-          runner = "ubuntu-24.04";
-        }
-        {
-          system = "aarch64-linux";
-          platform = "linux/arm64";
-          platform_tag_suffix = "arm64";
-          runner = "ubuntu-24.04-arm";
-        }
-      ];
-      githubPublishImages = [
-        {
-          ghcr_repository = "cockroach-migrate-runner";
           image_id = "runner";
-          loaded_image_ref = "cockroach-migrate-runner:nix";
-          manifest_key = "runner_image_ref";
+          image_name = "cockroach-migrate-runner";
           package_attr = "runner-image";
-          quay_repository = "runner";
         }
         {
-          ghcr_repository = "cockroach-migrate-verify";
           image_id = "verify";
-          loaded_image_ref = "cockroach-migrate-verify:nix";
-          manifest_key = "verify_image_ref";
+          image_name = "cockroach-migrate-verify";
           package_attr = "verify-image";
-          quay_repository = "verify";
         }
       ];
-      githubCiBuildOutputs =
-        (map (platform: {
-          inherit (platform)
-            platform
-            platform_tag_suffix
-            runner
-            system
-            ;
-          build_output_id = "runner-runtime-deps-${platform.platform_tag_suffix}";
-          installable = ".#packages.${platform.system}.runner-runtime-deps";
-        }) githubPublishPlatforms)
-        ++ (map (platform: {
-          inherit (platform)
-            platform
-            platform_tag_suffix
-            runner
-            system
-            ;
-          build_output_id = "verify-runtime-go-modules-${platform.platform_tag_suffix}";
-          installable = ".#packages.${platform.system}.verify-runtime-go-modules";
-        }) githubPublishPlatforms)
-        ++ [
-          {
-            build_output_id = "runner-clippy-deps-amd64";
-            installable = ".#packages.x86_64-linux.runner-clippy-deps";
-            platform = "linux/amd64";
-            platform_tag_suffix = "amd64";
-            runner = "ubuntu-24.04";
-            system = "x86_64-linux";
-          }
-          {
-            build_output_id = "runner-test-deps-amd64";
-            installable = ".#packages.x86_64-linux.runner-test-deps";
-            platform = "linux/amd64";
-            platform_tag_suffix = "amd64";
-            runner = "ubuntu-24.04";
-            system = "x86_64-linux";
-          }
-          {
-            build_output_id = "verify-service-test-go-modules-amd64";
-            installable = ".#packages.x86_64-linux.verify-service-test-go-modules";
-            platform = "linux/amd64";
-            platform_tag_suffix = "amd64";
-            runner = "ubuntu-24.04";
-            system = "x86_64-linux";
-          }
-        ];
-      githubCiValidationLanes = [
-        {
-          installables = [
-            ".#checks.x86_64-linux.runner-clippy"
-            ".#checks.x86_64-linux.runner-test"
-            ".#checks.x86_64-linux.verify-service-test"
-          ];
-          required_build_output_ids = [
-            "runner-clippy-deps-amd64"
-            "runner-test-deps-amd64"
-            "verify-service-test-go-modules-amd64"
-          ];
-          runner = "ubuntu-24.04";
-          system = "x86_64-linux";
-          validation_id = "fast";
-        }
-      ];
-      githubCiImageMatrix = {
-        include = nixpkgs.lib.concatMap (
-          image:
-          map (platform: {
-            inherit image platform;
-            image_installable = ".#packages.${platform.system}.${image.package_attr}";
-            image_output_id = "${image.image_id}-${platform.platform_tag_suffix}";
-            required_build_output_ids =
-              if image.image_id == "runner" then
-                [ "runner-runtime-deps-${platform.platform_tag_suffix}" ]
-              else
-                [ "verify-runtime-go-modules-${platform.platform_tag_suffix}" ];
-          }) githubPublishPlatforms
-        ) githubPublishImages;
-      };
-      githubCiWorkflowCatalog = {
-        audit = {
-          required_build_output_ids = map (entry: entry.build_output_id) githubCiBuildOutputs;
-          required_validation_ids = map (lane: lane.validation_id) githubCiValidationLanes;
-          required_image_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
-          required_publish_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
+      ciPlatformBySystem = {
+        x86_64-linux = {
+          architecture = "amd64";
+          os = "linux";
+          platform = "linux/amd64";
         };
-        build_platform_matrix = {
-          include = githubCiBuildOutputs;
-        };
-        image_matrix = githubCiImageMatrix;
-        release_image_catalog = githubPublishImages;
-        validation_matrix = {
-          include = githubCiValidationLanes;
+        aarch64-linux = {
+          architecture = "arm64";
+          os = "linux";
+          platform = "linux/arm64";
         };
       };
     in
@@ -161,6 +58,8 @@
         runnerManifest = builtins.fromTOML (builtins.readFile ./crates/runner/Cargo.toml);
         runnerPname = runnerManifest.package.name;
         runnerVersion = runnerManifest.package.version;
+        ciCurrentPlatform = ciPlatformBySystem.${system};
+        ciImageCatalogJson = builtins.toJSON ciImageCatalog;
         runnerMuslTarget =
           {
             x86_64-linux = "x86_64-unknown-linux-musl";
@@ -230,71 +129,83 @@
           postCheck = sanitizeCargoArtifacts;
         };
 
-        cargoArtifacts = craneLib.buildDepsOnly ({
-          pname = "${runnerPname}-deps";
-          version = runnerVersion;
-          src = cargoSrc;
-          strictDeps = true;
-          doCheck = false;
-          cargoExtraArgs = "-p runner --locked";
-        } // cargoArtifactSanitizers);
+        cargoArtifacts = craneLib.buildDepsOnly (
+          {
+            pname = "${runnerPname}-deps";
+            version = runnerVersion;
+            src = cargoSrc;
+            strictDeps = true;
+            doCheck = false;
+            cargoExtraArgs = "-p runner --locked";
+          }
+          // cargoArtifactSanitizers
+        );
 
-        cargoArtifactsClosureCheck = pkgs.runCommand "${runnerPname}-cargo-artifacts-closure" {
-          nativeBuildInputs = [
-            pkgs.binutils
-            pkgs.findutils
-            pkgs.gnugrep
-            pkgs.gnutar
-            pkgs.zstd
-          ];
-        } ''
-          artifact_tar="${cargoArtifacts}/target.tar.zst"
-          cp "$artifact_tar" "$out"
-          forbidden_ref_pattern='/nix/store/[[:alnum:]]{32}-(gcc-[^[:space:]]*|glibc-[^[:space:]]*-dev|vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*)'
+        cargoArtifactsClosureCheck =
+          pkgs.runCommand "${runnerPname}-cargo-artifacts-closure"
+            {
+              nativeBuildInputs = [
+                pkgs.binutils
+                pkgs.findutils
+                pkgs.gnugrep
+                pkgs.gnutar
+                pkgs.zstd
+              ];
+            }
+            ''
+              artifact_tar="${cargoArtifacts}/target.tar.zst"
+              cp "$artifact_tar" "$out"
+              forbidden_ref_pattern='/nix/store/[[:alnum:]]{32}-(gcc-[^[:space:]]*|glibc-[^[:space:]]*-dev|vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*)'
 
-          while IFS= read -r artifact_path
-          do
-            if tar --zstd -xOf "$artifact_tar" "$artifact_path" \
-              | strings \
-              | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
-              | rg -v '^/nix/store/e{32}-' \
-              | grep -Eq "$forbidden_ref_pattern"; then
-              echo "cargo-artifacts must not retain build-only store references via $artifact_path" >&2
-              exit 1
-            fi
-          done < <(
-            tar --zstd -tf "$artifact_tar" | grep -E '^./release/(build/.*/out/.*\.(a|o)|deps/.*\.(rlib|rmeta))$'
-          )
-        '';
+              while IFS= read -r artifact_path
+              do
+                if tar --zstd -xOf "$artifact_tar" "$artifact_path" \
+                  | strings \
+                  | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
+                  | rg -v '^/nix/store/e{32}-' \
+                  | grep -Eq "$forbidden_ref_pattern"; then
+                  echo "cargo-artifacts must not retain build-only store references via $artifact_path" >&2
+                  exit 1
+                fi
+              done < <(
+                tar --zstd -tf "$artifact_tar" | grep -E '^./release/(build/.*/out/.*\.(a|o)|deps/.*\.(rlib|rmeta))$'
+              )
+            '';
 
-        cargoArtifactsRuntimeBoundaryCheck = pkgs.runCommand "${runnerPname}-cargo-artifacts-runtime-boundary" {
-          nativeBuildInputs = [
-            pkgs.gnugrep
-            pkgs.gnutar
-            pkgs.zstd
-          ];
-        } ''
-          artifact_tar="${cargoArtifacts}/target.tar.zst"
-          cp "$artifact_tar" "$out"
+        cargoArtifactsRuntimeBoundaryCheck =
+          pkgs.runCommand "${runnerPname}-cargo-artifacts-runtime-boundary"
+            {
+              nativeBuildInputs = [
+                pkgs.gnugrep
+                pkgs.gnutar
+                pkgs.zstd
+              ];
+            }
+            ''
+              artifact_tar="${cargoArtifacts}/target.tar.zst"
+              cp "$artifact_tar" "$out"
 
-          for forbidden_crate in reqwest tempfile
-          do
-            if tar --zstd -tf "$artifact_tar" | grep -Eq "/(lib)?''${forbidden_crate}[-_.]"; then
-              echo "runtime cargo-artifacts must not retain dev-only crate ''${forbidden_crate}" >&2
-              exit 1
-            fi
-          done
-        '';
+              for forbidden_crate in reqwest tempfile
+              do
+                if tar --zstd -tf "$artifact_tar" | grep -Eq "/(lib)?''${forbidden_crate}[-_.]"; then
+                  echo "runtime cargo-artifacts must not retain dev-only crate ''${forbidden_crate}" >&2
+                  exit 1
+                fi
+              done
+            '';
 
-        runnerClippyCargoArtifacts = craneLib.buildDepsOnly ({
-          pname = "${runnerPname}-clippy-deps";
-          version = runnerVersion;
-          src = cargoSrc;
-          strictDeps = true;
-          doCheck = false;
-          cargoExtraArgs = "--workspace --locked";
-          cargoCheckExtraArgs = "--all-targets";
-        } // cargoArtifactSanitizers);
+        runnerClippyCargoArtifacts = craneLib.buildDepsOnly (
+          {
+            pname = "${runnerPname}-clippy-deps";
+            version = runnerVersion;
+            src = cargoSrc;
+            strictDeps = true;
+            doCheck = false;
+            cargoExtraArgs = "--workspace --locked";
+            cargoCheckExtraArgs = "--all-targets";
+          }
+          // cargoArtifactSanitizers
+        );
 
         runner = craneLib.buildPackage {
           inherit cargoArtifacts;
@@ -306,16 +217,19 @@
           doCheck = false;
         };
 
-        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly ({
-          pname = "${runnerPname}-runtime-deps";
-          version = runnerVersion;
-          src = cargoSrc;
-          strictDeps = true;
-          doCheck = false;
-          cargoExtraArgs = "-p runner --locked";
-          CARGO_BUILD_TARGET = runnerMuslTarget;
-          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-        } // cargoArtifactSanitizers);
+        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly (
+          {
+            pname = "${runnerPname}-runtime-deps";
+            version = runnerVersion;
+            src = cargoSrc;
+            strictDeps = true;
+            doCheck = false;
+            cargoExtraArgs = "-p runner --locked";
+            CARGO_BUILD_TARGET = runnerMuslTarget;
+            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+          }
+          // cargoArtifactSanitizers
+        );
 
         runnerRuntime = craneLibMusl.buildPackage {
           cargoArtifacts = runnerRuntimeCargoArtifacts;
@@ -329,15 +243,18 @@
           doCheck = false;
         };
 
-        runnerTestCargoArtifacts = craneLib.buildDepsOnly ({
-          pname = "${runnerPname}-test-deps";
-          version = runnerVersion;
-          src = cargoSrc;
-          strictDeps = true;
-          cargoExtraArgs = "--workspace --locked";
-          cargoCheckExtraArgs = "--all-targets";
-          cargoTestExtraArgs = "--no-run";
-        } // cargoArtifactSanitizers);
+        runnerTestCargoArtifacts = craneLib.buildDepsOnly (
+          {
+            pname = "${runnerPname}-test-deps";
+            version = runnerVersion;
+            src = cargoSrc;
+            strictDeps = true;
+            cargoExtraArgs = "--workspace --locked";
+            cargoCheckExtraArgs = "--all-targets";
+            cargoTestExtraArgs = "--no-run";
+          }
+          // cargoArtifactSanitizers
+        );
 
         runnerClippy = craneLib.cargoClippy {
           cargoArtifacts = runnerClippyCargoArtifacts;
@@ -473,17 +390,43 @@
           '';
         };
 
-        checkApp =
-          mkNixBuildApp
-            "check"
-            ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
-        lintApp =
-          mkNixBuildApp
-            "lint"
-            ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
+        checkApp = mkNixBuildApp "check" ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
+        lintApp = mkNixBuildApp "lint" ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
         testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
         fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.fmt-check";
         longTestApp = mkNixBuildApp "test-long" ".#packages.${system}.runner-long-test";
+        ciPlatformImageArtifactsApp = pkgs.writeShellApplication {
+          name = "ci-platform-image-artifacts";
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gnugrep
+            pkgs.jq
+            pkgs.nix
+            pkgs.skopeo
+          ];
+          text = ''
+            export CI_IMAGE_SPECS_JSON='${ciImageCatalogJson}'
+            export CI_OCI_ARCHITECTURE='${ciCurrentPlatform.architecture}'
+            export CI_OCI_OS='${ciCurrentPlatform.os}'
+            export CI_OCI_PLATFORM='${ciCurrentPlatform.platform}'
+            exec ${./scripts/ci/image-artifacts.sh} export-platform "$@"
+          '';
+        };
+        ciMultiPlatformImageArtifactsApp = pkgs.writeShellApplication {
+          name = "ci-multi-platform-image-artifacts";
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gnugrep
+            pkgs.jq
+            pkgs.skopeo
+          ];
+          text = ''
+            export CI_IMAGE_SPECS_JSON='${ciImageCatalogJson}'
+            exec ${./scripts/ci/image-artifacts.sh} assemble-multi-platform "$@"
+          '';
+        };
       in
       {
         packages = {
@@ -502,6 +445,8 @@
           "runner-test-deps" = runnerTestCargoArtifacts;
           "runner-image" = runnerImage;
           "runner-long-test" = runnerLongTest;
+          "ci-platform-image-artifacts" = ciPlatformImageArtifactsApp;
+          "ci-multi-platform-image-artifacts" = ciMultiPlatformImageArtifactsApp;
           "test-long" = longTestApp;
           "verify-image" = verifyImage;
           "verify-runtime-go-modules" = verifyRuntimeGoModules;
@@ -520,6 +465,12 @@
           test = flake-utils.lib.mkApp { drv = testApp; };
           fmt = flake-utils.lib.mkApp { drv = fmtApp; };
           "test-long" = flake-utils.lib.mkApp { drv = longTestApp; };
+          "ci-platform-image-artifacts" = flake-utils.lib.mkApp {
+            drv = ciPlatformImageArtifactsApp;
+          };
+          "ci-multi-platform-image-artifacts" = flake-utils.lib.mkApp {
+            drv = ciMultiPlatformImageArtifactsApp;
+          };
         };
 
         checks = {
@@ -543,8 +494,5 @@
 
         formatter = pkgs.nixfmt-rfc-style;
       }
-    ))
-    // {
-      github.ciWorkflowCatalog = githubCiWorkflowCatalog;
-    };
+    ));
 }
