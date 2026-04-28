@@ -12,12 +12,12 @@
 
 Canonical local workflow is Nix-native. Do not use the old Make workflow as a contributor interface.
 
-- `nix build .#runner`: build the Rust `runner` binary through crane.
-- `nix build .#verify-service`: build the wrapped `molt verify-service` surface.
+- `nix build .#runner`: build the static Rust `runner` binary used by both the CLI and image.
+- `nix build .#verify`: build the static Go `molt` binary used by both `verify-service` and the verify image.
 - `nix run .#runner -- --help`: inspect the `runner` CLI surface.
 - `nix run .#verify-service -- --help`: inspect the `verify-service` CLI surface.
-- `nix run .#check`: run the clippy gate with `-D warnings`.
-- `nix run .#lint`: alias of `nix run .#check`.
+- `nix run .#check`: run the default fmt, lint, and test gates.
+- `nix run .#lint`: run the Rust clippy gate with `-D warnings`.
 - `nix run .#test`: run the default Rust and Go test lanes.
 - `nix run .#fmt`: run the Rust formatting check.
 - `nix flake check`: run the normal flake check set.

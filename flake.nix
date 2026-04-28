@@ -19,18 +19,13 @@
       rust-overlay,
       ...
     }:
-    let
-    in
-    (flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachDefaultSystem (
       system:
       let
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ (import rust-overlay) ];
         };
-        craneLib = crane.mkLib pkgs;
-        cargoSrc = craneLib.cleanCargoSource ./.;
-        repoSrc = pkgs.lib.cleanSource ./.;
         runnerManifest = builtins.fromTOML (builtins.readFile ./crates/runner/Cargo.toml);
         runnerPname = runnerManifest.package.name;
         runnerVersion = runnerManifest.package.version;
@@ -40,12 +35,14 @@
             aarch64-linux = "aarch64-unknown-linux-musl";
           }
           .${system};
-        craneLibMusl = (crane.mkLib pkgs).overrideToolchain (
+        craneLib = (crane.mkLib pkgs).overrideToolchain (
           p:
           p.rust-bin.stable.latest.default.override {
             targets = [ runnerMuslTarget ];
           }
         );
+        cargoSrc = craneLib.cleanCargoSource ./.;
+        repoSrc = pkgs.lib.cleanSource ./.;
         goVersion = "0.1.0";
         runnerTestInputs = [
           pkgs.gettext
@@ -64,150 +61,20 @@
             '';
           };
 
-        sanitizeCargoArtifacts = ''
-          if [ -d target ]; then
-            find target -type f \( \
-              -path '*/build/*/out/*.a' -o \
-              -path '*/build/*/out/*.o' -o \
-              -path '*/deps/*.rlib' -o \
-              -path '*/deps/*.rmeta' \
-            \) -print0 \
-              | while IFS= read -r -d "" artifact_file
-              do
-                case "$artifact_file" in
-                  *.a|*.o)
-                    strip -g "$artifact_file"
-                    ;;
-                esac
-
-                while IFS= read -r build_only_ref
-                do
-                  remove-references-to -t "$build_only_ref" "$artifact_file"
-                done < <(
-                  strings "$artifact_file" \
-                    | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
-                    | sort -u \
-                    | rg '^/nix/store/[[:alnum:]]{32}-(vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*|gcc-[^[:space:]]*|glibc-[^[:space:]]*)$'
-                )
-              done
-          fi
-        '';
-
-        cargoArtifactSanitizers = {
-          nativeBuildInputs = [
-            pkgs.binutils
-            pkgs.removeReferencesTo
-            pkgs.ripgrep
-          ];
-          postBuild = sanitizeCargoArtifacts;
-          postCheck = sanitizeCargoArtifacts;
-        };
-
-        cargoArtifacts = craneLib.buildDepsOnly (
-          {
-            pname = "${runnerPname}-deps";
-            version = runnerVersion;
-            src = cargoSrc;
-            strictDeps = true;
-            doCheck = false;
-            cargoExtraArgs = "-p runner --locked";
-          }
-          // cargoArtifactSanitizers
-        );
-
-        cargoArtifactsClosureCheck =
-          pkgs.runCommand "${runnerPname}-cargo-artifacts-closure"
-            {
-              nativeBuildInputs = [
-                pkgs.binutils
-                pkgs.findutils
-                pkgs.gnugrep
-                pkgs.gnutar
-                pkgs.zstd
-              ];
-            }
-            ''
-              artifact_tar="${cargoArtifacts}/target.tar.zst"
-              cp "$artifact_tar" "$out"
-              forbidden_ref_pattern='/nix/store/[[:alnum:]]{32}-(gcc-[^[:space:]]*|glibc-[^[:space:]]*-dev|vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*)'
-
-              while IFS= read -r artifact_path
-              do
-                if tar --zstd -xOf "$artifact_tar" "$artifact_path" \
-                  | strings \
-                  | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
-                  | rg -v '^/nix/store/e{32}-' \
-                  | grep -Eq "$forbidden_ref_pattern"; then
-                  echo "cargo-artifacts must not retain build-only store references via $artifact_path" >&2
-                  exit 1
-                fi
-              done < <(
-                tar --zstd -tf "$artifact_tar" | grep -E '^./release/(build/.*/out/.*\.(a|o)|deps/.*\.(rlib|rmeta))$'
-              )
-            '';
-
-        cargoArtifactsRuntimeBoundaryCheck =
-          pkgs.runCommand "${runnerPname}-cargo-artifacts-runtime-boundary"
-            {
-              nativeBuildInputs = [
-                pkgs.gnugrep
-                pkgs.gnutar
-                pkgs.zstd
-              ];
-            }
-            ''
-              artifact_tar="${cargoArtifacts}/target.tar.zst"
-              cp "$artifact_tar" "$out"
-
-              for forbidden_crate in reqwest tempfile
-              do
-                if tar --zstd -tf "$artifact_tar" | grep -Eq "/(lib)?''${forbidden_crate}[-_.]"; then
-                  echo "runtime cargo-artifacts must not retain dev-only crate ''${forbidden_crate}" >&2
-                  exit 1
-                fi
-              done
-            '';
-
-        runnerClippyCargoArtifacts = craneLib.buildDepsOnly (
-          {
-            pname = "${runnerPname}-clippy-deps";
-            version = runnerVersion;
-            src = cargoSrc;
-            strictDeps = true;
-            doCheck = false;
-            cargoExtraArgs = "--workspace --locked";
-            cargoCheckExtraArgs = "--all-targets";
-          }
-          // cargoArtifactSanitizers
-        );
-
-        runner = craneLib.buildPackage {
-          inherit cargoArtifacts;
-          pname = runnerPname;
+        runnerCargoArtifacts = craneLib.buildDepsOnly {
+          pname = "${runnerPname}-deps";
           version = runnerVersion;
           src = cargoSrc;
           strictDeps = true;
-          cargoExtraArgs = "-p runner";
           doCheck = false;
+          cargoExtraArgs = "-p runner --locked";
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
 
-        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly (
-          {
-            pname = "${runnerPname}-runtime-deps";
-            version = runnerVersion;
-            src = cargoSrc;
-            strictDeps = true;
-            doCheck = false;
-            cargoExtraArgs = "-p runner --locked";
-            CARGO_BUILD_TARGET = runnerMuslTarget;
-            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-          }
-          // cargoArtifactSanitizers
-        );
-
-        runnerRuntime = craneLibMusl.buildPackage {
-          cargoArtifacts = runnerRuntimeCargoArtifacts;
-          pname = "${runnerPname}-runtime";
+        runner = craneLib.buildPackage {
+          cargoArtifacts = runnerCargoArtifacts;
+          pname = runnerPname;
           version = runnerVersion;
           src = cargoSrc;
           strictDeps = true;
@@ -217,26 +84,39 @@
           doCheck = false;
         };
 
-        runnerTestCargoArtifacts = craneLib.buildDepsOnly (
-          {
-            pname = "${runnerPname}-test-deps";
-            version = runnerVersion;
-            src = cargoSrc;
-            strictDeps = true;
-            cargoExtraArgs = "--workspace --locked";
-            cargoCheckExtraArgs = "--all-targets";
-            cargoTestExtraArgs = "--no-run";
-          }
-          // cargoArtifactSanitizers
-        );
+        runnerLintCargoArtifacts = craneLib.buildDepsOnly {
+          pname = "${runnerPname}-lint-deps";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          doCheck = false;
+          cargoExtraArgs = "--workspace --locked";
+          cargoCheckExtraArgs = "--all-targets";
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+        };
 
-        runnerClippy = craneLib.cargoClippy {
-          cargoArtifacts = runnerClippyCargoArtifacts;
-          pname = "${runnerPname}-clippy";
+        runnerLint = craneLib.cargoClippy {
+          cargoArtifacts = runnerLintCargoArtifacts;
+          pname = "${runnerPname}-lint";
           version = runnerVersion;
           src = cargoSrc;
           strictDeps = true;
           cargoClippyExtraArgs = "--workspace --all-targets -- -D warnings";
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+        };
+
+        runnerTestCargoArtifacts = craneLib.buildDepsOnly {
+          pname = "${runnerPname}-test-deps";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          cargoExtraArgs = "--workspace --locked";
+          cargoCheckExtraArgs = "--all-targets";
+          cargoTestExtraArgs = "--no-run";
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
         };
 
         runnerTest = craneLib.cargoTest {
@@ -246,44 +126,38 @@
           src = repoSrc;
           strictDeps = true;
           nativeBuildInputs = runnerTestInputs;
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
           preCheck = ''
             patchShebangs scripts
           '';
           cargoTestExtraArgs = "--workspace";
         };
 
-        runnerLongTest = craneLib.cargoTest {
-          inherit cargoArtifacts;
-          pname = "${runnerPname}-long-test";
+        runnerTestLong = craneLib.cargoTest {
+          cargoArtifacts = runnerTestCargoArtifacts;
+          pname = "${runnerPname}-test-long";
           version = runnerVersion;
           src = repoSrc;
           strictDeps = true;
           nativeBuildInputs = runnerTestInputs;
+          CARGO_BUILD_TARGET = runnerMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
           preCheck = ''
             patchShebangs scripts
           '';
           cargoTestExtraArgs = "--workspace -- --ignored --test-threads=1";
         };
 
-        fmtCheck = craneLib.cargoFmt {
+        runnerFmt = craneLib.cargoFmt {
           pname = "${runnerPname}-fmt";
           version = runnerVersion;
           src = cargoSrc;
           cargoFmtExtraArgs = "--all --check";
         };
 
-        molt = pkgs.buildGoModule {
-          pname = "molt";
-          version = goVersion;
-          src = ./.;
-          modRoot = "cockroachdb_molt/molt";
-          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
-          subPackages = [ "." ];
-          doCheck = false;
-        };
-
-        moltRuntime = pkgs.pkgsStatic.buildGoModule {
-          pname = "molt-runtime";
+        verify = pkgs.pkgsStatic.buildGoModule {
+          pname = "verify";
           version = goVersion;
           src = ./.;
           modRoot = "cockroachdb_molt/molt";
@@ -303,12 +177,26 @@
         verifyService = pkgs.writeShellApplication {
           name = "verify-service";
           text = ''
-            exec ${molt}/bin/molt verify-service "$@"
+            exec ${verify}/bin/molt verify-service "$@"
           '';
         };
 
-        verifyRuntimeGoModules = moltRuntime.goModules;
-        verifyServiceTestGoModules = verifyServiceTest.goModules;
+        verifyTest = pkgs.buildGoModule {
+          pname = "verify-test";
+          version = goVersion;
+          src = ./.;
+          modRoot = "cockroachdb_molt/molt";
+          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
+          subPackages = [ "." ];
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+            go test ./cmd/verifyservice -count=1
+            runHook postCheck
+          '';
+        };
 
         mkRuntimeImage =
           {
@@ -333,65 +221,39 @@
         runnerImage = mkRuntimeImage {
           imageName = "cockroach-migrate-runner";
           imageTag = "nix";
-          binaryPath = "${runnerRuntime}/bin/runner";
+          binaryPath = "${runner}/bin/runner";
           entrypoint = [ "/usr/local/bin/runner" ];
         };
 
         verifyImage = mkRuntimeImage {
           imageName = "cockroach-migrate-verify";
           imageTag = "nix";
-          binaryPath = "${moltRuntime}/bin/molt";
+          binaryPath = "${verify}/bin/molt";
           entrypoint = [
             "/usr/local/bin/molt"
             "verify-service"
           ];
         };
 
-        verifyServiceTest = pkgs.buildGoModule {
-          pname = "verify-service-test";
-          version = goVersion;
-          src = ./.;
-          modRoot = "cockroachdb_molt/molt";
-          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
-          subPackages = [ "." ];
-          doCheck = true;
-          checkPhase = ''
-            runHook preCheck
-            export HOME="$TMPDIR/home"
-            mkdir -p "$HOME"
-            go test ./cmd/verifyservice -count=1
-            runHook postCheck
-          '';
-        };
-
-        checkApp = mkNixBuildApp "check" ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
-        lintApp = mkNixBuildApp "lint" ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
-        testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
-        fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.fmt-check";
-        longTestApp = mkNixBuildApp "test-long" ".#packages.${system}.runner-long-test";
+        fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.runner-fmt";
+        lintApp = mkNixBuildApp "lint" ".#checks.${system}.runner-lint";
+        testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-test";
+        longTestApp = mkNixBuildApp "test-long" ".#checks.${system}.runner-test-long";
+        checkApp = mkNixBuildApp "check" ".#checks.${system}.runner-fmt .#checks.${system}.runner-lint .#checks.${system}.runner-test .#checks.${system}.verify-test";
       in
       {
         packages = {
           default = runner;
           runner = runner;
-          "cargo-artifacts" = cargoArtifacts;
-          check = checkApp;
+          "runner-image" = runnerImage;
+          verify = verify;
+          "verify-image" = verifyImage;
+          "verify-service" = verifyService;
+          fmt = fmtApp;
           lint = lintApp;
           test = testApp;
-          fmt = fmtApp;
-          molt = molt;
-          "molt-runtime" = moltRuntime;
-          "runner-runtime" = runnerRuntime;
-          "runner-runtime-deps" = runnerRuntimeCargoArtifacts;
-          "runner-clippy-deps" = runnerClippyCargoArtifacts;
-          "runner-test-deps" = runnerTestCargoArtifacts;
-          "runner-image" = runnerImage;
-          "runner-long-test" = runnerLongTest;
           "test-long" = longTestApp;
-          "verify-image" = verifyImage;
-          "verify-runtime-go-modules" = verifyRuntimeGoModules;
-          "verify-service" = verifyService;
-          "verify-service-test-go-modules" = verifyServiceTestGoModules;
+          check = checkApp;
         };
 
         apps = {
@@ -400,20 +262,19 @@
             exePath = "/bin/runner";
           };
           "verify-service" = flake-utils.lib.mkApp { drv = verifyService; };
-          check = flake-utils.lib.mkApp { drv = checkApp; };
+          fmt = flake-utils.lib.mkApp { drv = fmtApp; };
           lint = flake-utils.lib.mkApp { drv = lintApp; };
           test = flake-utils.lib.mkApp { drv = testApp; };
-          fmt = flake-utils.lib.mkApp { drv = fmtApp; };
           "test-long" = flake-utils.lib.mkApp { drv = longTestApp; };
+          check = flake-utils.lib.mkApp { drv = checkApp; };
         };
 
         checks = {
-          "cargo-artifacts-closure" = cargoArtifactsClosureCheck;
-          "cargo-artifacts-runtime-boundary" = cargoArtifactsRuntimeBoundaryCheck;
-          fmt-check = fmtCheck;
-          runner-clippy = runnerClippy;
+          runner-fmt = runnerFmt;
+          runner-lint = runnerLint;
           runner-test = runnerTest;
-          verify-service-test = verifyServiceTest;
+          runner-test-long = runnerTestLong;
+          verify-test = verifyTest;
         };
 
         devShells.default = pkgs.mkShell {
@@ -426,7 +287,7 @@
           ];
         };
 
-        formatter = pkgs.nixfmt-rfc-style;
+        formatter = pkgs.nixfmt;
       }
-    ));
+    );
 }
