@@ -1,0 +1,121 @@
+name: Publish Images
+
+on:
+  push:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  nix-flake-check:
+    name: nix flake check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Run nix flake check
+        run: |
+          set -euo pipefail
+          nix flake check --print-build-logs --show-trace
+
+  build-images:
+    name: build ${{ matrix.image }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: runner-image
+            arch: amd64
+            system: x86_64-linux
+            runs_on: ubuntu-24.04
+          - image: runner-image
+            arch: arm64
+            system: aarch64-linux
+            runs_on: ubuntu-24.04-arm
+          - image: verify-image
+            arch: amd64
+            system: x86_64-linux
+            runs_on: ubuntu-24.04
+          - image: verify-image
+            arch: arm64
+            system: aarch64-linux
+            runs_on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Build image archive
+        run: |
+          set -euo pipefail
+
+          artifact_dir="${RUNNER_TEMP}/image-artifact"
+          archive_name="${{ matrix.image }}-${{ matrix.arch }}.tar.gz"
+
+          mkdir -p "$artifact_dir"
+
+          nix build ".#packages.${{ matrix.system }}.${{ matrix.image }}" --print-build-logs --show-trace
+
+          image_archive="$(readlink -f ./result)"
+          if [[ ! -s "$image_archive" ]]; then
+            echo "error: expected non-empty image archive at $image_archive" >&2
+            exit 1
+          fi
+
+          cp "$image_archive" "$artifact_dir/$archive_name"
+
+          cat >"$artifact_dir/metadata.env" <<EOF
+          image=${{ matrix.image }}
+          arch=${{ matrix.arch }}
+          system=${{ matrix.system }}
+          archive_name=$archive_name
+          EOF
+
+          ls -lh "$artifact_dir"
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.image }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/image-artifact/
+          if-no-files-found: error
+
+  publish-multiarch:
+    name: publish multi-platform images
+    runs-on: ubuntu-24.04
+    needs:
+      - nix-flake-check
+      - build-images
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/downloaded-artifacts
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Publish multi-platform images from downloaded archives
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/downloaded-artifacts
+          GHCR_OWNER: ${{ github.repository_owner }}
+          GIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/publish-ghcr-multiarch-from-archives.sh

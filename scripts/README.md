@@ -124,3 +124,10 @@ Both scripts fail fast with a readable `error:` message when:
 - a required dependency is not installed
 - a configured CA certificate path does not exist
 - a destination table name does not include `schema.table`
+
+## CI Scripts
+
+- `ci/publish-ghcr-multiarch-from-archives.sh`
+  - consumes the per-architecture Nix image archives downloaded from GitHub Actions artifacts
+  - pushes temporary architecture-specific GHCR refs without rebuilding the images
+  - assembles the final multi-platform `runner-image:$GIT_SHA` and `verify-image:$GIT_SHA` tags with Docker Buildx
