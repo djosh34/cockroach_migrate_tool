@@ -16,6 +16,7 @@ Required pipeline shape:
 
 Required caching behavior:
 - Use the Nix-native way of fast caching and the appropriate GitHub Actions cache mechanisms for large speedups.
+- Explicit PO override: remove ALL manual caching from the GitHub workflow. Do not use repo-maintained scripts, Python helpers, ad hoc cache save/restore steps, manual Nix store packing, or bespoke cache parsing for workflow caching. Use the well-liked Magic Nix Cache action instead, pinned to the latest verified tag at task alteration time: `DeterminateSystems/magic-nix-cache-action@v13`.
 - A rerun of the pipeline with no relevant code changes must not rebuild external dependencies.
 - A rerun after code changes must rebuild only the changed code-dependent artifacts and must never rebuild external dependencies that were already built in a previous run.
 - The workflow must expose enough logs or checked evidence to prove which artifacts were built, which were copied/substituted/restored, and which derivation/output hashes were reused.
@@ -39,6 +40,7 @@ Hard failure conditions:
 - [ ] Total hosted build time for the build-heavy work is reduced to 5 minutes or less, measured from GitHub Actions job timing/log evidence.
 - [ ] Total hosted wall-clock time end to end is 10 minutes or less, measured from GitHub Actions run start and completion timestamps.
 - [ ] Nix caching is configured the Nix way and with direct GitHub Actions caching where appropriate, including large-cache behavior needed for fast reruns.
+- [ ] The GitHub workflow contains no manual caching implementation: no repo-maintained caching scripts, no Python cache helpers, no manual Nix store archive/cache save/restore logic, and no bespoke cache parsing. It uses `DeterminateSystems/magic-nix-cache-action@v13` for GitHub Actions Nix caching.
 - [ ] Authenticated hosted rerun evidence proves an unchanged rerun does not rebuild external dependencies and restores/substitutes them from cache/store instead.
 - [ ] Authenticated hosted rerun evidence after a code-only change proves only code-dependent artifacts rebuild and no already-built external dependency rebuilds.
 - [ ] The workflow fails loudly if required cache/hash/timing evidence cannot be collected; missing evidence must not be treated as success.
