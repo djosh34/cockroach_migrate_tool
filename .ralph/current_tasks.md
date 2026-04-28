@@ -1,6 +1,18 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 02:16:22 AM CEST 2026
+Generated: Tue Apr 28 02:53:06 AM CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-image-amd64-has-quay-vulnerability-findings.md`
+
+```
+## Bug: Verify image amd64 publish is blocked by real Quay vulnerability findings <status>not_started</status> <passes>false</passes> <priority>high</priority>
+
+<description>
+Hosted GitHub Actions run `#76` on commit `b96ea3a7925c18e8fb5f1da8fb3cf3a9d7c234ed` proved the
+new Nix-only publish workflow is working through validation and per-architecture publication, and
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/smells/2026-04-28-story-29-ci-to-nix-boundaries.md`
 
