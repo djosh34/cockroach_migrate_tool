@@ -39,6 +39,10 @@ First next steps when you see this: (HARD FIRST REQUIREMENT)
 - [ ] After manually verifying that the entire nix build does not depend on any manual and bad scripties, and that locally the nix build can both build artifacts, then test the binary without full rebuild and then directly (dependent on build not test) can create docker image (with ZERO dep rebuild, VERY IMPORTANT!!), fix github workflow:
 Basically FULLY rewrite github workflow. No backwards compat. Totally redesign it, NOT THE SAME DESIGN!! really redesign it based on the new nix way
 github workflow must be basically simple nix commands and use the magic nix cache action to do the caching.
+
+HARD REQUIREMENT IS TO FULLY DELETE THE GITHUB WORKFLOW AND FULLY RECREATE IT, NOT TO KEEP THE EXISTING CRAP!!!!
+
+
 - [ ] Continue altering github workflow until full run takes less than 10 min total in wall clock. Do parallel builds where makes sense
 
 
@@ -61,3 +65,5 @@ github workflow must be basically simple nix commands and use the magic nix cach
 - [ ] The workflow fails loudly if required cache/hash/timing evidence cannot be collected; missing evidence must not be treated as success.
 - [ ] Manual verification: use `/home/joshazimullah.linux/github-api-curl` to inspect the relevant GitHub Actions run logs and record the run ids, timestamps, job durations, cache evidence, artifact identities, image digests, and publish-no-rebuild proof in this task file or its plan notes.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed_plans/2026-04-28-fix-nix-ci-cd-artifact-reuse-and-cache-speed-plan.md</plan>

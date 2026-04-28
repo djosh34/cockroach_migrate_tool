@@ -13,11 +13,6 @@ permissions:
 env:
   GHCR_REGISTRY: ghcr.io
   QUAY_REGISTRY: quay.io
-  # Publish destination and credentials:
-  # - vars.QUAY_ORGANIZATION
-  # - secrets.QUAY_ROBOT_USERNAME
-  # - secrets.QUAY_ROBOT_PASSWORD
-  # - secrets.GITHUB_TOKEN
   QUAY_ORGANIZATION: ${{ vars.QUAY_ORGANIZATION }}
 
 jobs:
@@ -27,7 +22,6 @@ jobs:
       audit_catalog: ${{ steps.catalog.outputs.audit_catalog }}
       build_platform_matrix: ${{ steps.catalog.outputs.build_platform_matrix }}
       image_matrix: ${{ steps.catalog.outputs.image_matrix }}
-      release_image_catalog: ${{ steps.catalog.outputs.release_image_catalog }}
       validation_matrix: ${{ steps.catalog.outputs.validation_matrix }}
     steps:
       - uses: actions/checkout@v6
@@ -40,30 +34,26 @@ jobs:
         id: catalog
         run: |
           set -euo pipefail
-          audit_catalog="$(nix eval --json .#github.ciWorkflowCatalog.audit)"
-          build_platform_matrix="$(nix eval --json .#github.ciWorkflowCatalog.build_platform_matrix)"
-          image_matrix="$(nix eval --json .#github.ciWorkflowCatalog.image_matrix)"
-          release_image_catalog="$(nix eval --json .#github.ciWorkflowCatalog.release_image_catalog)"
-          validation_matrix="$(nix eval --json .#github.ciWorkflowCatalog.validation_matrix)"
-          {
-            echo "audit_catalog<<EOF"
-            echo "${audit_catalog}"
-            echo "EOF"
-            echo "build_platform_matrix<<EOF"
-            echo "${build_platform_matrix}"
-            echo "EOF"
-            echo "image_matrix<<EOF"
-            echo "${image_matrix}"
-            echo "EOF"
-            echo "release_image_catalog<<EOF"
-            echo "${release_image_catalog}"
-            echo "EOF"
-            echo "validation_matrix<<EOF"
-            echo "${validation_matrix}"
-            echo "EOF"
-          } >> "${GITHUB_OUTPUT}"
+          catalog_json="$(nix eval --json .#github.ciWorkflowCatalog)"
+          CATALOG_JSON="${catalog_json}" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-  build-platform-bundle:
+          catalog = json.loads(os.environ["CATALOG_JSON"])
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          for key in (
+              "audit",
+              "build_platform_matrix",
+              "image_matrix",
+              "validation_matrix",
+          ):
+              output_path.open("a", encoding="utf-8").write(
+                  f"{key}<<EOF\n{json.dumps(catalog[key])}\nEOF\n"
+              )
+          PY
+
+  build-platform:
     needs:
       - publish-catalog
     strategy:
@@ -81,26 +71,177 @@ jobs:
         with:
           use-flakehub: false
           use-gha-cache: true
-      - name: Build immutable platform bundle
+      - name: Build platform foundation through Nix
         env:
-          BUILD_BUNDLE_JSON: ${{ toJson(matrix.build_bundle) }}
-          BUNDLE_OUTPUT_DIR: ${{ runner.temp }}/nix-build-bundle
+          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_RESULT_JSON: ${{ runner.temp }}/build-platform-evidence/build-result.json
+          DRY_RUN_JSON: ${{ runner.temp }}/build-platform-evidence/dry-run.json
+          DRY_RUN_LOG: ${{ runner.temp }}/build-platform-evidence/dry-run.log
+          BUILD_LOG: ${{ runner.temp }}/build-platform-evidence/build.log
+          INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+          PLATFORM: ${{ matrix.platform }}
+          PLATFORM_TAG_SUFFIX: ${{ matrix.platform_tag_suffix }}
+          SYSTEM: ${{ matrix.system }}
         run: |
           set -euo pipefail
-          python3 scripts/nix_ci_artifacts.py build-bundle \
-            --bundle-json "${BUILD_BUNDLE_JSON}" \
-            --output-dir "${BUNDLE_OUTPUT_DIR}"
-      - name: Upload immutable platform bundle
+          mkdir -p "$(dirname "${BUILD_PLATFORM_EVIDENCE_FILE}")"
+          started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          installables = json.loads(os.environ["INSTALLABLES_JSON"])
+          with open(os.environ["DRY_RUN_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["DRY_RUN_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--dry-run", "--json", *installables],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
+          with open(os.environ["BUILD_RESULT_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["BUILD_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--json", "--no-link", *installables],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
+          PY
+          completed_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          STARTED_AT_EPOCH_SECONDS="${started_at_epoch_seconds}" \
+          COMPLETED_AT_EPOCH_SECONDS="${completed_at_epoch_seconds}" \
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def split_non_empty_lines(raw: str) -> list[str]:
+              return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+          def run_json(argv: list[str]) -> object:
+              completed = subprocess.run(argv, check=True, capture_output=True, text=True)
+              return json.loads(completed.stdout)
+
+
+          def drv_path_for(out_path: str) -> str:
+              completed = subprocess.run(
+                  ["nix", "path-info", "--derivation", out_path],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              drv_paths = split_non_empty_lines(completed.stdout)
+              if len(drv_paths) != 1:
+                  raise SystemExit(
+                      f"expected exactly one derivation path for {out_path}, got {drv_paths}"
+                  )
+              return drv_paths[0]
+
+
+          def describe_paths(paths: list[str]) -> list[dict]:
+              path_info = run_json(["nix", "path-info", "--json", *paths])
+              records = []
+              for out_path in paths:
+                  metadata = path_info.get(out_path)
+                  if not isinstance(metadata, dict):
+                      raise SystemExit(f"missing path-info metadata for {out_path}")
+                  nar_hash = metadata.get("narHash")
+                  if not isinstance(nar_hash, str) or not nar_hash:
+                      raise SystemExit(f"missing narHash for {out_path}")
+                  records.append(
+                      {
+                          "drv_path": drv_path_for(out_path),
+                          "nar_hash": nar_hash,
+                          "nar_size": metadata.get("narSize"),
+                          "out_path": out_path,
+                      }
+                  )
+              return records
+
+
+          def discover_reusable_outputs(root_records: list[dict]) -> list[dict]:
+              reusable_records = []
+              for root_record in root_records:
+                  root_path = Path(root_record["out_path"])
+                  if not root_path.is_dir():
+                      continue
+                  member_paths = []
+                  member_ids = {}
+                  for entry in sorted(root_path.iterdir()):
+                      if not entry.is_symlink():
+                          continue
+                      target = entry.resolve(strict=True)
+                      target_text = str(target)
+                      if not target_text.startswith("/nix/store/"):
+                          continue
+                      member_paths.append(target_text)
+                      member_ids[target_text] = entry.name
+                  if not member_paths:
+                      continue
+                  for record in describe_paths(member_paths):
+                      record["logical_id"] = member_ids[record["out_path"]]
+                      reusable_records.append(record)
+              return reusable_records
+
+
+          build_result = json.loads(Path(os.environ["BUILD_RESULT_JSON"]).read_text())
+          dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
+          if not isinstance(build_result, list) or not build_result:
+              raise SystemExit("nix build must emit at least one build result entry")
+          root_paths = []
+          for entry in build_result:
+              outputs = entry.get("outputs")
+              if not isinstance(outputs, dict) or not outputs:
+                  raise SystemExit(f"build result entry is missing outputs: {entry}")
+              root_paths.extend(outputs.values())
+          root_records = describe_paths(root_paths)
+          payload = {
+              "build_timing": {
+                  "completed_at_epoch_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  ),
+                  "duration_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  )
+                  - float(os.environ["STARTED_AT_EPOCH_SECONDS"]),
+                  "started_at_epoch_seconds": float(
+                      os.environ["STARTED_AT_EPOCH_SECONDS"]
+                  ),
+              },
+              "build_result": build_result,
+              "dry_run_plan": dry_run_plan,
+              "installables": json.loads(os.environ["INSTALLABLES_JSON"]),
+              "platform": os.environ["PLATFORM"],
+              "platform_tag_suffix": os.environ["PLATFORM_TAG_SUFFIX"],
+              "reusable_output_records": discover_reusable_outputs(root_records),
+              "root_records": root_records,
+              "stage": "build-platform",
+              "system": os.environ["SYSTEM"],
+            }
+          Path(os.environ["BUILD_PLATFORM_EVIDENCE_FILE"]).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Upload build-platform evidence
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.build_bundle.artifact_name }}
-          path: ${{ runner.temp }}/nix-build-bundle
+          name: build-platform-evidence-${{ matrix.system }}
+          path: ${{ runner.temp }}/build-platform-evidence
           if-no-files-found: error
 
   validate-fast:
     needs:
       - publish-catalog
-      - build-platform-bundle
+      - build-platform
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.publish-catalog.outputs.validation_matrix) }}
@@ -116,57 +257,200 @@ jobs:
         with:
           use-flakehub: false
           use-gha-cache: true
-      - name: Download immutable platform bundle
+      - name: Download build-platform evidence
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.build_bundle_artifact_name }}
-          path: ${{ runner.temp }}/build-bundle
-      - name: Import immutable platform bundle
-        run: |
-          set -euo pipefail
-          python3 scripts/nix_ci_artifacts.py import-bundle \
-            --bundle-dir "${{ runner.temp }}/build-bundle"
-      - name: Fail if validation would rebuild imported bundle outputs
-        env:
-          BUNDLE_MANIFEST: ${{ runner.temp }}/build-bundle/manifest.json
-          VALIDATION_INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          command = [
-              "python3",
-              "scripts/nix_ci_artifacts.py",
-              "assert-no-duplicate-build-plan",
-              "--bundle-manifest",
-              os.environ["BUNDLE_MANIFEST"],
-          ]
-          for installable in json.loads(os.environ["VALIDATION_INSTALLABLES_JSON"]):
-              command.extend(["--installable", installable])
-          subprocess.run(command, check=True)
-          PY
+          name: build-platform-evidence-${{ matrix.system }}
+          path: ${{ runner.temp }}/build-platform-evidence
       - name: Validate repository lanes through Nix
         env:
-          VALIDATION_INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+          VALIDATION_EVIDENCE_FILE: ${{ runner.temp }}/validation-evidence/validation-evidence.json
+          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_RESULT_JSON: ${{ runner.temp }}/validation-evidence/build-result.json
+          DRY_RUN_JSON: ${{ runner.temp }}/validation-evidence/dry-run.json
+          DRY_RUN_LOG: ${{ runner.temp }}/validation-evidence/dry-run.log
+          BUILD_LOG: ${{ runner.temp }}/validation-evidence/build.log
+          INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+          SYSTEM: ${{ matrix.system }}
+          VALIDATION_ID: ${{ matrix.validation_id }}
         run: |
           set -euo pipefail
+          mkdir -p "$(dirname "${VALIDATION_EVIDENCE_FILE}")"
+          started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
           python3 - <<'PY'
           import json
           import os
           import subprocess
 
-          command = ["nix", "build", "--no-link"]
-          command.extend(json.loads(os.environ["VALIDATION_INSTALLABLES_JSON"]))
-          subprocess.run(command, check=True)
+          installables = json.loads(os.environ["INSTALLABLES_JSON"])
+          with open(os.environ["DRY_RUN_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["DRY_RUN_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--dry-run", "--json", *installables],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
           PY
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          build_platform_evidence = json.loads(
+              Path(os.environ["BUILD_PLATFORM_EVIDENCE_FILE"]).read_text()
+          )
+          dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
+          reusable_drv_paths = {
+              record["drv_path"] for record in build_platform_evidence["reusable_output_records"]
+          }
+          reusable_out_paths = {
+              record["out_path"] for record in build_platform_evidence["reusable_output_records"]
+          }
+          planned_drv_paths = {entry["drvPath"] for entry in dry_run_plan}
+          planned_out_paths = {
+              out_path
+              for entry in dry_run_plan
+              for out_path in entry.get("outputs", {}).values()
+          }
+          duplicate_drv_paths = sorted(planned_drv_paths & reusable_drv_paths)
+          duplicate_out_paths = sorted(planned_out_paths & reusable_out_paths)
+          if duplicate_drv_paths or duplicate_out_paths:
+              raise SystemExit(
+                  json.dumps(
+                      {
+                          "duplicate_drv_paths": duplicate_drv_paths,
+                          "duplicate_out_paths": duplicate_out_paths,
+                          "message": "validation stage would rebuild build-platform outputs",
+                      },
+                      indent=2,
+                      sort_keys=True,
+                  )
+              )
+          PY
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          installables = json.loads(os.environ["INSTALLABLES_JSON"])
+          with open(os.environ["BUILD_RESULT_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["BUILD_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--json", "--no-link", *installables],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
+          PY
+          completed_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          STARTED_AT_EPOCH_SECONDS="${started_at_epoch_seconds}" \
+          COMPLETED_AT_EPOCH_SECONDS="${completed_at_epoch_seconds}" \
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          def split_non_empty_lines(raw: str) -> list[str]:
+              return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+          def drv_path_for(out_path: str) -> str:
+              completed = subprocess.run(
+                  ["nix", "path-info", "--derivation", out_path],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              drv_paths = split_non_empty_lines(completed.stdout)
+              if len(drv_paths) != 1:
+                  raise SystemExit(
+                      f"expected exactly one derivation path for {out_path}, got {drv_paths}"
+                  )
+              return drv_paths[0]
+
+
+          def describe_paths(paths: list[str]) -> list[dict]:
+              path_info = json.loads(
+                  subprocess.run(
+                      ["nix", "path-info", "--json", *paths],
+                      check=True,
+                      capture_output=True,
+                      text=True,
+                  ).stdout
+              )
+              records = []
+              for out_path in paths:
+                  metadata = path_info.get(out_path)
+                  if not isinstance(metadata, dict):
+                      raise SystemExit(f"missing path-info metadata for {out_path}")
+                  nar_hash = metadata.get("narHash")
+                  if not isinstance(nar_hash, str) or not nar_hash:
+                      raise SystemExit(f"missing narHash for {out_path}")
+                  records.append(
+                      {
+                          "drv_path": drv_path_for(out_path),
+                          "nar_hash": nar_hash,
+                          "nar_size": metadata.get("narSize"),
+                          "out_path": out_path,
+                      }
+                  )
+              return records
+
+
+          build_result = json.loads(Path(os.environ["BUILD_RESULT_JSON"]).read_text())
+          dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
+          if not isinstance(build_result, list) or not build_result:
+              raise SystemExit("validation nix build must emit at least one build result entry")
+          output_paths = []
+          for entry in build_result:
+              outputs = entry.get("outputs")
+              if not isinstance(outputs, dict) or not outputs:
+                  raise SystemExit(f"validation build result entry is missing outputs: {entry}")
+              output_paths.extend(outputs.values())
+          payload = {
+              "build_platform_system": os.environ["SYSTEM"],
+              "build_result": build_result,
+              "build_timing": {
+                  "completed_at_epoch_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  ),
+                  "duration_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  )
+                  - float(os.environ["STARTED_AT_EPOCH_SECONDS"]),
+                  "started_at_epoch_seconds": float(
+                      os.environ["STARTED_AT_EPOCH_SECONDS"]
+                  ),
+              },
+              "dry_run_plan": dry_run_plan,
+              "installables": json.loads(os.environ["INSTALLABLES_JSON"]),
+              "output_records": describe_paths(output_paths),
+              "stage": "validate-fast",
+              "system": os.environ["SYSTEM"],
+              "validation_id": os.environ["VALIDATION_ID"],
+          }
+          Path(os.environ["VALIDATION_EVIDENCE_FILE"]).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+      - name: Upload validation evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: validation-evidence-${{ matrix.validation_id }}
+          path: ${{ runner.temp }}/validation-evidence
+          if-no-files-found: error
 
   build-image:
     needs:
       - publish-catalog
-      - build-platform-bundle
+      - build-platform
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.publish-catalog.outputs.image_matrix) }}
@@ -182,65 +466,200 @@ jobs:
         with:
           use-flakehub: false
           use-gha-cache: true
-      - name: Download immutable platform bundle
+      - name: Download build-platform evidence
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.build_bundle_artifact_name }}
-          path: ${{ runner.temp }}/build-bundle
-      - name: Import immutable platform bundle
-        run: |
-          set -euo pipefail
-          python3 scripts/nix_ci_artifacts.py import-bundle \
-            --bundle-dir "${{ runner.temp }}/build-bundle"
-      - name: Fail if image build would rebuild imported bundle outputs
+          name: build-platform-evidence-${{ matrix.platform.system }}
+          path: ${{ runner.temp }}/build-platform-evidence
+      - name: Build image archive through Nix
         env:
-          BUNDLE_MANIFEST: ${{ runner.temp }}/build-bundle/manifest.json
-          IMAGE_INSTALLABLE: ${{ matrix.image_installable }}
-        run: |
-          set -euo pipefail
-          python3 scripts/nix_ci_artifacts.py assert-no-duplicate-build-plan \
-            --bundle-manifest "${BUNDLE_MANIFEST}" \
-            --installable "${IMAGE_INSTALLABLE}"
-      - name: Build immutable image archive bundle
-        env:
-          IMAGE_ARTIFACT_NAME: ${{ matrix.image_artifact_name }}
+          IMAGE_EVIDENCE_FILE: ${{ runner.temp }}/image-archive/image-evidence.json
+          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_RESULT_JSON: ${{ runner.temp }}/image-archive/build-result.json
+          DRY_RUN_JSON: ${{ runner.temp }}/image-archive/dry-run.json
+          DRY_RUN_LOG: ${{ runner.temp }}/image-archive/dry-run.log
+          BUILD_LOG: ${{ runner.temp }}/image-archive/build.log
           IMAGE_ID: ${{ matrix.image.image_id }}
           IMAGE_INSTALLABLE: ${{ matrix.image_installable }}
-          IMAGE_OUTPUT_DIR: ${{ runner.temp }}/image-bundle
           IMAGE_OUTPUT_ID: ${{ matrix.image_output_id }}
+          GHCR_REPOSITORY: ${{ matrix.image.ghcr_repository }}
+          LOADED_IMAGE_REF: ${{ matrix.image.loaded_image_ref }}
+          MANIFEST_KEY: ${{ matrix.image.manifest_key }}
           PLATFORM: ${{ matrix.platform.platform }}
+          PLATFORM_TAG_SUFFIX: ${{ matrix.platform.platform_tag_suffix }}
+          QUAY_REPOSITORY_NAME: ${{ matrix.image.quay_repository }}
           SYSTEM: ${{ matrix.platform.system }}
         run: |
           set -euo pipefail
-          image_bundle_json="$(
-            python3 - <<'PY'
+          mkdir -p "$(dirname "${IMAGE_EVIDENCE_FILE}")"
+          started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          with open(os.environ["DRY_RUN_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["DRY_RUN_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--dry-run", "--json", os.environ["IMAGE_INSTALLABLE"]],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
+          PY
+          python3 - <<'PY'
           import json
           import os
+          from pathlib import Path
 
-          print(
-              json.dumps(
-                  {
-                      "artifact_name": os.environ["IMAGE_ARTIFACT_NAME"],
-                      "bundle_id": os.environ["IMAGE_OUTPUT_ID"],
-                      "installables": [os.environ["IMAGE_INSTALLABLE"]],
-                      "metadata": {
-                          "image_id": os.environ["IMAGE_ID"],
-                          "platform": os.environ["PLATFORM"],
-                          "system": os.environ["SYSTEM"],
+          build_platform_evidence = json.loads(
+              Path(os.environ["BUILD_PLATFORM_EVIDENCE_FILE"]).read_text()
+          )
+          dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
+          reusable_drv_paths = {
+              record["drv_path"] for record in build_platform_evidence["reusable_output_records"]
+          }
+          reusable_out_paths = {
+              record["out_path"] for record in build_platform_evidence["reusable_output_records"]
+          }
+          planned_drv_paths = {entry["drvPath"] for entry in dry_run_plan}
+          planned_out_paths = {
+              out_path
+              for entry in dry_run_plan
+              for out_path in entry.get("outputs", {}).values()
+          }
+          duplicate_drv_paths = sorted(planned_drv_paths & reusable_drv_paths)
+          duplicate_out_paths = sorted(planned_out_paths & reusable_out_paths)
+          if duplicate_drv_paths or duplicate_out_paths:
+              raise SystemExit(
+                  json.dumps(
+                      {
+                          "duplicate_drv_paths": duplicate_drv_paths,
+                          "duplicate_out_paths": duplicate_out_paths,
+                          "message": "image stage would rebuild build-platform outputs",
                       },
-                  }
+                      indent=2,
+                      sort_keys=True,
+                  )
               )
+          PY
+          python3 - <<'PY'
+          import os
+          import subprocess
+
+          with open(os.environ["BUILD_RESULT_JSON"], "w", encoding="utf-8") as stdout, open(
+              os.environ["BUILD_LOG"], "w", encoding="utf-8"
+          ) as stderr:
+              subprocess.run(
+                  ["nix", "build", "--json", "--no-link", os.environ["IMAGE_INSTALLABLE"]],
+                  check=True,
+                  stdout=stdout,
+                  stderr=stderr,
+                  text=True,
+              )
+          PY
+          completed_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
+          STARTED_AT_EPOCH_SECONDS="${started_at_epoch_seconds}" \
+          COMPLETED_AT_EPOCH_SECONDS="${completed_at_epoch_seconds}" \
+          python3 - <<'PY'
+          import json
+          import os
+          import shutil
+          import subprocess
+          from pathlib import Path
+
+          def split_non_empty_lines(raw: str) -> list[str]:
+              return [line.strip() for line in raw.splitlines() if line.strip()]
+
+
+          def drv_path_for(out_path: str) -> str:
+              completed = subprocess.run(
+                  ["nix", "path-info", "--derivation", out_path],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              drv_paths = split_non_empty_lines(completed.stdout)
+              if len(drv_paths) != 1:
+                  raise SystemExit(
+                      f"expected exactly one derivation path for {out_path}, got {drv_paths}"
+                  )
+              return drv_paths[0]
+
+
+          build_result = json.loads(Path(os.environ["BUILD_RESULT_JSON"]).read_text())
+          dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
+          if len(build_result) != 1:
+              raise SystemExit(f"image build must return exactly one result entry, got {build_result}")
+          outputs = build_result[0].get("outputs")
+          if not isinstance(outputs, dict) or len(outputs) != 1:
+              raise SystemExit(f"image build must return exactly one output path, got {build_result[0]}")
+          output_path = next(iter(outputs.values()))
+          path_info = json.loads(
+              subprocess.run(
+                  ["nix", "path-info", "--json", output_path],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              ).stdout
+          )
+          metadata = path_info.get(output_path)
+          if not isinstance(metadata, dict):
+              raise SystemExit(f"missing path-info metadata for {output_path}")
+          nar_hash = metadata.get("narHash")
+          if not isinstance(nar_hash, str) or not nar_hash:
+              raise SystemExit(f"missing narHash for {output_path}")
+          archive_source = Path(output_path)
+          if not archive_source.is_file():
+              raise SystemExit(f"expected image output to be a file: {output_path}")
+          archive_copy = Path(os.environ["IMAGE_EVIDENCE_FILE"]).parent / archive_source.name
+          shutil.copyfile(archive_source, archive_copy)
+          payload = {
+              "archive_file_name": archive_copy.name,
+              "build_platform_system": os.environ["SYSTEM"],
+              "build_result": build_result,
+              "build_timing": {
+                  "completed_at_epoch_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  ),
+                  "duration_seconds": float(
+                      os.environ["COMPLETED_AT_EPOCH_SECONDS"]
+                  )
+                  - float(os.environ["STARTED_AT_EPOCH_SECONDS"]),
+                  "started_at_epoch_seconds": float(
+                      os.environ["STARTED_AT_EPOCH_SECONDS"]
+                  ),
+              },
+              "dry_run_plan": dry_run_plan,
+              "ghcr_repository": os.environ["GHCR_REPOSITORY"],
+              "image_id": os.environ["IMAGE_ID"],
+              "image_installable": os.environ["IMAGE_INSTALLABLE"],
+              "image_output_id": os.environ["IMAGE_OUTPUT_ID"],
+              "loaded_image_ref": os.environ["LOADED_IMAGE_REF"],
+              "manifest_key": os.environ["MANIFEST_KEY"],
+              "output_record": {
+                  "drv_path": drv_path_for(output_path),
+                  "nar_hash": nar_hash,
+                  "nar_size": metadata.get("narSize"),
+                  "out_path": output_path,
+              },
+              "platform": os.environ["PLATFORM"],
+              "platform_tag_suffix": os.environ["PLATFORM_TAG_SUFFIX"],
+              "quay_repository": os.environ["QUAY_REPOSITORY_NAME"],
+              "stage": "build-image",
+              "system": os.environ["SYSTEM"],
+          }
+          Path(os.environ["IMAGE_EVIDENCE_FILE"]).write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
           )
           PY
-          )"
-          python3 scripts/nix_ci_artifacts.py build-bundle \
-            --bundle-json "${image_bundle_json}" \
-            --output-dir "${IMAGE_OUTPUT_DIR}"
-      - name: Upload immutable image archive bundle
+      - name: Upload built image archive and evidence
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.image_artifact_name }}
-          path: ${{ runner.temp }}/image-bundle
+          name: image-archive-${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}
+          path: ${{ runner.temp }}/image-archive
           if-no-files-found: error
 
   publish-image:
@@ -257,9 +676,6 @@ jobs:
     env:
       PUBLISHED_IMAGE_REF_FILE: ${{ github.workspace }}/published-image-refs/${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}-image-ref.json
     steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -267,23 +683,16 @@ jobs:
         run: |
           set -euo pipefail
           nix profile install nixpkgs#skopeo
-      - name: Download immutable image archive bundle
+      - name: Download built image archive
         uses: actions/download-artifact@v8
         with:
-          name: ${{ matrix.image_artifact_name }}
-          path: ${{ runner.temp }}/image-bundle
-      - name: Import immutable image archive bundle
-        run: |
-          set -euo pipefail
-          python3 scripts/nix_ci_artifacts.py import-bundle \
-            --bundle-dir "${{ runner.temp }}/image-bundle"
+          name: image-archive-${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}
+          path: ${{ runner.temp }}/image-archive
       - name: Publish prebuilt image archive to Quay
         env:
           GHCR_REPOSITORY: ${{ matrix.image.ghcr_repository }}
-          IMAGE_ARTIFACT_NAME: ${{ matrix.image.artifact_name }}
           IMAGE_ID: ${{ matrix.image.image_id }}
           IMAGE_OUTPUT_ID: ${{ matrix.image_output_id }}
-          LOADED_IMAGE_REF: ${{ matrix.image.loaded_image_ref }}
           MANIFEST_KEY: ${{ matrix.image.manifest_key }}
           PLATFORM: ${{ matrix.platform.platform }}
           PLATFORM_TAG_SUFFIX: ${{ matrix.platform.platform_tag_suffix }}
@@ -294,29 +703,35 @@ jobs:
           set -euo pipefail
           : "${QUAY_ORGANIZATION:?missing QUAY_ORGANIZATION GitHub repository variable}"
           started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
-          readarray -t image_bundle_fields < <(
+          readarray -t image_artifact_fields < <(
             python3 - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          manifest = json.loads(Path(os.environ["RUNNER_TEMP"], "image-bundle", "manifest.json").read_text())
-          root_record = manifest["root_records"][0]
-          print(manifest["bundle_id"])
-          print(root_record["out_path"])
-          print(root_record["nar_hash"])
+          evidence = json.loads(
+              Path(os.environ["RUNNER_TEMP"], "image-archive", "image-evidence.json").read_text()
+          )
+          archive_path = Path(os.environ["RUNNER_TEMP"], "image-archive", evidence["archive_file_name"])
+          if not archive_path.is_file():
+              raise SystemExit(f"missing image archive artifact: {archive_path}")
+          print(str(archive_path))
+          print(evidence["loaded_image_ref"])
+          print(evidence["output_record"]["out_path"])
+          print(evidence["output_record"]["nar_hash"])
           PY
           )
-          source_bundle_id="${image_bundle_fields[0]}"
-          archive_path="${image_bundle_fields[1]}"
-          source_nar_hash="${image_bundle_fields[2]}"
+          archive_path="${image_artifact_fields[0]}"
+          loaded_image_ref="${image_artifact_fields[1]}"
+          source_out_path="${image_artifact_fields[2]}"
+          source_nar_hash="${image_artifact_fields[3]}"
           quay_repository="${QUAY_ORGANIZATION}/${QUAY_REPOSITORY_NAME}"
           final_image_ref="${{ env.QUAY_REGISTRY }}/${quay_repository}:${{ github.sha }}"
           platform_image_ref="${final_image_ref}-${PLATFORM_TAG_SUFFIX}"
           mkdir -p "$(dirname "${PUBLISHED_IMAGE_REF_FILE}")"
           skopeo copy \
             --dest-creds "${QUAY_ROBOT_USERNAME}:${QUAY_ROBOT_PASSWORD}" \
-            "docker-archive:${archive_path}:${LOADED_IMAGE_REF}" \
+            "docker-archive:${archive_path}:${loaded_image_ref}" \
             "docker://${platform_image_ref}"
           platform_digest="$(
             skopeo inspect \
@@ -329,7 +744,6 @@ jobs:
           COMPLETED_AT_EPOCH_SECONDS="${completed_at_epoch_seconds}" \
           FINAL_IMAGE_REF="${final_image_ref}" \
           GHCR_REPOSITORY="${GHCR_REPOSITORY}" \
-          IMAGE_ARTIFACT_NAME="${IMAGE_ARTIFACT_NAME}" \
           IMAGE_ID="${IMAGE_ID}" \
           IMAGE_OUTPUT_ID="${IMAGE_OUTPUT_ID}" \
           MANIFEST_KEY="${MANIFEST_KEY}" \
@@ -339,9 +753,8 @@ jobs:
           PLATFORM_TAG_SUFFIX="${PLATFORM_TAG_SUFFIX}" \
           PUBLISHED_IMAGE_REF_FILE="${PUBLISHED_IMAGE_REF_FILE}" \
           QUAY_REPOSITORY="${quay_repository}" \
-          SOURCE_BUNDLE_ID="${source_bundle_id}" \
           SOURCE_NAR_HASH="${source_nar_hash}" \
-          SOURCE_OUT_PATH="${archive_path}" \
+          SOURCE_OUT_PATH="${source_out_path}" \
           python3 - <<'PY'
           import json
           import os
@@ -350,7 +763,6 @@ jobs:
           started = float(os.environ["STARTED_AT_EPOCH_SECONDS"])
           completed = float(os.environ["COMPLETED_AT_EPOCH_SECONDS"])
           payload = {
-              "artifact_name": os.environ["IMAGE_ARTIFACT_NAME"],
               "duration_seconds": completed - started,
               "final_image_ref": os.environ["FINAL_IMAGE_REF"],
               "ghcr_repository": os.environ["GHCR_REPOSITORY"],
@@ -362,7 +774,6 @@ jobs:
               "platform_image_ref": os.environ["PLATFORM_IMAGE_REF"],
               "platform_tag_suffix": os.environ["PLATFORM_TAG_SUFFIX"],
               "quay_repository": os.environ["QUAY_REPOSITORY"],
-              "source_bundle_id": os.environ["SOURCE_BUNDLE_ID"],
               "source_nar_hash": os.environ["SOURCE_NAR_HASH"],
               "source_out_path": os.environ["SOURCE_OUT_PATH"],
           }
@@ -372,38 +783,40 @@ jobs:
       - name: Upload published image ref artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.image.artifact_name }}-${{ matrix.platform.platform_tag_suffix }}
+          name: published-image-${{ matrix.image.image_id }}-${{ matrix.platform.platform_tag_suffix }}
           path: ${{ env.PUBLISHED_IMAGE_REF_FILE }}
           if-no-files-found: error
 
   audit-immutable-identities:
     needs:
       - publish-catalog
-      - build-platform-bundle
+      - build-platform
+      - validate-fast
       - build-image
       - publish-image
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - name: Download immutable platform bundles
+      - name: Download build-platform evidence
         uses: actions/download-artifact@v8
         with:
-          pattern: nix-build-bundle-*
-          path: ${{ runner.temp }}/build-bundles
-      - name: Download immutable image archive bundles
+          pattern: build-platform-evidence-*
+          path: ${{ runner.temp }}/build-platform-evidence
+      - name: Download validation evidence
         uses: actions/download-artifact@v8
         with:
-          pattern: nix-image-*
-          path: ${{ runner.temp }}/image-bundles
+          pattern: validation-evidence-*
+          path: ${{ runner.temp }}/validation-evidence
+      - name: Download built image archives and evidence
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-archive-*
+          path: ${{ runner.temp }}/image-archive
       - name: Download published image refs
         uses: actions/download-artifact@v8
         with:
           pattern: published-image-*
           path: ${{ runner.temp }}/published-image-refs
-          merge-multiple: true
       - name: Audit immutable build, image, and publish identities
         env:
           AUDIT_CATALOG_JSON: ${{ needs.publish-catalog.outputs.audit_catalog }}
@@ -412,47 +825,178 @@ jobs:
           python3 - <<'PY'
           import json
           import os
-          import subprocess
           from pathlib import Path
 
           audit_catalog = json.loads(os.environ["AUDIT_CATALOG_JSON"])
-          command = [
-              "python3",
-              "scripts/nix_ci_artifacts.py",
-              "audit-run",
+          build_evidence_paths = sorted(
+              Path(os.environ["RUNNER_TEMP"], "build-platform-evidence").glob(
+                  "*/build-platform-evidence.json"
+              )
+          )
+          validation_evidence_paths = sorted(
+              Path(os.environ["RUNNER_TEMP"], "validation-evidence").glob(
+                  "*/validation-evidence.json"
+              )
+          )
+          image_evidence_paths = sorted(
+              Path(os.environ["RUNNER_TEMP"], "image-archive").glob("*/image-evidence.json")
+          )
+          publish_evidence_paths = sorted(
+              Path(os.environ["RUNNER_TEMP"], "published-image-refs").glob("*/**/*.json")
+          )
+          if not build_evidence_paths:
+              raise SystemExit("missing build-platform evidence artifacts")
+          if not validation_evidence_paths:
+              raise SystemExit("missing validation evidence artifacts")
+          if not image_evidence_paths:
+              raise SystemExit("missing image evidence artifacts")
+          if not publish_evidence_paths:
+              raise SystemExit("missing publish evidence artifacts")
+
+          build_evidence = [json.loads(path.read_text()) for path in build_evidence_paths]
+          validation_evidence = [
+              json.loads(path.read_text()) for path in validation_evidence_paths
           ]
+          image_evidence = [json.loads(path.read_text()) for path in image_evidence_paths]
+          publish_evidence = [json.loads(path.read_text()) for path in publish_evidence_paths]
 
-          build_manifests = sorted(
-              Path(os.environ["RUNNER_TEMP"], "build-bundles").glob("*/manifest.json")
+          build_by_system = {}
+          for evidence in build_evidence:
+              system = evidence["system"]
+              if system in build_by_system:
+                  raise SystemExit(f"duplicate build-platform evidence for system {system}")
+              build_by_system[system] = evidence
+
+          validation_by_id = {}
+          for evidence in validation_evidence:
+              validation_id = evidence["validation_id"]
+              if validation_id in validation_by_id:
+                  raise SystemExit(f"duplicate validation evidence for {validation_id}")
+              validation_by_id[validation_id] = evidence
+
+          image_by_output_id = {}
+          for evidence in image_evidence:
+              output_id = evidence["image_output_id"]
+              if output_id in image_by_output_id:
+                  raise SystemExit(f"duplicate image evidence for {output_id}")
+              image_by_output_id[output_id] = evidence
+
+          publish_by_output_id = {}
+          for evidence in publish_evidence:
+              output_id = evidence["image_output_id"]
+              if output_id in publish_by_output_id:
+                  raise SystemExit(f"duplicate publish evidence for {output_id}")
+              publish_by_output_id[output_id] = evidence
+
+          missing_build_systems = sorted(
+              set(audit_catalog["required_build_systems"]) - set(build_by_system)
           )
-          image_manifests = sorted(
-              Path(os.environ["RUNNER_TEMP"], "image-bundles").glob("*/manifest.json")
+          missing_validation_ids = sorted(
+              set(audit_catalog["required_validation_ids"]) - set(validation_by_id)
           )
-          publish_manifests = sorted(
-              Path(os.environ["RUNNER_TEMP"], "published-image-refs").glob("*-image-ref.json")
+          missing_image_output_ids = sorted(
+              set(audit_catalog["required_image_output_ids"]) - set(image_by_output_id)
           )
+          missing_publish_output_ids = sorted(
+              set(audit_catalog["required_publish_output_ids"]) - set(publish_by_output_id)
+          )
+          if missing_build_systems:
+              raise SystemExit(f"missing build-platform evidence for {missing_build_systems}")
+          if missing_validation_ids:
+              raise SystemExit(f"missing validation evidence for {missing_validation_ids}")
+          if missing_image_output_ids:
+              raise SystemExit(f"missing image evidence for {missing_image_output_ids}")
+          if missing_publish_output_ids:
+              raise SystemExit(f"missing publish evidence for {missing_publish_output_ids}")
 
-          if not build_manifests:
-              raise SystemExit("missing build bundle manifests")
-          if not image_manifests:
-              raise SystemExit("missing image bundle manifests")
-          if not publish_manifests:
-              raise SystemExit("missing publish manifests")
+          for evidence in validation_evidence:
+              build_system = evidence["build_platform_system"]
+              foundation = build_by_system[build_system]
+              reusable_drv_paths = {
+                  record["drv_path"] for record in foundation["reusable_output_records"]
+              }
+              reusable_out_paths = {
+                  record["out_path"] for record in foundation["reusable_output_records"]
+              }
+              planned_drv_paths = {entry["drvPath"] for entry in evidence["dry_run_plan"]}
+              planned_out_paths = {
+                  out_path
+                  for entry in evidence["dry_run_plan"]
+                  for out_path in entry.get("outputs", {}).values()
+              }
+              duplicate_drv_paths = sorted(planned_drv_paths & reusable_drv_paths)
+              duplicate_out_paths = sorted(planned_out_paths & reusable_out_paths)
+              if duplicate_drv_paths or duplicate_out_paths:
+                  raise SystemExit(
+                      json.dumps(
+                          {
+                              "duplicate_drv_paths": duplicate_drv_paths,
+                              "duplicate_out_paths": duplicate_out_paths,
+                              "validation_id": evidence["validation_id"],
+                          },
+                          indent=2,
+                          sort_keys=True,
+                      )
+                  )
 
-          for manifest_path in build_manifests:
-              command.extend(["--build-manifest", str(manifest_path)])
-          for manifest_path in image_manifests:
-              command.extend(["--image-manifest", str(manifest_path)])
-          for manifest_path in publish_manifests:
-              command.extend(["--publish-manifest", str(manifest_path)])
-          for bundle_id in audit_catalog["required_build_bundle_ids"]:
-              command.extend(["--required-build-bundle-id", bundle_id])
-          for output_id in audit_catalog["required_image_output_ids"]:
-              command.extend(["--required-image-output-id", output_id])
-          for output_id in audit_catalog["required_publish_output_ids"]:
-              command.extend(["--required-publish-output-id", output_id])
+          for evidence in image_evidence:
+              build_system = evidence["build_platform_system"]
+              foundation = build_by_system[build_system]
+              reusable_drv_paths = {
+                  record["drv_path"] for record in foundation["reusable_output_records"]
+              }
+              reusable_out_paths = {
+                  record["out_path"] for record in foundation["reusable_output_records"]
+              }
+              planned_drv_paths = {entry["drvPath"] for entry in evidence["dry_run_plan"]}
+              planned_out_paths = {
+                  out_path
+                  for entry in evidence["dry_run_plan"]
+                  for out_path in entry.get("outputs", {}).values()
+              }
+              duplicate_drv_paths = sorted(planned_drv_paths & reusable_drv_paths)
+              duplicate_out_paths = sorted(planned_out_paths & reusable_out_paths)
+              if duplicate_drv_paths or duplicate_out_paths:
+                  raise SystemExit(
+                      json.dumps(
+                          {
+                              "duplicate_drv_paths": duplicate_drv_paths,
+                              "duplicate_out_paths": duplicate_out_paths,
+                              "image_output_id": evidence["image_output_id"],
+                          },
+                          indent=2,
+                          sort_keys=True,
+                      )
+                  )
 
-          subprocess.run(command, check=True)
+          for output_id, publish_record in publish_by_output_id.items():
+              image_record = image_by_output_id[output_id]
+              source_record = image_record["output_record"]
+              if publish_record["source_out_path"] != source_record["out_path"]:
+                  raise SystemExit(
+                      f"publish output {output_id} used out path {publish_record['source_out_path']} "
+                      f"but image build produced {source_record['out_path']}"
+                  )
+              if publish_record["source_nar_hash"] != source_record["nar_hash"]:
+                  raise SystemExit(
+                      f"publish output {output_id} used nar hash {publish_record['source_nar_hash']} "
+                      f"but image build produced {source_record['nar_hash']}"
+                  )
+              if not publish_record.get("platform_digest"):
+                  raise SystemExit(f"missing platform digest for publish output {output_id}")
+
+          summary_lines = [
+              "## Immutable Identity Audit",
+              "",
+              f"- Build systems audited: {', '.join(sorted(build_by_system))}",
+              f"- Validation lanes audited: {', '.join(sorted(validation_by_id))}",
+              f"- Image outputs audited: {', '.join(sorted(image_by_output_id))}",
+              f"- Publish outputs audited: {', '.join(sorted(publish_by_output_id))}",
+          ]
+          Path(os.environ["GITHUB_STEP_SUMMARY"]).write_text(
+              "\n".join(summary_lines) + "\n",
+              encoding="utf-8",
+          )
           PY
 
   quay-security-gate:
@@ -769,19 +1313,23 @@ jobs:
               exit 1
               ;;
             scanner_failure)
-              printf 'Quay security gate failed because the Quay scanner/API call failed.\n' >&2
+              printf 'Quay security gate failed because the Quay scanner or API failed.\n' >&2
               exit 1
               ;;
             timeout)
-              printf 'Quay security gate failed because Quay never reached a scanned state before timeout.\n' >&2
+              printf 'Quay security gate timed out while waiting for Quay scan completion.\n' >&2
               exit 1
               ;;
-            unexpected_payload|"")
+            unexpected_payload)
               printf 'Quay security gate failed because Quay returned an unexpected payload.\n' >&2
               exit 1
               ;;
+            "")
+              printf 'Quay security gate failed before writing a gate outcome.\n' >&2
+              exit 1
+              ;;
             *)
-              printf 'Quay security gate failed with unknown outcome %s.\n' "${gate_outcome}" >&2
+              printf 'Quay security gate returned unknown outcome: %s\n' "${gate_outcome}" >&2
               exit 1
               ;;
           esac
@@ -866,7 +1414,7 @@ jobs:
                 arm64_refs["${safe_image_id}"]="${platform_image_ref}"
                 ;;
               *)
-                printf 'unexpected platform ref in artifact %s: %s\n' "${ref_file}" "${platform}" >&2
+                printf 'unsupported platform for manifest publication: %s\n' "${platform}" >&2
                 exit 1
                 ;;
             esac

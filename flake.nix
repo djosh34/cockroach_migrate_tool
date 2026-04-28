@@ -36,7 +36,6 @@
       ];
       githubPublishImages = [
         {
-          artifact_name = "published-image-runner";
           ghcr_repository = "cockroach-migrate-runner";
           image_id = "runner";
           loaded_image_ref = "cockroach-migrate-runner:nix";
@@ -45,7 +44,6 @@
           quay_repository = "runner";
         }
         {
-          artifact_name = "published-image-verify";
           ghcr_repository = "cockroach-migrate-verify";
           image_id = "verify";
           loaded_image_ref = "cockroach-migrate-verify:nix";
@@ -54,21 +52,9 @@
           quay_repository = "verify";
         }
       ];
-      githubCiBuildPlatforms = map (
-        platform:
-        platform
-        // {
-          build_bundle = {
-            artifact_name = "nix-build-bundle-${platform.platform_tag_suffix}";
-            bundle_id = "build-${platform.platform_tag_suffix}";
-            installables = [ ".#packages.${platform.system}.ci-build-bundle" ];
-          };
-        }
-      ) githubPublishPlatforms;
+      githubCiBuildPlatforms = map (platform: platform // { installables = [ ".#packages.${platform.system}.ci-build-bundle" ]; }) githubPublishPlatforms;
       githubCiValidationLanes = [
         {
-          build_bundle_artifact_name = "nix-build-bundle-amd64";
-          build_bundle_id = "build-amd64";
           installables = [
             ".#checks.x86_64-linux.runner-clippy"
             ".#checks.x86_64-linux.runner-test"
@@ -84,9 +70,6 @@
           image:
           map (platform: {
             inherit image platform;
-            build_bundle_artifact_name = "nix-build-bundle-${platform.platform_tag_suffix}";
-            build_bundle_id = "build-${platform.platform_tag_suffix}";
-            image_artifact_name = "nix-image-${image.image_id}-${platform.platform_tag_suffix}";
             image_installable = ".#packages.${platform.system}.${image.package_attr}";
             image_output_id = "${image.image_id}-${platform.platform_tag_suffix}";
           }) githubPublishPlatforms
@@ -94,7 +77,8 @@
       };
       githubCiWorkflowCatalog = {
         audit = {
-          required_build_bundle_ids = map (platform: platform.build_bundle.bundle_id) githubCiBuildPlatforms;
+          required_build_systems = map (platform: platform.system) githubCiBuildPlatforms;
+          required_validation_ids = map (lane: lane.validation_id) githubCiValidationLanes;
           required_image_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
           required_publish_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
         };
