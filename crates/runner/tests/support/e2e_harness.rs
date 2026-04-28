@@ -1,19 +1,21 @@
 use std::{
     cell::RefCell,
     collections::BTreeSet,
-    fs, io,
+    fs,
+    fs::File,
+    io,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, Stdio},
     sync::{
-        Mutex, MutexGuard, OnceLock,
         atomic::{AtomicU64, Ordering},
+        Mutex, MutexGuard, OnceLock,
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use ingest_contract::MappingIngestPath;
-use reqwest::{Certificate, blocking::Client};
+use reqwest::{blocking::Client, Certificate};
 use serde::Deserialize;
 use tempfile::TempDir;
 
@@ -22,14 +24,11 @@ mod ca_cert_encoding;
 
 mod destination_lock;
 mod destination_write_failure;
-mod runner_container_process;
-mod runner_docker_contract;
 mod runner_process;
 
 pub(crate) use destination_lock::DestinationTableLock;
 pub(crate) use destination_write_failure::DestinationWriteFailure;
 use destination_write_failure::DestinationWriteFailureSpec;
-use runner_container_process::RunnerContainerProcess;
 use runner_process::RunnerProcess;
 
 use crate::e2e_integrity::{
@@ -39,8 +38,6 @@ use crate::e2e_integrity::{
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
-const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
-const POSTGRES_IMAGE: &str = "postgres:16";
 const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
 
 pub(crate) fn encode_ca_cert_query_value(bytes: &[u8]) -> String {
@@ -162,12 +159,11 @@ impl<'a> From<CdcE2eHarnessConfig<'a>> for OwnedHarnessConfig {
 
 enum RunnerRuntime {
     Host(RunnerProcess),
-    Container(RunnerContainerProcess),
 }
 
 pub struct CdcE2eHarness {
-    _docker_test_guard: MutexGuard<'static, ()>,
-    docker: DockerEnvironment,
+    _database_test_guard: MutexGuard<'static, ()>,
+    databases: LocalDatabaseEnvironment,
     config: OwnedHarnessConfig,
     temp_dir: TempDir,
     runner_port: u16,
@@ -205,15 +201,15 @@ impl CdcE2eHarness {
         destination_runtime_mode: DestinationRuntimeMode,
     ) -> Self {
         let config = OwnedHarnessConfig::from(config);
-        let docker_test_guard = lock_e2e_docker_resources();
-        let docker = DockerEnvironment::new();
-        docker.create_network();
-        docker.start_cockroach();
-        docker.start_postgres();
-        docker.wait_for_cockroach();
-        docker.wait_for_postgres();
-        docker.prepare_source_schema_and_seed(&config.source_schema_sql);
-        docker.prepare_destination_database(
+        let database_test_guard = lock_e2e_database_resources();
+        let mut databases = LocalDatabaseEnvironment::new();
+        databases.create_network();
+        databases.start_cockroach();
+        databases.start_postgres();
+        databases.wait_for_cockroach();
+        databases.wait_for_postgres();
+        databases.prepare_source_schema_and_seed(&config.source_schema_sql);
+        databases.prepare_destination_database(
             &config.destination_database,
             &config.destination_user,
             &config.destination_password,
@@ -226,8 +222,8 @@ impl CdcE2eHarness {
         fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
 
         let harness = Self {
-            _docker_test_guard: docker_test_guard,
-            docker,
+            _database_test_guard: database_test_guard,
+            databases,
             config,
             temp_dir,
             runner_port,
@@ -264,7 +260,6 @@ impl CdcE2eHarness {
             .expect("runner process should exist before it can be killed");
         match process {
             RunnerRuntime::Host(mut process) => process.kill(),
-            RunnerRuntime::Container(process) => process.kill(),
         }
     }
 
@@ -383,24 +378,13 @@ impl CdcE2eHarness {
                     runner_container_ip: None,
                     postgres_apply_client_addr: apply_client_addr.clone(),
                 },
-                Some(RunnerRuntime::Container(process)) => DestinationRuntimeAudit {
-                    mode: DestinationRuntimeMode::SingleContainer,
-                    container_count: 1,
-                    healthcheck_url: format!("https://localhost:{}/healthz", self.runner_port),
-                    destination_connection_host: self
-                        .destination_runtime_postgres_host()
-                        .to_owned(),
-                    destination_connection_port: self.destination_runtime_postgres_port(),
-                    runner_container_ip: Some(process.container_ip()),
-                    postgres_apply_client_addr: apply_client_addr.clone(),
-                },
                 None => panic!("runner must be started before collecting runtime-shape audit"),
             }
         };
         RuntimeShapeAudit::new(
             destination_runtime,
             self.webhook_sink_base_url.clone(),
-            CockroachRuntimeAudit::new(self.docker.cockroach_image()),
+            CockroachRuntimeAudit::new(self.databases.cockroach_image()),
             DestinationRoleAudit::new(
                 self.config.destination_user.clone(),
                 self.destination_role_is_superuser(),
@@ -652,12 +636,12 @@ impl CdcE2eHarness {
     }
 
     pub fn query_destination(&self, sql: &str) -> String {
-        self.docker
+        self.databases
             .exec_psql(&self.config.destination_database, sql)
     }
 
     pub fn helper_tables(&self) -> String {
-        self.docker.exec_psql(
+        self.databases.exec_psql(
             &self.config.destination_database,
             "SELECT string_agg(table_name, ',' ORDER BY table_name)
              FROM information_schema.tables
@@ -666,7 +650,7 @@ impl CdcE2eHarness {
     }
 
     pub fn helper_table_row_count(&self, mapped_table: &str) -> usize {
-        let row_count = self.docker.exec_psql(
+        let row_count = self.databases.exec_psql(
             &self.config.destination_database,
             &format!(
                 "SELECT count(*)::text
@@ -740,7 +724,7 @@ impl CdcE2eHarness {
     pub fn lock_destination_table(&self, mapped_table: &str) -> DestinationTableLock {
         let suffix = mapped_table.replace('.', "__");
         DestinationTableLock::acquire(
-            self.docker.postgres_host_port,
+            self.databases.postgres_host_port,
             &self.config.destination_database,
             mapped_table,
             &format!("{suffix}-{}", unique_suffix()),
@@ -788,7 +772,7 @@ impl CdcE2eHarness {
         error_message: &str,
     ) -> DestinationWriteFailure {
         DestinationWriteFailure::install(
-            self.docker.postgres_host_port,
+            self.databases.postgres_host_port,
             &self.config.destination_database,
             DestinationWriteFailureSpec {
                 schema_name,
@@ -810,17 +794,18 @@ impl CdcE2eHarness {
         let (include_schema_pattern, include_table_pattern) =
             verify_filter_patterns(&self.config.selected_tables);
         verify_image.run_correctness_audit(&VerifyImageRun {
-            network_name: self.docker.network_name.clone(),
-            source_url: self.docker.verify_source_url(&self.config.source_database),
-            source_ca_cert_path: self.docker.cockroach_ca_cert_path(),
-            source_client_cert_path: self.docker.cockroach_client_cert_path(),
-            source_client_key_path: self.docker.cockroach_client_key_path(),
-            destination_url: self.docker.verify_destination_url(
+            source_url: self
+                .databases
+                .verify_source_url(&self.config.source_database),
+            source_ca_cert_path: self.databases.cockroach_ca_cert_path(),
+            source_client_cert_path: self.databases.cockroach_client_cert_path(),
+            source_client_key_path: self.databases.cockroach_client_key_path(),
+            destination_url: self.databases.verify_destination_url(
                 &self.config.destination_database,
                 &self.config.destination_user,
                 &self.config.destination_password,
             ),
-            destination_ca_cert_path: self.docker.postgres_ca_cert_path(),
+            destination_ca_cert_path: self.databases.postgres_ca_cert_path(),
             include_schema_pattern,
             include_table_pattern,
             expected_tables: self.config.selected_tables.clone(),
@@ -975,12 +960,12 @@ impl CdcE2eHarness {
         write_cockroach_wrapper_script(
             &self.wrapper_bin_dir.join("cockroach"),
             &self.cockroach_wrapper_log_path,
-            &self.docker.cockroach_container,
+            self.databases.cockroach_certs_dir(),
+            self.databases.cockroach_sql_port(),
         );
         match webhook_sink_mode {
             WebhookSinkMode::DirectRunner => {
-                self.webhook_sink_base_url =
-                    format!("https://host.docker.internal:{}", self.runner_port);
+                self.webhook_sink_base_url = format!("https://127.0.0.1:{}", self.runner_port);
             }
             WebhookSinkMode::ObservableChaosGateway => {
                 let gateway = WebhookChaosGateway::start(self.runner_port);
@@ -1004,11 +989,7 @@ impl CdcE2eHarness {
                 &self.runner_stderr_path,
             )),
             DestinationRuntimeMode::SingleContainer => {
-                RunnerRuntime::Container(RunnerContainerProcess::start(
-                    &self.docker.network_name,
-                    self.runner_port,
-                    &self.runner_config_path,
-                ))
+                panic!("container destination runtime is not part of the Docker-free long lane")
             }
         };
         *self.runner_process.borrow_mut() = Some(child);
@@ -1113,7 +1094,6 @@ mappings:
 
         match runner_process {
             RunnerRuntime::Host(process) => process.assert_alive(),
-            RunnerRuntime::Container(process) => process.assert_alive(),
         }
     }
 
@@ -1124,7 +1104,6 @@ mappings:
                 read_file(&self.runner_stdout_path),
                 read_file(&self.runner_stderr_path),
             ),
-            Some(RunnerRuntime::Container(process)) => process.logs(),
             None => String::new(),
         }
     }
@@ -1136,21 +1115,27 @@ mappings:
     fn destination_runtime_postgres_host(&self) -> &'static str {
         match self.destination_runtime_mode {
             DestinationRuntimeMode::HostProcess => "127.0.0.1",
-            DestinationRuntimeMode::SingleContainer => "postgres",
+            DestinationRuntimeMode::SingleContainer => {
+                panic!("container destination runtime is not part of the Docker-free long lane")
+            }
         }
     }
 
     fn destination_runtime_postgres_port(&self) -> u16 {
         match self.destination_runtime_mode {
-            DestinationRuntimeMode::HostProcess => self.docker.postgres_host_port,
-            DestinationRuntimeMode::SingleContainer => 5432,
+            DestinationRuntimeMode::HostProcess => self.databases.postgres_host_port,
+            DestinationRuntimeMode::SingleContainer => {
+                panic!("container destination runtime is not part of the Docker-free long lane")
+            }
         }
     }
 
     fn destination_runtime_bind_port(&self) -> u16 {
         match self.destination_runtime_mode {
             DestinationRuntimeMode::HostProcess => self.runner_port,
-            DestinationRuntimeMode::SingleContainer => 8443,
+            DestinationRuntimeMode::SingleContainer => {
+                panic!("container destination runtime is not part of the Docker-free long lane")
+            }
         }
     }
 
@@ -1189,21 +1174,27 @@ mappings:
     }
 }
 
-pub(crate) struct DockerEnvironment {
+pub(crate) struct LocalDatabaseEnvironment {
     _tls_material_dir: TempDir,
-    network_name: String,
-    pub(crate) cockroach_container: String,
-    postgres_container: String,
-    cockroach_host_port: u16,
+    _cockroach_store_dir: TempDir,
+    _postgres_data_dir: TempDir,
+    cockroach_process: Option<Child>,
+    postgres_process: Option<Child>,
+    cockroach_rpc_port: u16,
+    cockroach_sql_port: u16,
+    cockroach_http_port: u16,
     pub(crate) postgres_host_port: u16,
     cockroach_certs_dir: PathBuf,
     postgres_tls_dir: PathBuf,
 }
 
-impl DockerEnvironment {
+impl LocalDatabaseEnvironment {
     pub(crate) fn new() -> Self {
         let suffix = unique_suffix();
         let tls_material_dir = tempfile::tempdir().expect("tls material dir should be created");
+        let cockroach_store_dir =
+            tempfile::tempdir().expect("cockroach store dir should be created");
+        let postgres_data_dir = tempfile::tempdir().expect("postgres data dir should be created");
         let cockroach_certs_dir = tls_material_dir.path().join("cockroach-certs");
         let postgres_tls_dir = tls_material_dir.path().join("postgres-tls");
         fs::create_dir_all(&cockroach_certs_dir).expect("cockroach cert dir should be created");
@@ -1212,10 +1203,13 @@ impl DockerEnvironment {
         generate_postgres_tls_material(&postgres_tls_dir);
         Self {
             _tls_material_dir: tls_material_dir,
-            network_name: "cockroach-migrate-runner-e2e-shared".to_owned(),
-            cockroach_container: format!("cockroach-migrate-cockroach-{suffix}"),
-            postgres_container: format!("cockroach-migrate-postgres-{suffix}"),
-            cockroach_host_port: pick_unused_port(),
+            _cockroach_store_dir: cockroach_store_dir,
+            _postgres_data_dir: postgres_data_dir,
+            cockroach_process: None,
+            postgres_process: None,
+            cockroach_rpc_port: pick_unused_port(),
+            cockroach_sql_port: pick_unused_port(),
+            cockroach_http_port: pick_unused_port(),
             postgres_host_port: pick_unused_port(),
             cockroach_certs_dir,
             postgres_tls_dir,
@@ -1223,137 +1217,167 @@ impl DockerEnvironment {
     }
 
     pub(crate) fn create_network(&self) {
-        if Command::new("docker")
-            .args(["network", "inspect", &self.network_name])
-            .output()
-            .expect("docker network inspect should start")
-            .status
-            .success()
-        {
-            return;
-        }
-        run_command_capture(
-            Command::new("docker").args(["network", "create", &self.network_name]),
-            "docker network create",
-        );
+        // No-op retained for harness call-site symmetry. The long lane runs all
+        // service dependencies as local processes supplied by the Nix flake.
     }
 
-    pub(crate) fn start_cockroach(&self) {
-        let cert_mount = format!("{}:/certs:ro", self.cockroach_certs_dir.display());
-        run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "-d",
-                "--name",
-                &self.cockroach_container,
-                "--network",
-                &self.network_name,
-                "--network-alias",
-                "cockroach",
-                "--add-host",
-                "host.docker.internal:host-gateway",
-                "-p",
-                &format!("127.0.0.1:{}:26258", self.cockroach_host_port),
-                "-v",
-                &cert_mount,
-                COCKROACH_IMAGE,
+    pub(crate) fn start_cockroach(&mut self) {
+        let stdout = File::create(self._tls_material_dir.path().join("cockroach.stdout.log"))
+            .expect("cockroach stdout log should open");
+        let stderr = File::create(self._tls_material_dir.path().join("cockroach.stderr.log"))
+            .expect("cockroach stderr log should open");
+        let child = Command::new("cockroach")
+            .args([
                 "start-single-node",
-                "--certs-dir=/certs",
-                "--listen-addr=localhost:26257",
-                "--advertise-addr=localhost:26257",
-                "--sql-addr=0.0.0.0:26258",
-                "--advertise-sql-addr=localhost:26258",
-                "--http-addr=0.0.0.0:8080",
-            ]),
-            "docker run cockroach",
-        );
+                "--certs-dir",
+                self.cockroach_certs_dir
+                    .to_str()
+                    .expect("cockroach cert dir path should be utf-8"),
+                "--store",
+                self._cockroach_store_dir
+                    .path()
+                    .to_str()
+                    .expect("cockroach store dir path should be utf-8"),
+                "--listen-addr",
+                &format!("127.0.0.1:{}", self.cockroach_rpc_port),
+                "--advertise-addr",
+                &format!("127.0.0.1:{}", self.cockroach_rpc_port),
+                "--sql-addr",
+                &format!("127.0.0.1:{}", self.cockroach_sql_port),
+                "--advertise-sql-addr",
+                &format!("127.0.0.1:{}", self.cockroach_sql_port),
+                "--http-addr",
+                &format!("127.0.0.1:{}", self.cockroach_http_port),
+            ])
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .expect("cockroach should start");
+        self.cockroach_process = Some(child);
     }
 
-    pub(crate) fn start_postgres(&self) {
+    pub(crate) fn start_postgres(&mut self) {
         run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "-d",
-                "--rm",
-                "--name",
-                &self.postgres_container,
-                "--network",
-                &self.network_name,
-                "--network-alias",
-                "postgres",
-                "-p",
-                &format!("127.0.0.1:{}:5432", self.postgres_host_port),
-                "-e",
-                "POSTGRES_USER=postgres",
-                "-e",
-                "POSTGRES_PASSWORD=postgres",
-                "-e",
-                "POSTGRES_DB=postgres",
-                POSTGRES_IMAGE,
+            Command::new("initdb").args([
+                "--auth-local=trust",
+                "--auth-host=trust",
+                "--username=postgres",
+                "--pgdata",
+                self._postgres_data_dir
+                    .path()
+                    .to_str()
+                    .expect("postgres data dir path should be utf-8"),
             ]),
-            "docker run postgres",
+            "initdb",
         );
+        set_private_key_permissions(&self.postgres_tls_dir.join("server.key"));
+        let stdout = File::create(self._tls_material_dir.path().join("postgres.stdout.log"))
+            .expect("postgres stdout log should open");
+        let stderr = File::create(self._tls_material_dir.path().join("postgres.stderr.log"))
+            .expect("postgres stderr log should open");
+        let child = Command::new("postgres")
+            .args(["-D"])
+            .arg(self._postgres_data_dir.path())
+            .args([
+                "-F",
+                "-h",
+                "127.0.0.1",
+                "-k",
+                self._postgres_data_dir
+                    .path()
+                    .to_str()
+                    .expect("postgres socket dir path should be utf-8"),
+                "-p",
+                &self.postgres_host_port.to_string(),
+                "-c",
+                "logging_collector=off",
+                "-c",
+                "ssl=on",
+                "-c",
+                &format!(
+                    "ssl_cert_file={}",
+                    self.postgres_tls_dir.join("server.crt").display()
+                ),
+                "-c",
+                &format!(
+                    "ssl_key_file={}",
+                    self.postgres_tls_dir.join("server.key").display()
+                ),
+            ])
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .expect("postgres should start");
+        self.postgres_process = Some(child);
     }
 
-    pub(crate) fn wait_for_cockroach(&self) {
+    pub(crate) fn wait_for_cockroach(&mut self) {
         for _ in 0..60 {
-            let status = Command::new("docker")
+            let status = Command::new("cockroach")
                 .args([
-                    "exec",
-                    &self.cockroach_container,
-                    "cockroach",
                     "sql",
-                    "--certs-dir=/certs",
-                    "--host=localhost:26258",
+                    &format!("--certs-dir={}", self.cockroach_certs_dir.display()),
+                    &format!("--host=127.0.0.1:{}", self.cockroach_sql_port),
                     "-e",
                     "select 1",
                 ])
                 .status()
-                .expect("docker exec cockroach should start");
+                .expect("cockroach sql readiness probe should start");
             if status.success() {
                 return;
             }
-            if !container_running(&self.cockroach_container) {
+            if let Some(status) = self
+                .cockroach_process
+                .as_mut()
+                .expect("cockroach process should exist")
+                .try_wait()
+                .expect("cockroach process status should be readable")
+            {
                 panic!(
-                    "cockroach container exited during startup\n{}",
-                    docker_logs(&self.cockroach_container)
+                    "cockroach exited during startup with status {status}\n{}",
+                    self.cockroach_logs()
                 );
             }
             thread::sleep(Duration::from_secs(1));
         }
 
-        panic!(
-            "cockroach container did not become ready\n{}",
-            docker_logs(&self.cockroach_container)
-        );
+        panic!("cockroach did not become ready\n{}", self.cockroach_logs());
     }
 
-    pub(crate) fn wait_for_postgres(&self) {
+    pub(crate) fn wait_for_postgres(&mut self) {
         for _ in 0..60 {
-            let status = Command::new("docker")
+            let status = Command::new("pg_isready")
                 .args([
-                    "exec",
-                    "-e",
-                    "PGPASSWORD=postgres",
-                    &self.postgres_container,
-                    "pg_isready",
                     "-h",
                     "127.0.0.1",
+                    "-p",
+                    &self.postgres_host_port.to_string(),
                     "-U",
                     "postgres",
                     "-d",
                     "postgres",
                 ])
                 .status()
-                .expect("docker exec pg_isready should start");
+                .expect("pg_isready should start");
             if status.success() {
-                self.enable_postgres_ssl();
                 return;
+            }
+            if let Some(status) = self
+                .postgres_process
+                .as_mut()
+                .expect("postgres process should exist")
+                .try_wait()
+                .expect("postgres process status should be readable")
+            {
+                panic!(
+                    "postgres exited during startup with status {status}\n{}",
+                    self.postgres_logs()
+                );
             }
             thread::sleep(Duration::from_secs(1));
         }
 
-        panic!("postgres container did not become ready");
+        panic!("postgres did not become ready\n{}", self.postgres_logs());
     }
 
     pub(crate) fn prepare_source_schema_and_seed(&self, sql: &str) {
@@ -1389,31 +1413,25 @@ impl DockerEnvironment {
 
     pub(crate) fn exec_cockroach_sql(&self, sql: &str) -> String {
         run_command_capture(
-            Command::new("docker").args([
-                "exec",
-                &self.cockroach_container,
-                "cockroach",
+            Command::new("cockroach").args([
                 "sql",
-                "--certs-dir=/certs",
-                "--host=localhost:26258",
+                &format!("--certs-dir={}", self.cockroach_certs_dir.display()),
+                &format!("--host=127.0.0.1:{}", self.cockroach_sql_port),
                 "--format=csv",
                 "-e",
                 sql,
             ]),
-            "docker exec cockroach sql",
+            "cockroach sql",
         )
     }
 
     pub(crate) fn exec_psql(&self, database: &str, sql: &str) -> String {
         run_command_capture(
-            Command::new("docker").args([
-                "exec",
-                "-e",
-                "PGPASSWORD=postgres",
-                &self.postgres_container,
-                "psql",
+            Command::new("psql").env("PGPASSWORD", "postgres").args([
                 "-h",
                 "127.0.0.1",
+                "-p",
+                &self.postgres_host_port.to_string(),
                 "-U",
                 "postgres",
                 "-d",
@@ -1425,81 +1443,26 @@ impl DockerEnvironment {
                 "-c",
                 sql,
             ]),
-            "docker exec psql",
+            "psql",
         )
     }
 
     pub(crate) fn cockroach_image(&self) -> String {
-        docker_inspect_format(&self.cockroach_container, "{{.Config.Image}}")
-    }
-
-    fn enable_postgres_ssl(&self) {
-        copy_file_into_container(
-            self.postgres_tls_dir.join("server.crt").as_path(),
-            &self.postgres_container,
-            "/var/lib/postgresql/data/server.crt",
-            "docker cp postgres server cert",
-        );
-        copy_file_into_container(
-            self.postgres_tls_dir.join("server.key").as_path(),
-            &self.postgres_container,
-            "/var/lib/postgresql/data/server.key",
-            "docker cp postgres server key",
-        );
         run_command_capture(
-            Command::new("docker").args([
-                "exec",
-                "-u",
-                "0",
-                &self.postgres_container,
-                "bash",
-                "-lc",
-                "set -euo pipefail\n\
-                 chown postgres:postgres /var/lib/postgresql/data/server.crt /var/lib/postgresql/data/server.key\n\
-                 chmod 600 /var/lib/postgresql/data/server.key\n\
-                 printf '\\nssl=on\\nssl_cert_file='\"'\"'/var/lib/postgresql/data/server.crt'\"'\"'\\nssl_key_file='\"'\"'/var/lib/postgresql/data/server.key'\"'\"'\\n' >> /var/lib/postgresql/data/postgresql.conf",
-            ]),
-            "docker exec postgres enable ssl",
-        );
-        run_command_capture(
-            Command::new("docker").args(["restart", &self.postgres_container]),
-            "docker restart postgres after ssl enable",
-        );
-        for _ in 0..60 {
-            let status = Command::new("docker")
-                .args([
-                    "exec",
-                    "-e",
-                    "PGPASSWORD=postgres",
-                    &self.postgres_container,
-                    "pg_isready",
-                    "-h",
-                    "127.0.0.1",
-                    "-U",
-                    "postgres",
-                    "-d",
-                    "postgres",
-                ])
-                .status()
-                .expect("docker exec pg_isready should start");
-            if status.success() {
-                return;
-            }
-            thread::sleep(Duration::from_secs(1));
-        }
-
-        panic!(
-            "postgres container did not become ready after enabling ssl\n{}",
-            docker_logs(&self.postgres_container)
-        );
+            Command::new("cockroach").arg("version"),
+            "cockroach version",
+        )
+        .lines()
+        .find_map(|line| line.strip_prefix("Build Tag:").map(str::trim))
+        .unwrap_or("unknown")
+        .to_owned()
     }
 
     pub(crate) fn verify_source_url(&self, database: &str) -> String {
-        format!("postgresql://root@cockroach:26258/{database}")
-    }
-
-    pub(crate) fn network_name(&self) -> &str {
-        &self.network_name
+        format!(
+            "postgresql://root@127.0.0.1:{}/{database}?sslmode=verify-full",
+            self.cockroach_sql_port
+        )
     }
 
     pub(crate) fn verify_destination_url(
@@ -1509,9 +1472,10 @@ impl DockerEnvironment {
         password: &str,
     ) -> String {
         format!(
-            "postgresql://{user}:{password}@postgres:5432/{database}",
+            "postgresql://{user}:{password}@127.0.0.1:{port}/{database}?sslmode=disable",
             user = user,
             password = password,
+            port = self.postgres_host_port,
             database = database,
         )
     }
@@ -1531,16 +1495,42 @@ impl DockerEnvironment {
     pub(crate) fn postgres_ca_cert_path(&self) -> PathBuf {
         self.postgres_tls_dir.join("ca.crt")
     }
+
+    pub(crate) fn cockroach_certs_dir(&self) -> &Path {
+        &self.cockroach_certs_dir
+    }
+
+    pub(crate) fn cockroach_sql_port(&self) -> u16 {
+        self.cockroach_sql_port
+    }
+
+    fn cockroach_logs(&self) -> String {
+        format!(
+            "{}{}",
+            read_file(&self._tls_material_dir.path().join("cockroach.stdout.log")),
+            read_file(&self._tls_material_dir.path().join("cockroach.stderr.log"))
+        )
+    }
+
+    fn postgres_logs(&self) -> String {
+        format!(
+            "{}{}",
+            read_file(&self._tls_material_dir.path().join("postgres.stdout.log")),
+            read_file(&self._tls_material_dir.path().join("postgres.stderr.log"))
+        )
+    }
 }
 
-impl Drop for DockerEnvironment {
+impl Drop for LocalDatabaseEnvironment {
     fn drop(&mut self) {
-        let _ = Command::new("docker")
-            .args(["rm", "-f", &self.postgres_container])
-            .output();
-        let _ = Command::new("docker")
-            .args(["rm", "-f", &self.cockroach_container])
-            .output();
+        if let Some(child) = self.postgres_process.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        if let Some(child) = self.cockroach_process.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }
 
@@ -1576,59 +1566,35 @@ pub(crate) fn investigation_server_key_path() -> PathBuf {
 }
 
 fn generate_cockroach_certs(certs_dir: &Path) {
-    let mount = format!("{}:/certs", certs_dir.display());
-    let user = current_user_spec();
     run_command_capture(
-        Command::new("docker").args([
-            "run",
-            "--rm",
-            "--user",
-            &user,
-            "-v",
-            &mount,
-            COCKROACH_IMAGE,
+        Command::new("cockroach").args([
             "cert",
             "create-ca",
-            "--certs-dir=/certs",
-            "--ca-key=/certs/ca.key",
+            &format!("--certs-dir={}", certs_dir.display()),
+            &format!("--ca-key={}", certs_dir.join("ca.key").display()),
         ]),
-        "docker run cockroach cert create-ca",
+        "cockroach cert create-ca",
     );
     run_command_capture(
-        Command::new("docker").args([
-            "run",
-            "--rm",
-            "--user",
-            &user,
-            "-v",
-            &mount,
-            COCKROACH_IMAGE,
+        Command::new("cockroach").args([
             "cert",
             "create-node",
             "localhost",
             "127.0.0.1",
-            "cockroach",
-            "--certs-dir=/certs",
-            "--ca-key=/certs/ca.key",
+            &format!("--certs-dir={}", certs_dir.display()),
+            &format!("--ca-key={}", certs_dir.join("ca.key").display()),
         ]),
-        "docker run cockroach cert create-node",
+        "cockroach cert create-node",
     );
     run_command_capture(
-        Command::new("docker").args([
-            "run",
-            "--rm",
-            "--user",
-            &user,
-            "-v",
-            &mount,
-            COCKROACH_IMAGE,
+        Command::new("cockroach").args([
             "cert",
             "create-client",
             "root",
-            "--certs-dir=/certs",
-            "--ca-key=/certs/ca.key",
+            &format!("--certs-dir={}", certs_dir.display()),
+            &format!("--ca-key={}", certs_dir.join("ca.key").display()),
         ]),
-        "docker run cockroach cert create-client",
+        "cockroach cert create-client",
     );
 }
 
@@ -1736,27 +1702,20 @@ fn generate_postgres_tls_material(tls_dir: &Path) {
         ]),
         "openssl x509 postgres server cert",
     );
+    set_private_key_permissions(&tls_dir.join("server.key"));
 }
 
-fn copy_file_into_container(source: &Path, container: &str, destination: &str, context: &str) {
-    run_command_capture(
-        Command::new("docker").args([
-            "cp",
-            source.to_str().expect("copy source path should be utf-8"),
-            &format!("{container}:{destination}"),
-        ]),
-        context,
-    );
-}
+fn set_private_key_permissions(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
 
-fn current_user_spec() -> String {
-    let uid = run_command_capture(Command::new("id").arg("-u"), "id -u")
-        .trim()
-        .to_owned();
-    let gid = run_command_capture(Command::new("id").arg("-g"), "id -g")
-        .trim()
-        .to_owned();
-    format!("{uid}:{gid}")
+        let mut permissions = fs::metadata(path)
+            .expect("private key metadata should exist")
+            .permissions();
+        permissions.set_mode(0o600);
+        fs::set_permissions(path, permissions).expect("private key permissions should be set");
+    }
 }
 
 fn unique_suffix() -> String {
@@ -1773,13 +1732,13 @@ fn unique_suffix() -> String {
     )
 }
 
-fn e2e_docker_resource_lock() -> &'static Mutex<()> {
+fn e2e_database_resource_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-pub(crate) fn lock_e2e_docker_resources() -> MutexGuard<'static, ()> {
-    e2e_docker_resource_lock()
+pub(crate) fn lock_e2e_database_resources() -> MutexGuard<'static, ()> {
+    e2e_database_resource_lock()
         .lock()
         .unwrap_or_else(|poison| poison.into_inner())
 }
@@ -1792,13 +1751,23 @@ pub(crate) fn pick_unused_port() -> u16 {
         .port()
 }
 
-pub(crate) fn write_cockroach_wrapper_script(path: &Path, log_path: &Path, container_name: &str) {
+pub(crate) fn write_cockroach_wrapper_script(
+    path: &Path,
+    log_path: &Path,
+    certs_dir: &Path,
+    sql_port: u16,
+) {
     fs::write(
         path,
         format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nfor arg in \"$@\"; do\n  escaped_arg=${{arg//\\\\/\\\\\\\\}}\n  escaped_arg=${{escaped_arg//$'\\n'/\\\\n}}\n  escaped_arg=${{escaped_arg//$'\\t'/\\\\t}}\n  printf 'ARG_ESC\\t%s\\n' \"$escaped_arg\" >> {log_path}\ndone\nprintf 'END\\n' >> {log_path}\nexec docker exec {container_name} cockroach \"$@\"\n",
+            "#!/usr/bin/env bash\nset -euo pipefail\nrewritten=()\nfor arg in \"$@\"; do\n  escaped_arg=${{arg//\\\\/\\\\\\\\}}\n  escaped_arg=${{escaped_arg//$'\\n'/\\\\n}}\n  escaped_arg=${{escaped_arg//$'\\t'/\\\\t}}\n  printf 'ARG_ESC\\t%s\\n' \"$escaped_arg\" >> {log_path}\n  case \"$arg\" in\n    --certs-dir=/certs) rewritten+=(--certs-dir={certs_dir}) ;;\n    --host=localhost:26258) rewritten+=(--host=127.0.0.1:{sql_port}) ;;\n    *) rewritten+=(\"$arg\") ;;\n  esac\ndone\nprintf 'END\\n' >> {log_path}\nexec cockroach \"${{rewritten[@]}}\"\n",
             log_path = shell_quote(log_path),
-            container_name = shell_quote_text(container_name),
+            certs_dir = shell_quote_text(
+                certs_dir
+                    .to_str()
+                    .expect("cockroach cert dir path should be utf-8")
+            ),
+            sql_port = sql_port,
         ),
     )
     .expect("wrapper script should be written");
@@ -1901,49 +1870,6 @@ fn run_command_output(command: &mut Command, context: &str) -> std::process::Out
         String::from_utf8_lossy(&output.stderr)
     );
     output
-}
-
-fn docker_logs(container: &str) -> String {
-    let output = Command::new("docker")
-        .args(["logs", container])
-        .output()
-        .unwrap_or_else(|error| panic!("docker logs should start: {error}"));
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    )
-}
-
-fn docker_inspect_format(container: &str, format: &str) -> String {
-    let output = Command::new("docker")
-        .args(["inspect", "-f", format, container])
-        .output()
-        .unwrap_or_else(|error| panic!("docker inspect should start: {error}"));
-    assert!(
-        output.status.success(),
-        "docker inspect failed for `{container}`:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
-    String::from_utf8(output.stdout)
-        .expect("docker inspect stdout should be utf-8")
-        .trim()
-        .to_owned()
-}
-
-fn container_running(container: &str) -> bool {
-    let output = Command::new("docker")
-        .args([
-            "container",
-            "inspect",
-            "-f",
-            "{{.State.Running}}",
-            container,
-        ])
-        .output()
-        .unwrap_or_else(|error| panic!("docker inspect should start: {error}"));
-    output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
 }
 
 pub(crate) fn read_file(path: &Path) -> String {

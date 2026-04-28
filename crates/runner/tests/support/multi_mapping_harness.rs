@@ -12,10 +12,10 @@ use ingest_contract::MappingIngestPath;
 use tempfile::TempDir;
 
 use crate::e2e_harness::{
-    DockerEnvironment, encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
-    investigation_server_cert_path, investigation_server_key_path, lock_e2e_docker_resources,
+    encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
+    investigation_server_cert_path, investigation_server_key_path, lock_e2e_database_resources,
     pick_unused_port, read_file, run_audited_cockroach_sql, wait_for_runner_health,
-    write_cockroach_wrapper_script,
+    write_cockroach_wrapper_script, LocalDatabaseEnvironment,
 };
 use crate::e2e_integrity::VerifyCorrectnessAudit;
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
@@ -190,8 +190,8 @@ const APP_B: MappingSpec = MappingSpec {
 const MAPPINGS: [MappingSpec; 2] = [APP_A, APP_B];
 
 pub struct MultiMappingHarness {
-    _docker_test_guard: MutexGuard<'static, ()>,
-    docker: DockerEnvironment,
+    _database_test_guard: MutexGuard<'static, ()>,
+    databases: LocalDatabaseEnvironment,
     temp_dir: TempDir,
     runner_port: u16,
     runner_config_path: PathBuf,
@@ -204,16 +204,16 @@ pub struct MultiMappingHarness {
 
 impl MultiMappingHarness {
     pub fn start() -> Self {
-        let docker_test_guard = lock_e2e_docker_resources();
-        let docker = DockerEnvironment::new();
-        docker.create_network();
-        docker.start_cockroach();
-        docker.start_postgres();
-        docker.wait_for_cockroach();
-        docker.wait_for_postgres();
+        let database_test_guard = lock_e2e_database_resources();
+        let mut databases = LocalDatabaseEnvironment::new();
+        databases.create_network();
+        databases.start_cockroach();
+        databases.start_postgres();
+        databases.wait_for_cockroach();
+        databases.wait_for_postgres();
         for mapping in MAPPINGS {
-            docker.prepare_source_schema_and_seed(mapping.source_schema_sql);
-            docker.prepare_destination_database(
+            databases.prepare_source_schema_and_seed(mapping.source_schema_sql);
+            databases.prepare_destination_database(
                 mapping.destination_database,
                 mapping.destination_user,
                 mapping.destination_password,
@@ -227,8 +227,8 @@ impl MultiMappingHarness {
         fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
 
         let mut harness = Self {
-            _docker_test_guard: docker_test_guard,
-            docker,
+            _database_test_guard: database_test_guard,
+            databases,
             temp_dir,
             runner_port,
             runner_config_path: PathBuf::new(),
@@ -452,17 +452,16 @@ VALUES (5003, 1, 'expansion-pack', 2);
         let (include_schema_pattern, include_table_pattern) =
             verify_filter_patterns(mapping.selected_tables);
         verify_image.run_correctness_audit(&VerifyImageRun {
-            network_name: self.docker.network_name().to_owned(),
-            source_url: self.docker.verify_source_url(mapping.source_database),
-            source_ca_cert_path: self.docker.cockroach_ca_cert_path(),
-            source_client_cert_path: self.docker.cockroach_client_cert_path(),
-            source_client_key_path: self.docker.cockroach_client_key_path(),
-            destination_url: self.docker.verify_destination_url(
+            source_url: self.databases.verify_source_url(mapping.source_database),
+            source_ca_cert_path: self.databases.cockroach_ca_cert_path(),
+            source_client_cert_path: self.databases.cockroach_client_cert_path(),
+            source_client_key_path: self.databases.cockroach_client_key_path(),
+            destination_url: self.databases.verify_destination_url(
                 mapping.destination_database,
                 mapping.destination_user,
                 mapping.destination_password,
             ),
-            destination_ca_cert_path: self.docker.postgres_ca_cert_path(),
+            destination_ca_cert_path: self.databases.postgres_ca_cert_path(),
             include_schema_pattern,
             include_table_pattern,
             expected_tables: mapping
@@ -529,7 +528,8 @@ VALUES (5003, 1, 'expansion-pack', 2);
         write_cockroach_wrapper_script(
             &self.wrapper_bin_dir.join("cockroach"),
             &self.cockroach_wrapper_log_path,
-            &self.docker.cockroach_container,
+            self.databases.cockroach_certs_dir(),
+            self.databases.cockroach_sql_port(),
         );
         self.write_runner_config();
     }
@@ -577,7 +577,7 @@ VALUES (5003, 1, 'expansion-pack', 2);
                     mapping_id = mapping.id,
                     source_database = mapping.source_database,
                     selected_tables = selected_tables,
-                    postgres_port = self.docker.postgres_host_port,
+                    postgres_port = self.databases.postgres_host_port,
                     destination_database = mapping.destination_database,
                     destination_user = mapping.destination_user,
                     destination_password = mapping.destination_password,
@@ -654,7 +654,7 @@ mappings:
             .expect("changefeed CA certificate should be readable");
         let ca_cert_query = encode_ca_cert_query_value(&ca_cert_bytes);
         format!(
-            "webhook-https://host.docker.internal:{}{}?ca_cert={}",
+            "webhook-https://127.0.0.1:{}{}?ca_cert={}",
             self.runner_port,
             MappingIngestPath::new(mapping_id),
             ca_cert_query,
@@ -710,7 +710,7 @@ mappings:
     }
 
     fn query_destination(&self, database: &str, sql: &str) -> String {
-        self.docker.exec_psql(database, sql)
+        self.databases.exec_psql(database, sql)
     }
 
     fn assert_runner_alive(&self) {

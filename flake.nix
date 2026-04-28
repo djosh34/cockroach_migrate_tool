@@ -26,11 +26,24 @@
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfreePredicate = pkg: nixpkgs.lib.getName pkg == "cockroachdb";
+        };
 
         inherit (pkgs) lib;
 
         craneLib = crane.mkLib pkgs;
+        cockroachdb =
+          assert lib.hasPrefix "23.1." pkgs.cockroachdb.version;
+          pkgs.cockroachdb;
+
+        molt = pkgs.buildGoModule {
+          pname = "molt";
+          version = "0.1.0";
+          src = ./cockroachdb_molt/molt;
+          vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
+        };
         cleanCargoSourceWith =
           extraFilters: source:
           lib.cleanSourceWith {
@@ -102,7 +115,10 @@
             src = testSrc;
             cargoArtifacts = runner-crate-nextest-build;
             nativeBuildInputs = [
-                pkgs.docker
+              cockroachdb
+              molt
+              pkgs.openssl
+              pkgs.postgresql_16
             ];
             cargoNextestPartitionsExtraArgs = "--run-ignored ignored-only --no-tests=fail";
           }

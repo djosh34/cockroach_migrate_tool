@@ -147,7 +147,7 @@ impl WebhookChaosGateway {
     }
 
     pub(crate) fn public_base_url(&self) -> String {
-        format!("https://host.docker.internal:{}", self.sink_port)
+        format!("https://127.0.0.1:{}", self.sink_port)
     }
 
     pub(crate) fn arm_single_external_fault_for_body_substring(

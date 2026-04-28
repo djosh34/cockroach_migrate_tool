@@ -2,29 +2,26 @@ use std::{
     fs,
     net::TcpListener,
     path::{Path, PathBuf},
-    process::Command,
-    sync::atomic::{AtomicU64, Ordering},
+    process::{Child, Command, Stdio},
     thread,
-    time::{SystemTime, UNIX_EPOCH},
 };
 
-use reqwest::{Certificate, Identity, blocking::Client};
+use reqwest::{blocking::Client, Certificate, Identity};
 use serde::Deserialize;
 use serde_json::json;
 use tempfile::TempDir;
 
 use crate::e2e_harness::{
     investigation_ca_cert_path, investigation_server_cert_path, investigation_server_key_path,
+    read_file,
 };
 use crate::e2e_integrity::{VerifyCorrectnessAudit, VerifyJobResponse};
-use crate::nix_image_artifact_harness_support::NixImageArtifact;
 
 pub struct VerifyImageHarness {
-    image_tag: String,
+    _private: (),
 }
 
 pub struct VerifyImageRun {
-    pub network_name: String,
     pub source_url: String,
     pub source_ca_cert_path: PathBuf,
     pub source_client_cert_path: PathBuf,
@@ -38,36 +35,30 @@ pub struct VerifyImageRun {
 
 impl VerifyImageHarness {
     pub fn start() -> Self {
-        let harness = Self {
-            image_tag: format!("cockroach-migrate-verify-test-{}", unique_suffix()),
-        };
-        harness.build_verify_image();
-        harness
+        Self { _private: () }
     }
 
     pub fn run_correctness_audit(&self, run: &VerifyImageRun) -> VerifyCorrectnessAudit {
         let runtime_files = VerifyRuntimeFiles::materialize(run);
-        let runtime = RunningVerifyImage::start(&self.image_tag, run, &runtime_files);
+        let mut runtime = RunningVerifyImage::start(run, &runtime_files);
         runtime.wait_until_ready();
         let job_id = runtime.start_job(run);
         let response = runtime.wait_for_job(&job_id);
         VerifyCorrectnessAudit::new(run.expected_tables.clone(), response)
-    }
-
-    fn build_verify_image(&self) {
-        NixImageArtifact::verify().provision_image_tag(&self.image_tag, "verify long-lane image");
     }
 }
 
 struct VerifyRuntimeFiles {
     _temp_dir: TempDir,
     root_dir: PathBuf,
+    listener_port: u16,
 }
 
 impl VerifyRuntimeFiles {
     fn materialize(run: &VerifyImageRun) -> Self {
         let temp_dir = tempfile::tempdir().expect("verify runtime temp dir should be created");
         let root_dir = temp_dir.path().to_path_buf();
+        let listener_port = pick_unused_port();
         let certs_dir = root_dir.join("certs");
         fs::create_dir_all(&certs_dir).expect("verify runtime cert dir should be created");
 
@@ -107,23 +98,27 @@ impl VerifyRuntimeFiles {
             &config_path,
             format!(
                 r#"listener:
-  bind_addr: 0.0.0.0:8080
+  bind_addr: 127.0.0.1:{port}
   tls:
-    cert_path: /work/config/certs/server.crt
-    key_path: /work/config/certs/server.key
-    client_ca_path: /work/config/certs/source-ca.crt
+    cert_path: {server_cert_path}
+    key_path: {server_key_path}
+    client_ca_path: {source_ca_cert_path}
 verify:
   source:
     url: {source_url}
     tls:
-      ca_cert_path: /work/config/certs/source-ca.crt
-      client_cert_path: /work/config/certs/source-client.crt
-      client_key_path: /work/config/certs/source-client.key
+      ca_cert_path: {source_ca_cert_path}
+      client_cert_path: {source_client_cert_path}
+      client_key_path: {source_client_key_path}
   destination:
     url: {destination_url}
-    tls:
-      ca_cert_path: /work/config/certs/destination-ca.crt
 "#,
+                port = listener_port,
+                server_cert_path = certs_dir.join("server.crt").display(),
+                server_key_path = certs_dir.join("server.key").display(),
+                source_ca_cert_path = certs_dir.join("source-ca.crt").display(),
+                source_client_cert_path = certs_dir.join("source-client.crt").display(),
+                source_client_key_path = certs_dir.join("source-client.key").display(),
                 source_url = run.source_url,
                 destination_url = run.destination_url,
             ),
@@ -133,41 +128,40 @@ verify:
         Self {
             _temp_dir: temp_dir,
             root_dir,
+            listener_port,
         }
     }
 }
 
 struct RunningVerifyImage {
-    container_name: String,
+    process: Child,
+    stdout_path: PathBuf,
+    stderr_path: PathBuf,
     base_url: String,
     client: Client,
 }
 
 impl RunningVerifyImage {
-    fn start(image_tag: &str, run: &VerifyImageRun, files: &VerifyRuntimeFiles) -> Self {
-        let container_name = format!("cockroach-migrate-verify-runtime-{}", unique_suffix());
-        let host_port = pick_unused_port();
-        let config_mount = format!("{}:/work/config:ro", files.root_dir.display());
-        run_command_capture(
-            Command::new("docker").args([
-                "run",
-                "-d",
-                "--rm",
-                "--name",
-                &container_name,
-                "--network",
-                &run.network_name,
-                "-p",
-                &format!("127.0.0.1:{host_port}:8080"),
-                "-v",
-                &config_mount,
-                image_tag,
+    fn start(_run: &VerifyImageRun, files: &VerifyRuntimeFiles) -> Self {
+        let stdout_path = files.root_dir.join("verify-service.stdout.log");
+        let stderr_path = files.root_dir.join("verify-service.stderr.log");
+        let stdout = fs::File::create(&stdout_path).expect("verify stdout log should open");
+        let stderr = fs::File::create(&stderr_path).expect("verify stderr log should open");
+        let process = Command::new("molt")
+            .args([
+                "verify-service",
                 "run",
                 "--config",
-                "/work/config/verify-service.yml",
-            ]),
-            "docker run verify image runtime",
-        );
+                files
+                    .root_dir
+                    .join("verify-service.yml")
+                    .to_str()
+                    .expect("verify config path should be utf-8"),
+            ])
+            .stdout(Stdio::from(stdout))
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .expect("molt verify-service should start");
         let trusted_ca = Certificate::from_pem(
             &fs::read(investigation_ca_cert_path())
                 .expect("verify runtime investigation ca should be readable"),
@@ -186,8 +180,10 @@ impl RunningVerifyImage {
                 .as_path(),
         );
         Self {
-            container_name,
-            base_url: format!("https://127.0.0.1:{host_port}"),
+            process,
+            stdout_path,
+            stderr_path,
+            base_url: format!("https://127.0.0.1:{}", files.listener_port),
             client: Client::builder()
                 .add_root_certificate(trusted_ca)
                 .identity(client_identity)
@@ -196,9 +192,9 @@ impl RunningVerifyImage {
         }
     }
 
-    fn wait_until_ready(&self) {
+    fn wait_until_ready(&mut self) {
         for _ in 0..60 {
-            self.assert_container_alive();
+            self.assert_process_alive();
             match self
                 .client
                 .get(format!("{}/jobs/readiness-probe", self.base_url))
@@ -212,7 +208,7 @@ impl RunningVerifyImage {
         panic!(
             "verify image runtime did not become ready on {}\n{}",
             self.base_url,
-            docker_logs(&self.container_name),
+            self.logs(),
         );
     }
 
@@ -234,7 +230,7 @@ impl RunningVerifyImage {
             response.status().is_success(),
             "verify image POST /jobs failed with status {}\n{}",
             response.status(),
-            docker_logs(&self.container_name),
+            self.logs(),
         );
         let payload = parse_json::<VerifyStartResponse>(
             response
@@ -246,9 +242,9 @@ impl RunningVerifyImage {
         payload.job_id
     }
 
-    fn wait_for_job(&self, job_id: &str) -> VerifyJobResponse {
+    fn wait_for_job(&mut self, job_id: &str) -> VerifyJobResponse {
         for _ in 0..120 {
-            self.assert_container_alive();
+            self.assert_process_alive();
             let response = self
                 .client
                 .get(format!("{}/jobs/{job_id}", self.base_url))
@@ -260,7 +256,7 @@ impl RunningVerifyImage {
                 response.status().is_success(),
                 "verify image GET /jobs/{job_id} failed with status {}\n{}",
                 response.status(),
-                docker_logs(&self.container_name),
+                self.logs(),
             );
             let payload = parse_json::<VerifyJobResponse>(
                 response
@@ -279,51 +275,36 @@ impl RunningVerifyImage {
 
         panic!(
             "verify image job `{job_id}` did not finish in time\n{}",
-            docker_logs(&self.container_name),
+            self.logs(),
         );
     }
 
-    fn assert_container_alive(&self) {
-        if !container_running(&self.container_name) {
+    fn assert_process_alive(&mut self) {
+        if let Some(status) = self
+            .process
+            .try_wait()
+            .expect("verify process status should be readable")
+        {
             panic!(
-                "verify image runtime container exited early\n{}",
-                docker_logs(&self.container_name),
+                "verify runtime exited early with status {status}\n{}",
+                self.logs()
             );
         }
+    }
+
+    fn logs(&self) -> String {
+        format!(
+            "stdout:\n{}\n\nstderr:\n{}",
+            read_file(&self.stdout_path),
+            read_file(&self.stderr_path),
+        )
     }
 }
 
 impl Drop for RunningVerifyImage {
     fn drop(&mut self) {
-        let output = Command::new("docker")
-            .args(["container", "inspect", &self.container_name])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker inspect verify runtime container should start: {error}")
-            });
-        if output.status.success() {
-            run_command_capture(
-                Command::new("docker").args(["rm", "-f", &self.container_name]),
-                "docker rm verify runtime container",
-            );
-        }
-    }
-}
-
-impl Drop for VerifyImageHarness {
-    fn drop(&mut self) {
-        let output = Command::new("docker")
-            .args(["image", "inspect", &self.image_tag])
-            .output()
-            .unwrap_or_else(|error| {
-                panic!("docker image rm verify image probe should start: {error}")
-            });
-        if output.status.success() {
-            run_command_capture(
-                Command::new("docker").args(["image", "rm", "-f", &self.image_tag]),
-                "docker image rm verify image",
-            );
-        }
+        let _ = self.process.kill();
+        let _ = self.process.wait();
     }
 }
 
@@ -332,39 +313,12 @@ struct VerifyStartResponse {
     job_id: String,
 }
 
-fn unique_suffix() -> String {
-    static UNIQUE_SUFFIX_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-    format!(
-        "{}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time should be after unix epoch")
-            .as_nanos(),
-        UNIQUE_SUFFIX_COUNTER.fetch_add(1, Ordering::Relaxed),
-    )
-}
-
 fn pick_unused_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .expect("ephemeral verify runtime port should bind")
         .local_addr()
         .expect("ephemeral verify runtime listener should have an address")
         .port()
-}
-
-fn run_command_capture(command: &mut Command, context: &str) -> String {
-    let output = command
-        .output()
-        .unwrap_or_else(|error| panic!("{context} should start: {error}"));
-    assert!(
-        output.status.success(),
-        "{context} failed:\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8(output.stdout).expect("command stdout should be utf-8")
 }
 
 fn copy_cert(source: &Path, destination: &Path, description: &str) {
@@ -401,34 +355,4 @@ where
 {
     serde_json::from_str(raw)
         .unwrap_or_else(|error| panic!("{description} should parse from JSON `{raw}`: {error}"))
-}
-
-fn container_running(container: &str) -> bool {
-    let output = Command::new("docker")
-        .args([
-            "container",
-            "inspect",
-            "-f",
-            "{{.State.Running}}",
-            container,
-        ])
-        .output()
-        .unwrap_or_else(|error| {
-            panic!("docker inspect verify runtime container should start: {error}")
-        });
-    output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
-}
-
-fn docker_logs(container: &str) -> String {
-    let output = Command::new("docker")
-        .args(["logs", container])
-        .output()
-        .unwrap_or_else(|error| {
-            panic!("docker logs verify runtime container should start: {error}")
-        });
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    )
 }

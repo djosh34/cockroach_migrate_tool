@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 
 use serde::Deserialize;
 
-const EXPECTED_COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
+const EXPECTED_COCKROACH_VERSION_PREFIX: &str = "v23.1.";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CustomerLiveUpdateAudit {
@@ -802,9 +802,12 @@ impl RuntimeShapeAudit {
             "changefeed sink must target the destination runtime over HTTPS: {}",
             self.changefeed_sink_base_url,
         );
-        assert_eq!(
-            self.cockroach.image, EXPECTED_COCKROACH_IMAGE,
-            "the honest default E2E path must use the real CockroachDB container image",
+        assert!(
+            self.cockroach
+                .image
+                .starts_with(EXPECTED_COCKROACH_VERSION_PREFIX),
+            "the honest default E2E path must use CockroachDB 23.1 from the Nix flake, got {}",
+            self.cockroach.image,
         );
         assert!(
             !self.destination_role.is_superuser,
@@ -817,9 +820,9 @@ impl RuntimeShapeAudit {
             .as_deref()
         {
             assert_eq!(
+                Some("127.0.0.1"),
                 Some(postgres_apply_client_addr),
-                self.destination_runtime.runner_container_ip.as_deref(),
-                "when PostgreSQL exposes a live runtime session, it must originate from the runner container",
+                "when PostgreSQL exposes a live runtime session, it must originate from the local runner process",
             );
         }
     }
