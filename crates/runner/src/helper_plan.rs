@@ -1,10 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{
-    error::RunnerHelperPlanError,
-    sql_name::{QualifiedTableName, SqlIdentifier},
-    validated_schema::{ColumnSchema, ValidatedSchema},
-};
+use runner_config::{ColumnSchema, QualifiedTableName, SqlIdentifier, ValidatedSchema};
+
+use crate::error::RunnerHelperPlanError;
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";
 

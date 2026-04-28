@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
+use runner_config::{
+    ConfiguredMappingPlan, DestinationGroupPlan, PostgresTargetConfig, RunnerStartupPlan,
+    close_target, connect_target, load_destination_schema,
+};
 use sqlx::{Executor, PgConnection};
 
 use crate::{
-    config::PostgresTargetConfig,
-    destination_catalog::{close_target, connect_target, load_destination_schema},
-    error::RunnerBootstrapError,
-    helper_plan::MappingHelperPlan,
-    runtime_plan::{ConfiguredMappingPlan, DestinationGroupPlan, RunnerStartupPlan},
+    error::RunnerBootstrapError, helper_plan::MappingHelperPlan,
     tracking_state::seed_tracking_state,
 };
 

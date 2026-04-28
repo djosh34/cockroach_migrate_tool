@@ -1,7 +1,7 @@
+use runner_config::PostgresTargetConfig;
 use sqlx::{Connection, PgConnection, Postgres, Row, Transaction};
 
 use crate::{
-    config::PostgresTargetConfig,
     error::{RunnerReconcileRuntimeError, RunnerWebhookPersistenceError},
     helper_plan::HelperShadowTablePlan,
 };

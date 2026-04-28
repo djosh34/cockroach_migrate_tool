@@ -1,9 +1,18 @@
-use clap::Parser;
 use operator_log::{LogEvent, LogFormat};
 use std::process::ExitCode;
 
 fn main() -> ExitCode {
-    let cli = runner::Cli::parse();
+    let cli = match runner::Cli::parse_from_env() {
+        Ok(cli) => cli,
+        Err(error) => {
+            if error.is_help() {
+                println!("{error}");
+                return ExitCode::SUCCESS;
+            }
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
     let log_format = cli.log_format();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()

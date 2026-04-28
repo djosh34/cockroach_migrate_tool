@@ -1,0 +1,5 @@
+warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
+
+real	0m0.819s
+user	0m0.258s
+sys	0m0.289s

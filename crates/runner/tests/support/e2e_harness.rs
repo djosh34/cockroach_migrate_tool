@@ -12,12 +12,13 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{Engine, engine::general_purpose::STANDARD};
 use ingest_contract::MappingIngestPath;
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
+
+#[path = "ca_cert_encoding.rs"]
+mod ca_cert_encoding;
 
 mod destination_lock;
 mod destination_write_failure;
@@ -41,7 +42,10 @@ use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 const COCKROACH_IMAGE: &str = "cockroachdb/cockroach:v26.1.2";
 const POSTGRES_IMAGE: &str = "postgres:16";
 const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
-const CA_CERT_QUERY_ESCAPE: &AsciiSet = &CONTROLS.add(b'+').add(b'/').add(b'=');
+
+pub(crate) fn encode_ca_cert_query_value(bytes: &[u8]) -> String {
+    ca_cert_encoding::encode_ca_cert_query_value(bytes)
+}
 
 #[derive(Clone, Copy)]
 pub enum WebhookSinkMode {
@@ -1177,8 +1181,7 @@ mappings:
     fn changefeed_sink_url(&self) -> String {
         let ca_cert_bytes = fs::read(investigation_ca_cert_path())
             .expect("changefeed CA certificate should be readable");
-        let ca_cert_query =
-            utf8_percent_encode(&STANDARD.encode(ca_cert_bytes), CA_CERT_QUERY_ESCAPE).to_string();
+        let ca_cert_query = encode_ca_cert_query_value(&ca_cert_bytes);
         format!(
             "webhook-{}{}?ca_cert={}",
             self.webhook_sink_base_url,

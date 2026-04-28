@@ -1,55 +1,37 @@
-mod config;
-mod destination_catalog;
 mod error;
 mod helper_plan;
 mod metrics;
 mod postgres_bootstrap;
 mod reconcile_runtime;
 mod runtime_plan;
-mod sql_name;
 mod tracking_state;
-mod validated_schema;
 mod webhook_runtime;
 
-use std::{path::PathBuf, sync::Arc};
+use std::{ffi::OsString, path::PathBuf, sync::Arc};
 
-use clap::{Parser, Subcommand};
-use destination_catalog::validate_destination_group;
 use operator_log::{LogEvent, LogFormat};
+use runner_config::{
+    LoadedRunnerConfig, RunnerStartupPlan, ValidatedConfig, validate_loaded_config,
+};
 
-use config::LoadedRunnerConfig;
 pub use error::RunnerError;
 use postgres_bootstrap::bootstrap_postgres;
 use reconcile_runtime::serve as serve_reconcile_runtime;
-use runtime_plan::{RunnerRuntimePlan, RunnerStartupPlan};
+use runtime_plan::RunnerRuntimePlan;
 use webhook_runtime::serve as serve_webhook_runtime;
 
 pub(crate) type RuntimeEventSink = Arc<dyn Fn(LogEvent<'static>) + Send + Sync>;
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "runner",
-    about = "CockroachDB to PostgreSQL destination runner"
-)]
+#[derive(Debug)]
 pub struct Cli {
-    #[arg(long, value_enum, global = true, default_value_t = LogFormat::Text)]
     log_format: LogFormat,
-    #[command(subcommand)]
     command: Command,
 }
 
-#[derive(Debug, Subcommand)]
+#[derive(Debug)]
 enum Command {
-    ValidateConfig {
-        #[arg(long)]
-        config: PathBuf,
-        #[arg(long)]
-        deep: bool,
-    },
-    Run {
-        #[arg(long)]
-        config: PathBuf,
-    },
+    ValidateConfig { config: PathBuf, deep: bool },
+    Run { config: PathBuf },
 }
 
 pub async fn execute<F>(cli: Cli, emit_event: F) -> Result<Option<CommandOutput>, RunnerError>
@@ -61,17 +43,8 @@ where
     match cli.command {
         Command::ValidateConfig { config, deep } => {
             let config = LoadedRunnerConfig::load(&config)?;
-            let deep_validation = if deep {
-                let startup_plan = RunnerStartupPlan::from_config(config.config())?;
-                for destination_group in startup_plan.destination_groups() {
-                    validate_destination_group(destination_group).await?;
-                }
-                DeepValidationStatus::Ok
-            } else {
-                DeepValidationStatus::Skipped
-            };
             Ok(Some(CommandOutput::Validated(
-                ValidatedConfig::from_loaded_config(&config, deep_validation),
+                validate_loaded_config(&config, deep).await?,
             )))
         }
         Command::Run { config } => {
@@ -103,10 +76,168 @@ where
 }
 
 impl Cli {
+    pub fn parse_from_env() -> Result<Self, CliError> {
+        Self::parse_from(std::env::args_os())
+    }
+
     pub fn log_format(&self) -> LogFormat {
         self.log_format
     }
+
+    fn parse_from<I>(args: I) -> Result<Self, CliError>
+    where
+        I: IntoIterator<Item = OsString>,
+    {
+        let mut args = args.into_iter();
+        let program = args
+            .next()
+            .unwrap_or_else(|| OsString::from("runner"))
+            .to_string_lossy()
+            .into_owned();
+        let usage = usage_text(&program);
+        let mut command_name: Option<String> = None;
+        let mut config: Option<PathBuf> = None;
+        let mut deep = false;
+        let mut log_format = LogFormat::Text;
+
+        while let Some(argument) = args.next() {
+            let argument = argument.to_string_lossy().into_owned();
+            match argument.as_str() {
+                "-h" | "--help" => return Err(CliError::help(usage)),
+                "--log-format" => {
+                    let value = next_string_argument(&mut args, "--log-format", &usage)?;
+                    log_format = parse_log_format(&value)
+                        .map_err(|message| CliError::invalid(message, &usage))?;
+                }
+                "--config" => {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| CliError::missing_value("--config", &usage))?;
+                    config = Some(PathBuf::from(value));
+                }
+                "--deep" => {
+                    deep = true;
+                }
+                "validate-config" | "run" => {
+                    if let Some(existing) = &command_name {
+                        return Err(CliError::invalid(
+                            format!("received multiple subcommands: `{existing}` and `{argument}`"),
+                            &usage,
+                        ));
+                    }
+                    command_name = Some(argument);
+                }
+                _ if argument.starts_with('-') => {
+                    return Err(CliError::invalid(
+                        format!("unrecognized argument `{argument}`"),
+                        &usage,
+                    ));
+                }
+                _ => {
+                    return Err(CliError::invalid(
+                        format!("unrecognized subcommand `{argument}`"),
+                        &usage,
+                    ));
+                }
+            }
+        }
+
+        let command_name =
+            command_name.ok_or_else(|| CliError::invalid("missing subcommand", &usage))?;
+        let config = config.ok_or_else(|| CliError::missing_value("--config", &usage))?;
+        let command = match command_name.as_str() {
+            "validate-config" => Command::ValidateConfig { config, deep },
+            "run" => {
+                if deep {
+                    return Err(CliError::invalid(
+                        "`--deep` is only valid for `validate-config`",
+                        &usage,
+                    ));
+                }
+                Command::Run { config }
+            }
+            _ => unreachable!("command name validated during parsing"),
+        };
+
+        Ok(Self {
+            log_format,
+            command,
+        })
+    }
 }
+
+fn parse_log_format(input: &str) -> Result<LogFormat, String> {
+    match input {
+        "text" => Ok(LogFormat::Text),
+        "json" => Ok(LogFormat::Json),
+        _ => Err(format!(
+            "invalid log format `{input}`; expected one of: text, json"
+        )),
+    }
+}
+
+fn next_string_argument(
+    args: &mut impl Iterator<Item = OsString>,
+    flag: &str,
+    usage: &str,
+) -> Result<String, CliError> {
+    let value = args
+        .next()
+        .ok_or_else(|| CliError::missing_value(flag, usage))?;
+    Ok(value.to_string_lossy().into_owned())
+}
+
+fn usage_text(program: &str) -> String {
+    format!(
+        "CockroachDB to PostgreSQL destination runner\n\n\
+Usage:\n  {program} [--log-format text|json] validate-config --config <PATH> [--deep]\n  {program} [--log-format text|json] run --config <PATH>\n\n\
+Commands:\n  validate-config   Validate a runner config file\n  run               Start the webhook and reconcile runtimes\n\n\
+Options:\n  --log-format <text|json>  Emit text or JSON logs (default: text)\n  --config <PATH>           Path to the runner config file\n  --deep                    Validate destination connectivity and schema\n  -h, --help                Show this help text"
+    )
+}
+
+#[derive(Debug)]
+pub struct CliError {
+    kind: CliErrorKind,
+}
+
+#[derive(Debug)]
+enum CliErrorKind {
+    Help(String),
+    InvalidUsage(String),
+}
+
+impl CliError {
+    fn help(usage: String) -> Self {
+        Self {
+            kind: CliErrorKind::Help(usage),
+        }
+    }
+
+    fn invalid(message: impl Into<String>, usage: &str) -> Self {
+        Self {
+            kind: CliErrorKind::InvalidUsage(format!("error: {}\n\n{usage}", message.into())),
+        }
+    }
+
+    fn missing_value(flag: &str, usage: &str) -> Self {
+        Self::invalid(format!("missing value for `{flag}`"), usage)
+    }
+
+    pub fn is_help(&self) -> bool {
+        matches!(self.kind, CliErrorKind::Help(_))
+    }
+}
+
+impl std::fmt::Display for CliError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            CliErrorKind::Help(usage) | CliErrorKind::InvalidUsage(usage) => f.write_str(usage),
+        }
+    }
+}
+
+impl std::error::Error for CliError {}
 
 pub enum CommandOutput {
     Validated(ValidatedConfig),
@@ -122,79 +253,6 @@ impl CommandOutput {
     pub fn text_output(&self) -> String {
         match self {
             Self::Validated(config) => config.text_output(),
-        }
-    }
-}
-
-pub struct ValidatedConfig {
-    config_path: String,
-    mappings: usize,
-    webhook_bind_addr: std::net::SocketAddr,
-    webhook_mode: &'static str,
-    webhook_tls_files: Option<String>,
-    deep_validation: DeepValidationStatus,
-}
-
-#[derive(Clone, Copy)]
-enum DeepValidationStatus {
-    Skipped,
-    Ok,
-}
-
-impl ValidatedConfig {
-    fn from_loaded_config(
-        loaded_config: &LoadedRunnerConfig,
-        deep_validation: DeepValidationStatus,
-    ) -> Self {
-        let config = loaded_config.config();
-
-        Self {
-            config_path: loaded_config.path().display().to_string(),
-            mappings: config.mapping_count(),
-            webhook_bind_addr: config.webhook().bind_addr(),
-            webhook_mode: config.webhook().effective_mode(),
-            webhook_tls_files: config.webhook().tls().map(|tls| tls.material_label()),
-            deep_validation,
-        }
-    }
-
-    fn text_output(&self) -> String {
-        let mut summary = format!(
-            "config valid: config={} mappings={} webhook={} mode={}",
-            self.config_path, self.mappings, self.webhook_bind_addr, self.webhook_mode
-        );
-        if let Some(tls) = &self.webhook_tls_files {
-            summary.push_str(" tls=");
-            summary.push_str(tls);
-        }
-        if let Some(deep_status) = self.deep_validation.field_value() {
-            summary.push_str(" deep=");
-            summary.push_str(deep_status);
-        }
-        summary
-    }
-
-    fn event(&self) -> LogEvent<'static> {
-        let mut event = LogEvent::info("runner", "config.validated", "runner config validated")
-            .with_field("config", &self.config_path)
-            .with_field("mappings", self.mappings)
-            .with_field("webhook", self.webhook_bind_addr.to_string())
-            .with_field("mode", self.webhook_mode);
-        if let Some(tls) = &self.webhook_tls_files {
-            event = event.with_field("tls", tls);
-        }
-        if let Some(deep_status) = self.deep_validation.field_value() {
-            event = event.with_field("deep", deep_status);
-        }
-        event
-    }
-}
-
-impl DeepValidationStatus {
-    fn field_value(self) -> Option<&'static str> {
-        match self {
-            Self::Skipped => None,
-            Self::Ok => Some("ok"),
         }
     }
 }

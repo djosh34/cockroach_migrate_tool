@@ -4,12 +4,11 @@ use std::{
     time::SystemTime,
 };
 
-use clap::ValueEnum;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LogFormat {
     Text,
     Json,

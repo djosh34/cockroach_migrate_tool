@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
+use runner_config::SqlIdentifier;
 use sqlx::{PgConnection, Row};
 
 use crate::{
     error::RunnerReconcileRuntimeError, helper_plan::HelperShadowTablePlan,
-    metrics::TableMetricsSnapshot, runtime_plan::MappingRuntimePlan, sql_name::SqlIdentifier,
+    metrics::TableMetricsSnapshot, runtime_plan::MappingRuntimePlan,
 };
 
 const HELPER_SCHEMA: &str = "_cockroach_migration_tool";

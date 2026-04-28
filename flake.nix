@@ -106,12 +106,110 @@
             '';
           };
 
-        cargoArtifacts = craneLib.buildDepsOnly {
+        sanitizeCargoArtifacts = ''
+          if [ -d target ]; then
+            find target -type f \( \
+              -path '*/build/*/out/*.a' -o \
+              -path '*/build/*/out/*.o' -o \
+              -path '*/deps/*.rlib' -o \
+              -path '*/deps/*.rmeta' \
+            \) -print0 \
+              | while IFS= read -r -d "" artifact_file
+              do
+                case "$artifact_file" in
+                  *.a|*.o)
+                    strip -g "$artifact_file"
+                    ;;
+                esac
+
+                while IFS= read -r build_only_ref
+                do
+                  remove-references-to -t "$build_only_ref" "$artifact_file"
+                done < <(
+                  strings "$artifact_file" \
+                    | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
+                    | sort -u \
+                    | rg '^/nix/store/[[:alnum:]]{32}-(vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*|gcc-[^[:space:]]*|glibc-[^[:space:]]*)$'
+                )
+              done
+          fi
+        '';
+
+        cargoArtifactSanitizers = {
+          nativeBuildInputs = [
+            pkgs.binutils
+            pkgs.removeReferencesTo
+            pkgs.ripgrep
+          ];
+          postBuild = sanitizeCargoArtifacts;
+          postCheck = sanitizeCargoArtifacts;
+        };
+
+        cargoArtifacts = craneLib.buildDepsOnly ({
           pname = "${runnerPname}-deps";
           version = runnerVersion;
           src = cargoSrc;
           strictDeps = true;
-        };
+          doCheck = false;
+          cargoExtraArgs = "-p runner --locked";
+        } // cargoArtifactSanitizers);
+
+        cargoArtifactsClosureCheck = pkgs.runCommand "${runnerPname}-cargo-artifacts-closure" {
+          nativeBuildInputs = [
+            pkgs.binutils
+            pkgs.findutils
+            pkgs.gnugrep
+            pkgs.gnutar
+            pkgs.zstd
+          ];
+        } ''
+          artifact_tar="${cargoArtifacts}/target.tar.zst"
+          cp "$artifact_tar" "$out"
+          forbidden_ref_pattern='/nix/store/[[:alnum:]]{32}-(gcc-[^[:space:]]*|glibc-[^[:space:]]*-dev|vendor-cargo-deps|vendor-registry|cargo-package-[^[:space:]]*)'
+
+          while IFS= read -r artifact_path
+          do
+            if tar --zstd -xOf "$artifact_tar" "$artifact_path" \
+              | strings \
+              | rg -o '/nix/store/[[:alnum:]]{32}-[^/[:space:]]+' \
+              | rg -v '^/nix/store/e{32}-' \
+              | grep -Eq "$forbidden_ref_pattern"; then
+              echo "cargo-artifacts must not retain build-only store references via $artifact_path" >&2
+              exit 1
+            fi
+          done < <(
+            tar --zstd -tf "$artifact_tar" | grep -E '^./release/(build/.*/out/.*\.(a|o)|deps/.*\.(rlib|rmeta))$'
+          )
+        '';
+
+        cargoArtifactsRuntimeBoundaryCheck = pkgs.runCommand "${runnerPname}-cargo-artifacts-runtime-boundary" {
+          nativeBuildInputs = [
+            pkgs.gnugrep
+            pkgs.gnutar
+            pkgs.zstd
+          ];
+        } ''
+          artifact_tar="${cargoArtifacts}/target.tar.zst"
+          cp "$artifact_tar" "$out"
+
+          for forbidden_crate in reqwest tempfile
+          do
+            if tar --zstd -tf "$artifact_tar" | grep -Eq "/(lib)?''${forbidden_crate}[-_.]"; then
+              echo "runtime cargo-artifacts must not retain dev-only crate ''${forbidden_crate}" >&2
+              exit 1
+            fi
+          done
+        '';
+
+        runnerClippyCargoArtifacts = craneLib.buildDepsOnly ({
+          pname = "${runnerPname}-clippy-deps";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          doCheck = false;
+          cargoExtraArgs = "--workspace --locked";
+          cargoCheckExtraArgs = "--all-targets";
+        } // cargoArtifactSanitizers);
 
         runner = craneLib.buildPackage {
           inherit cargoArtifacts;
@@ -123,14 +221,16 @@
           doCheck = false;
         };
 
-        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly {
+        runnerRuntimeCargoArtifacts = craneLibMusl.buildDepsOnly ({
           pname = "${runnerPname}-runtime-deps";
           version = runnerVersion;
           src = cargoSrc;
           strictDeps = true;
+          doCheck = false;
+          cargoExtraArgs = "-p runner --locked";
           CARGO_BUILD_TARGET = runnerMuslTarget;
           CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-        };
+        } // cargoArtifactSanitizers);
 
         runnerRuntime = craneLibMusl.buildPackage {
           cargoArtifacts = runnerRuntimeCargoArtifacts;
@@ -144,8 +244,18 @@
           doCheck = false;
         };
 
+        runnerTestCargoArtifacts = craneLib.buildDepsOnly ({
+          pname = "${runnerPname}-test-deps";
+          version = runnerVersion;
+          src = cargoSrc;
+          strictDeps = true;
+          cargoExtraArgs = "--workspace --locked";
+          cargoCheckExtraArgs = "--all-targets";
+          cargoTestExtraArgs = "--no-run";
+        } // cargoArtifactSanitizers);
+
         runnerClippy = craneLib.cargoClippy {
-          inherit cargoArtifacts;
+          cargoArtifacts = runnerClippyCargoArtifacts;
           pname = "${runnerPname}-clippy";
           version = runnerVersion;
           src = cargoSrc;
@@ -154,7 +264,7 @@
         };
 
         runnerTest = craneLib.cargoTest {
-          inherit cargoArtifacts;
+          cargoArtifacts = runnerTestCargoArtifacts;
           pname = "${runnerPname}-test";
           version = runnerVersion;
           src = repoSrc;
@@ -275,8 +385,14 @@
           '';
         };
 
-        checkApp = mkNixBuildApp "check" ".#checks.${system}.runner-clippy";
-        lintApp = mkNixBuildApp "lint" ".#checks.${system}.runner-clippy";
+        checkApp =
+          mkNixBuildApp
+            "check"
+            ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
+        lintApp =
+          mkNixBuildApp
+            "lint"
+            ".#checks.${system}.runner-clippy .#checks.${system}.cargo-artifacts-closure .#checks.${system}.cargo-artifacts-runtime-boundary";
         testApp = mkNixBuildApp "test" ".#checks.${system}.runner-test .#checks.${system}.verify-service-test";
         fmtApp = mkNixBuildApp "fmt" ".#checks.${system}.fmt-check";
         longTestApp = mkNixBuildApp "test-long" ".#packages.${system}.runner-long-test";
@@ -314,10 +430,12 @@
         };
 
         checks = {
+          "cargo-artifacts-closure" = cargoArtifactsClosureCheck;
+          "cargo-artifacts-runtime-boundary" = cargoArtifactsRuntimeBoundaryCheck;
+          fmt-check = fmtCheck;
           runner-clippy = runnerClippy;
           runner-test = runnerTest;
           verify-service-test = verifyServiceTest;
-          fmt-check = fmtCheck;
         };
 
         devShells.default = pkgs.mkShell {

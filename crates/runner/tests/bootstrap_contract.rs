@@ -5,6 +5,9 @@ use std::{
     process::Command,
 };
 
+#[path = "support/predicates.rs"]
+mod predicates;
+
 use predicates::prelude::{PredicateBooleanExt, predicate};
 use reqwest::{Certificate, Identity, blocking::Client};
 use serde_json::Value;

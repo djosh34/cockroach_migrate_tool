@@ -1,18 +1,18 @@
 use std::fmt::{self, Display, Formatter};
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct SqlIdentifier {
+pub struct SqlIdentifier {
     raw: String,
 }
 
 impl SqlIdentifier {
-    pub(crate) fn new(value: &str) -> Self {
+    pub fn new(value: &str) -> Self {
         Self {
             raw: unquote_identifier(value.trim()),
         }
     }
 
-    pub(crate) fn raw(&self) -> &str {
+    pub fn raw(&self) -> &str {
         &self.raw
     }
 }
@@ -24,17 +24,17 @@ impl Display for SqlIdentifier {
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct QualifiedTableName {
+pub struct QualifiedTableName {
     schema: SqlIdentifier,
     table: SqlIdentifier,
 }
 
 impl QualifiedTableName {
-    pub(crate) fn new(schema: SqlIdentifier, table: SqlIdentifier) -> Self {
+    pub fn new(schema: SqlIdentifier, table: SqlIdentifier) -> Self {
         Self { schema, table }
     }
 
-    pub(crate) fn from_config(value: &str) -> Self {
+    pub fn from_config(value: &str) -> Self {
         let (schema, table) = value
             .split_once('.')
             .expect("validated config should only contain schema-qualified tables");
@@ -42,15 +42,15 @@ impl QualifiedTableName {
         Self::new(SqlIdentifier::new(schema), SqlIdentifier::new(table))
     }
 
-    pub(crate) fn schema(&self) -> &SqlIdentifier {
+    pub fn schema(&self) -> &SqlIdentifier {
         &self.schema
     }
 
-    pub(crate) fn table(&self) -> &SqlIdentifier {
+    pub fn table(&self) -> &SqlIdentifier {
         &self.table
     }
 
-    pub(crate) fn label(&self) -> String {
+    pub fn label(&self) -> String {
         format!("{}.{}", self.schema.raw(), self.table.raw())
     }
 }

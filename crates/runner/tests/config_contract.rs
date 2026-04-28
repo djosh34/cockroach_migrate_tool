@@ -4,6 +4,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "support/assert_cmd.rs"]
+mod assert_cmd;
+#[path = "support/predicates.rs"]
+mod predicates;
+
 use assert_cmd::Command;
 use predicates::prelude::{PredicateBooleanExt, predicate};
 use serde_json::Value;

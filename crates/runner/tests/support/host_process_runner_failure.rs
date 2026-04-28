@@ -1,4 +1,4 @@
-use predicates::Predicate;
+use crate::predicates::Predicate;
 
 use crate::runner_process_support::HostProcessRunner;
 

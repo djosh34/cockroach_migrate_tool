@@ -22,6 +22,7 @@ use hyper_util::{
     service::TowerToHyperService,
 };
 use operator_log::LogEvent;
+use runner_config::WebhookListenerTransport;
 use rustls::{RootCertStore, ServerConfig, server::WebPkiClientVerifier};
 use tokio::{net::TcpListener, task::JoinSet};
 use tokio_rustls::TlsAcceptor;
@@ -30,7 +31,7 @@ use crate::{
     RuntimeEventSink,
     error::{RunnerIngressRequestError, RunnerWebhookRoutingError, RunnerWebhookRuntimeError},
     metrics::WebhookOutcome,
-    runtime_plan::{RunnerRuntimePlan, WebhookListenerTransport},
+    runtime_plan::RunnerRuntimePlan,
     tracking_state::{ResolvedTrackingTarget, persist_resolved_watermark},
 };
 use payload::parse_webhook_request;
@@ -108,6 +109,7 @@ async fn serve_https(
                     };
                     let io = TokioIo::new(tls_stream);
                     AutoBuilder::new(TokioExecutor::new())
+                        .http1_only()
                         .serve_connection_with_upgrades(io, TowerToHyperService::new(service))
                         .await
                         .map_err(|source| RunnerWebhookRuntimeError::ServeConnection { source })
@@ -187,7 +189,7 @@ fn load_tls_config(runtime: &RunnerRuntimePlan) -> Result<ServerConfig, RunnerWe
             .with_single_cert(certificates, private_key)
             .map_err(|source| RunnerWebhookRuntimeError::BuildTlsConfig { source })?,
     };
-    config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
     Ok(config)
 }
 

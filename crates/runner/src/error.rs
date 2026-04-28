@@ -1,5 +1,9 @@
-use std::{io, net::AddrParseError, path::PathBuf};
+use std::{io, path::PathBuf};
 
+use runner_config::{
+    RunnerConfigError, RunnerDestinationCatalogError, RunnerStartupPlanError,
+    RunnerValidateConfigError,
+};
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -8,11 +12,13 @@ pub enum RunnerError {
     #[error("config: {0}")]
     Config(#[from] RunnerConfigError),
     #[error("config: {0}")]
-    ConfigDeepValidation(#[from] RunnerDestinationCatalogError),
+    ValidateConfig(#[from] RunnerValidateConfigError),
     #[error("postgres setup artifacts: {0}")]
     PostgresSetupArtifacts(#[from] RunnerArtifactError),
     #[error("postgres bootstrap: {0}")]
     PostgresBootstrap(#[from] RunnerBootstrapError),
+    #[error("runtime plan: {0}")]
+    StartupPlan(#[from] RunnerStartupPlanError),
     #[error("runtime plan: {0}")]
     RuntimePlan(#[from] RunnerRuntimePlanError),
     #[error("reconcile runtime: {0}")]
@@ -21,32 +27,6 @@ pub enum RunnerError {
     WebhookRuntime(#[from] RunnerWebhookRuntimeError),
     #[error("webhook request: {0}")]
     WebhookRequest(#[from] RunnerIngressRequestError),
-}
-
-#[derive(Debug, Error)]
-pub enum RunnerConfigError {
-    #[error("failed to read config file `{path}`")]
-    ReadFile { path: PathBuf, source: io::Error },
-    #[error("failed to parse config file `{path}`: {source}")]
-    ParseFile {
-        path: PathBuf,
-        source: serde_yaml::Error,
-    },
-    #[error("invalid config field `{field}`: {message}")]
-    InvalidField {
-        field: &'static str,
-        message: &'static str,
-    },
-    #[error("invalid config field `{field}`: {message}")]
-    InvalidFieldDetail {
-        field: &'static str,
-        message: String,
-    },
-    #[error("invalid socket address in `{field}`")]
-    InvalidSocketAddr {
-        field: &'static str,
-        source: AddrParseError,
-    },
 }
 
 #[derive(Debug, Error)]
@@ -101,50 +81,6 @@ pub enum RunnerBootstrapError {
         mapping_id: String,
         database: String,
         source: RunnerHelperPlanError,
-    },
-    #[error(
-        "missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`"
-    )]
-    MissingTable {
-        mapping_id: String,
-        database: String,
-        table: String,
-    },
-    #[error(
-        "unsupported foreign key ON DELETE action `{action}` for mapping `{mapping_id}` in `{database}` table `{table}`"
-    )]
-    UnsupportedForeignKeyAction {
-        mapping_id: String,
-        database: String,
-        table: String,
-        action: String,
-    },
-    #[error(
-        "incomplete foreign key metadata while reading mapping `{mapping_id}` in `{database}` table `{table}`"
-    )]
-    IncompleteForeignKeyMetadata {
-        mapping_id: String,
-        database: String,
-        table: String,
-    },
-}
-
-#[derive(Debug, Error)]
-pub enum RunnerDestinationCatalogError {
-    #[error("failed to connect mapping `{mapping_id}` to `{endpoint}`: {source}")]
-    Connect {
-        mapping_id: String,
-        endpoint: String,
-        source: sqlx::Error,
-    },
-    #[error(
-        "failed to read destination table shape for mapping `{mapping_id}` in `{database}` table `{table}`: {source}"
-    )]
-    ReadCatalog {
-        mapping_id: String,
-        database: String,
-        table: String,
-        source: sqlx::Error,
     },
     #[error(
         "missing mapped destination table `{table}` for mapping `{mapping_id}` in `{database}`"
@@ -231,23 +167,6 @@ impl From<RunnerDestinationCatalogError> for RunnerBootstrapError {
 
 #[derive(Debug, Error)]
 pub enum RunnerRuntimePlanError {
-    #[error(
-        "destination database `{destination}` has conflicting PostgreSQL target contracts for mappings `{first_mapping_id}` and `{second_mapping_id}`"
-    )]
-    InconsistentDestinationTarget {
-        destination: String,
-        first_mapping_id: String,
-        second_mapping_id: String,
-    },
-    #[error(
-        "destination database `{destination}` table `{table}` is claimed by both mappings `{first_mapping_id}` and `{second_mapping_id}`"
-    )]
-    OverlappingDestinationTable {
-        destination: String,
-        table: String,
-        first_mapping_id: String,
-        second_mapping_id: String,
-    },
     #[error("bootstrap output is missing helper metadata for mapping `{mapping_id}`")]
     MissingHelperPlan { mapping_id: String },
     #[error(

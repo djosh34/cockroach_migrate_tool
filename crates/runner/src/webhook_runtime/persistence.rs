@@ -1,10 +1,9 @@
+use runner_config::{PostgresTargetConfig, SqlIdentifier};
 use sqlx::{Connection, PgConnection, Postgres, Transaction, types::Json};
 
 use crate::{
-    config::PostgresTargetConfig,
     error::RunnerWebhookPersistenceError,
     helper_plan::HelperShadowTablePlan,
-    sql_name::SqlIdentifier,
     webhook_runtime::payload::{RowMutation, RowOperation},
 };
 

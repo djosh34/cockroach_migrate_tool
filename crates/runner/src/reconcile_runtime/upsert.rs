@@ -1,8 +1,7 @@
+use runner_config::SqlIdentifier;
 use sqlx::{Postgres, Transaction};
 
-use crate::{
-    helper_plan::HelperShadowTablePlan, runtime_plan::MappingRuntimePlan, sql_name::SqlIdentifier,
-};
+use crate::{helper_plan::HelperShadowTablePlan, runtime_plan::MappingRuntimePlan};
 
 use super::ReconcileApplyFailure;
 

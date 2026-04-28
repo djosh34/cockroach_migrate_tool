@@ -8,21 +8,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use base64::{Engine, engine::general_purpose::STANDARD};
 use ingest_contract::MappingIngestPath;
-use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 use tempfile::TempDir;
 
 use crate::e2e_harness::{
-    DockerEnvironment, https_client, investigation_ca_cert_path, investigation_server_cert_path,
-    investigation_server_key_path, lock_e2e_docker_resources, pick_unused_port, read_file,
-    run_audited_cockroach_sql, wait_for_runner_health, write_cockroach_wrapper_script,
+    DockerEnvironment, encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
+    investigation_server_cert_path, investigation_server_key_path, lock_e2e_docker_resources,
+    pick_unused_port, read_file, run_audited_cockroach_sql, wait_for_runner_health,
+    write_cockroach_wrapper_script,
 };
 use crate::e2e_integrity::VerifyCorrectnessAudit;
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
 
 const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
-const CA_CERT_QUERY_ESCAPE: &AsciiSet = &CONTROLS.add(b'+').add(b'/').add(b'=');
 
 const APP_A_SOURCE_SCHEMA_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -654,8 +652,7 @@ mappings:
     fn changefeed_sink_url(&self, mapping_id: &str) -> String {
         let ca_cert_bytes = fs::read(investigation_ca_cert_path())
             .expect("changefeed CA certificate should be readable");
-        let ca_cert_query =
-            utf8_percent_encode(&STANDARD.encode(ca_cert_bytes), CA_CERT_QUERY_ESCAPE).to_string();
+        let ca_cert_query = encode_ca_cert_query_value(&ca_cert_bytes);
         format!(
             "webhook-https://host.docker.internal:{}{}?ca_cert={}",
             self.runner_port,

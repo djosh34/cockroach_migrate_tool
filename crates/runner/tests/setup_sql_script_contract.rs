@@ -5,8 +5,8 @@ use std::{
     process::{Command, Output},
 };
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+#[path = "support/ca_cert_encoding.rs"]
+mod ca_cert_encoding_support;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -24,11 +24,9 @@ fn fixture_path(name: &str) -> PathBuf {
 }
 
 fn percent_encoded_ca_cert(path: &Path) -> String {
-    utf8_percent_encode(
-        &STANDARD.encode(fs::read(path).expect("ca cert should be readable")),
-        NON_ALPHANUMERIC,
+    ca_cert_encoding_support::encode_ca_cert_fixture_value(
+        &fs::read(path).expect("ca cert should be readable"),
     )
-    .to_string()
 }
 
 fn expected_fixture(name: &str) -> String {

@@ -1,181 +1,19 @@
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::collections::BTreeMap;
+
+use runner_config::{
+    ConfiguredMappingPlan, PostgresTargetConfig, QualifiedTableName, RunnerStartupPlan,
+    WebhookListenerPlan,
+};
 
 use crate::{
-    config::{MappingConfig, PostgresTargetConfig, RunnerConfig, WebhookConfig},
     error::{RunnerRuntimePlanError, RunnerWebhookRoutingError},
     helper_plan::{HelperShadowTablePlan, MappingHelperPlan},
     metrics::RunnerMetrics,
-    sql_name::QualifiedTableName,
 };
-
-pub(crate) struct RunnerStartupPlan {
-    webhook_listener: WebhookListenerPlan,
-    reconcile_interval: Duration,
-    mappings: BTreeMap<String, ConfiguredMappingPlan>,
-    destination_groups: Vec<DestinationGroupPlan>,
-}
-
-impl RunnerStartupPlan {
-    pub(crate) fn from_config(config: &RunnerConfig) -> Result<Self, RunnerRuntimePlanError> {
-        let mut mappings = BTreeMap::new();
-        let mut grouped_mappings =
-            BTreeMap::<DestinationDatabaseKey, Vec<ConfiguredMappingPlan>>::new();
-
-        for mapping in config.mappings() {
-            let mapping_plan = ConfiguredMappingPlan::from_config(mapping);
-            grouped_mappings
-                .entry(DestinationDatabaseKey::from_target(
-                    mapping_plan.destination(),
-                ))
-                .or_default()
-                .push(mapping_plan.clone());
-            mappings.insert(mapping_plan.mapping_id().to_owned(), mapping_plan);
-        }
-
-        let destination_groups = grouped_mappings
-            .into_iter()
-            .map(|(database_key, mappings)| DestinationGroupPlan::new(database_key, mappings))
-            .collect::<Result<Vec<_>, RunnerRuntimePlanError>>()?;
-
-        Ok(Self {
-            webhook_listener: WebhookListenerPlan::from_config(config.webhook()),
-            reconcile_interval: Duration::from_secs(config.reconcile().interval_secs()),
-            mappings,
-            destination_groups,
-        })
-    }
-
-    pub(crate) fn destination_groups(&self) -> &[DestinationGroupPlan] {
-        &self.destination_groups
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct ConfiguredMappingPlan {
-    mapping_id: String,
-    source_database: String,
-    destination: PostgresTargetConfig,
-    selected_tables: Vec<QualifiedTableName>,
-}
-
-impl ConfiguredMappingPlan {
-    fn from_config(mapping: &MappingConfig) -> Self {
-        Self {
-            mapping_id: mapping.id().to_owned(),
-            source_database: mapping.source().database().to_owned(),
-            destination: mapping.destination().clone(),
-            selected_tables: mapping
-                .source()
-                .tables()
-                .iter()
-                .map(|table| QualifiedTableName::from_config(table))
-                .collect(),
-        }
-    }
-
-    pub(crate) fn mapping_id(&self) -> &str {
-        &self.mapping_id
-    }
-
-    pub(crate) fn source_database(&self) -> &str {
-        &self.source_database
-    }
-
-    pub(crate) fn destination(&self) -> &PostgresTargetConfig {
-        &self.destination
-    }
-
-    pub(crate) fn selected_tables(&self) -> &[QualifiedTableName] {
-        &self.selected_tables
-    }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct DestinationDatabaseKey {
-    host: String,
-    port: u16,
-    database: String,
-}
-
-impl DestinationDatabaseKey {
-    fn from_target(target: &PostgresTargetConfig) -> Self {
-        Self {
-            host: target.host().to_owned(),
-            port: target.port(),
-            database: target.database().to_owned(),
-        }
-    }
-
-    pub(crate) fn label(&self) -> String {
-        format!("{}:{}/{}", self.host, self.port, self.database)
-    }
-}
-
-#[derive(Clone)]
-pub(crate) struct DestinationGroupPlan {
-    target: PostgresTargetConfig,
-    mappings: Vec<ConfiguredMappingPlan>,
-}
-
-impl DestinationGroupPlan {
-    fn new(
-        database_key: DestinationDatabaseKey,
-        mappings: Vec<ConfiguredMappingPlan>,
-    ) -> Result<Self, RunnerRuntimePlanError> {
-        let Some(target) = mappings
-            .first()
-            .map(|mapping| mapping.destination().clone())
-        else {
-            panic!("destination group should contain at least one mapping");
-        };
-
-        for mapping in &mappings {
-            if !mapping.destination().same_target_contract(&target) {
-                return Err(RunnerRuntimePlanError::InconsistentDestinationTarget {
-                    destination: database_key.label(),
-                    first_mapping_id: mappings
-                        .first()
-                        .map(|first| first.mapping_id().to_owned())
-                        .unwrap_or_else(|| {
-                            panic!("destination group should contain at least one mapping")
-                        }),
-                    second_mapping_id: mapping.mapping_id().to_owned(),
-                });
-            }
-        }
-
-        let mut table_owners = BTreeMap::<String, String>::new();
-        for mapping in &mappings {
-            for table in mapping.selected_tables() {
-                let table = table.label();
-                if let Some(first_mapping_id) =
-                    table_owners.insert(table.clone(), mapping.mapping_id().to_owned())
-                {
-                    return Err(RunnerRuntimePlanError::OverlappingDestinationTable {
-                        destination: database_key.label(),
-                        table,
-                        first_mapping_id,
-                        second_mapping_id: mapping.mapping_id().to_owned(),
-                    });
-                }
-            }
-        }
-
-        Ok(Self { target, mappings })
-    }
-
-    pub(crate) fn target(&self) -> &PostgresTargetConfig {
-        &self.target
-    }
-
-    pub(crate) fn mappings(&self) -> &[ConfiguredMappingPlan] {
-        &self.mappings
-    }
-}
 
 pub(crate) struct RunnerRuntimePlan {
     webhook_listener: WebhookListenerPlan,
-    reconcile_interval: Duration,
+    reconcile_interval: std::time::Duration,
     metrics: RunnerMetrics,
     mappings: BTreeMap<String, MappingRuntimePlan>,
     destination_groups: Vec<DestinationRuntimePlan>,
@@ -188,7 +26,7 @@ impl RunnerRuntimePlan {
     ) -> Result<Self, RunnerRuntimePlanError> {
         let mut mappings = BTreeMap::new();
 
-        for mapping in startup_plan.mappings.values() {
+        for mapping in startup_plan.mappings().values() {
             let helper_plan = helper_plans.remove(mapping.mapping_id()).ok_or_else(|| {
                 RunnerRuntimePlanError::MissingHelperPlan {
                     mapping_id: mapping.mapping_id().to_owned(),
@@ -201,7 +39,7 @@ impl RunnerRuntimePlan {
         }
 
         let destination_groups = startup_plan
-            .destination_groups
+            .destination_groups()
             .iter()
             .map(|destination_group| {
                 let mappings = destination_group
@@ -221,8 +59,8 @@ impl RunnerRuntimePlan {
             .collect();
 
         Ok(Self {
-            webhook_listener: startup_plan.webhook_listener,
-            reconcile_interval: startup_plan.reconcile_interval,
+            webhook_listener: startup_plan.webhook_listener().clone(),
+            reconcile_interval: startup_plan.reconcile_interval(),
             metrics: RunnerMetrics::new(),
             mappings,
             destination_groups,
@@ -237,7 +75,7 @@ impl RunnerRuntimePlan {
         self.webhook_listener.bind_addr()
     }
 
-    pub(crate) fn reconcile_interval(&self) -> Duration {
+    pub(crate) fn reconcile_interval(&self) -> std::time::Duration {
         self.reconcile_interval
     }
 
@@ -258,89 +96,6 @@ impl RunnerRuntimePlan {
 
     pub(crate) fn destination_groups(&self) -> &[DestinationRuntimePlan] {
         &self.destination_groups
-    }
-}
-
-pub(crate) struct WebhookListenerPlan {
-    bind_addr: std::net::SocketAddr,
-    transport: WebhookListenerTransport,
-}
-
-impl WebhookListenerPlan {
-    fn from_config(config: &WebhookConfig) -> Self {
-        Self {
-            bind_addr: config.bind_addr(),
-            transport: match config.tls() {
-                Some(tls) => WebhookListenerTransport::Https {
-                    cert_path: tls.cert_path().to_path_buf(),
-                    key_path: tls.key_path().to_path_buf(),
-                    client_ca_path: tls.client_ca_path().map(ToOwned::to_owned),
-                },
-                None => WebhookListenerTransport::Http,
-            },
-        }
-    }
-
-    pub(crate) fn bind_addr(&self) -> std::net::SocketAddr {
-        self.bind_addr
-    }
-
-    pub(crate) fn transport(&self) -> &WebhookListenerTransport {
-        &self.transport
-    }
-}
-
-pub(crate) enum WebhookListenerTransport {
-    Http,
-    Https {
-        cert_path: PathBuf,
-        key_path: PathBuf,
-        client_ca_path: Option<PathBuf>,
-    },
-}
-
-impl WebhookListenerTransport {
-    pub(crate) fn effective_mode(&self) -> &'static str {
-        match self {
-            Self::Http => "http",
-            Self::Https { client_ca_path, .. } if client_ca_path.is_some() => "https+mtls",
-            Self::Https { .. } => "https",
-        }
-    }
-
-    pub(crate) fn tls(&self) -> Option<WebhookListenerTls<'_>> {
-        match self {
-            Self::Http => None,
-            Self::Https {
-                cert_path,
-                key_path,
-                client_ca_path,
-            } => Some(WebhookListenerTls {
-                cert_path,
-                key_path,
-                client_ca_path: client_ca_path.as_ref(),
-            }),
-        }
-    }
-}
-
-pub(crate) struct WebhookListenerTls<'a> {
-    cert_path: &'a PathBuf,
-    key_path: &'a PathBuf,
-    client_ca_path: Option<&'a PathBuf>,
-}
-
-impl WebhookListenerTls<'_> {
-    pub(crate) fn cert_path(&self) -> &std::path::Path {
-        self.cert_path
-    }
-
-    pub(crate) fn key_path(&self) -> &std::path::Path {
-        self.key_path
-    }
-
-    pub(crate) fn client_ca_path(&self) -> Option<&std::path::Path> {
-        self.client_ca_path.map(|path| path.as_path())
     }
 }
 

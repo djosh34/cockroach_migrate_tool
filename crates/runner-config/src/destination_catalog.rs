@@ -1,17 +1,16 @@
 use sqlx::{Connection, PgConnection, Row};
 
 use crate::{
-    config::PostgresTargetConfig,
     error::RunnerDestinationCatalogError,
-    runtime_plan::{ConfiguredMappingPlan, DestinationGroupPlan},
-    sql_name::{QualifiedTableName, SqlIdentifier},
+    startup_plan::{ConfiguredMappingPlan, DestinationGroupPlan},
     validated_schema::{
         ColumnSchema, ForeignKeyAction, ForeignKeyShape, PrimaryKeyShape, TableSchema,
         ValidatedSchema,
     },
+    {PostgresTargetConfig, QualifiedTableName, SqlIdentifier},
 };
 
-pub(crate) async fn validate_destination_group(
+pub async fn validate_destination_group(
     destination_group: &DestinationGroupPlan,
 ) -> Result<(), RunnerDestinationCatalogError> {
     let first_mapping = destination_group
@@ -33,7 +32,7 @@ pub(crate) async fn validate_destination_group(
     .await
 }
 
-pub(crate) async fn connect_target(
+pub async fn connect_target(
     mapping_id: &str,
     target: &PostgresTargetConfig,
 ) -> Result<PgConnection, RunnerDestinationCatalogError> {
@@ -46,7 +45,7 @@ pub(crate) async fn connect_target(
         })
 }
 
-pub(crate) async fn close_target(
+pub async fn close_target(
     postgres: PgConnection,
     mapping_id: &str,
     target: &PostgresTargetConfig,
@@ -61,7 +60,7 @@ pub(crate) async fn close_target(
         })
 }
 
-pub(crate) async fn load_destination_schema(
+pub async fn load_destination_schema(
     postgres: &mut PgConnection,
     mapping: &ConfiguredMappingPlan,
 ) -> Result<ValidatedSchema, RunnerDestinationCatalogError> {

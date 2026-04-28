@@ -1,8 +1,8 @@
+use runner_config::{QualifiedTableName, SqlIdentifier};
 use serde_json::{Map, Value};
 
 use crate::error::RunnerWebhookPayloadError;
 use crate::metrics::WebhookKind;
-use crate::sql_name::{QualifiedTableName, SqlIdentifier};
 
 #[derive(Clone, Debug)]
 pub(crate) enum WebhookRequest {
