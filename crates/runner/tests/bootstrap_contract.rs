@@ -36,7 +36,7 @@ fn repo_root() -> PathBuf {
         .expect("repo root should resolve")
 }
 
-fn investigation_cert(name: &str) -> PathBuf {
+fn test_mtls_cert(name: &str) -> PathBuf {
     repo_root()
         .join("investigations")
         .join("cockroach-webhook-cdc")
@@ -149,11 +149,11 @@ fn generate_mtls_client_identity(temp_dir: &Path) -> Identity {
                 .to_str()
                 .expect("runner client csr path should be utf-8"),
             "-CA",
-            investigation_cert("ca.crt")
+            test_mtls_cert("ca.crt")
                 .to_str()
                 .expect("runner investigation ca cert path should be utf-8"),
             "-CAkey",
-            investigation_cert("ca.key")
+            test_mtls_cert("ca.key")
                 .to_str()
                 .expect("runner investigation ca key path should be utf-8"),
             "-CAcreateserial",
@@ -362,9 +362,9 @@ fn run_requires_a_client_certificate_when_webhook_client_ca_is_configured() {
 
     let mut runner = HostProcessRunner::start(&config_path);
     let healthz_url = runner.healthz_url();
-    let unauthenticated_client = https_client_with_ca(&investigation_cert("ca.crt"));
+    let unauthenticated_client = https_client_with_ca(&test_mtls_cert("ca.crt"));
     let authenticated_client = https_client_with_identity(
-        &investigation_cert("ca.crt"),
+        &test_mtls_cert("ca.crt"),
         generate_mtls_client_identity(temp_dir.path()),
     );
 

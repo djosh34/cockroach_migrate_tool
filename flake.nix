@@ -32,10 +32,22 @@
 
         craneLib = crane.mkLib pkgs;
         src = craneLib.cleanCargoSource ./.;
+        testSrc = lib.cleanSourceWith {
+          src = ./.;
+          filter =
+            path: type:
+            (craneLib.filterCargoSources path type)
+            || (lib.hasInfix "/crates/runner/tests/fixtures/" path)
+            || (lib.hasInfix "/scripts/" path)
+            || (lib.hasSuffix "/README.md" path)
+            || (lib.hasInfix "/investigations/cockroach-webhook-cdc/certs/" path);
+        };
 
         # Common arguments can be set here to avoid repeating them later
         commonArgs = {
           inherit src;
+          pname = "runner";
+          version = "0.1.0";
           strictDeps = true;
 
           buildInputs = [
@@ -91,6 +103,7 @@
           runner-crate-nextest = craneLib.cargoNextest (
             commonArgs
             // {
+              src = testSrc;
               inherit cargoArtifacts;
               doCheck = true;
               partitions = 1;
