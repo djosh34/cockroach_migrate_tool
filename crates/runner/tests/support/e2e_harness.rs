@@ -35,7 +35,7 @@ use crate::e2e_integrity::{
     CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
     PostSetupSourceAudit, RuntimeShapeAudit, SourceCommandAudit, VerifyCorrectnessAudit,
 };
-use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
+use crate::verify_service_harness_support::{VerifyServiceHarness, VerifyServiceRun};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
 
 const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
@@ -777,13 +777,13 @@ impl CdcE2eHarness {
         self.helper_table_name(mapped_table)
     }
 
-    pub fn verify_selected_tables_via_image(
+    pub fn verify_selected_tables_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
         let (include_schema_pattern, include_table_pattern) =
             verify_filter_patterns(&self.config.selected_tables);
-        verify_image.run_correctness_audit(&VerifyImageRun {
+        verify_service.run_correctness_audit(&VerifyServiceRun {
             source_url: self
                 .databases
                 .verify_source_url(&self.config.source_database),
@@ -802,61 +802,61 @@ impl CdcE2eHarness {
         })
     }
 
-    pub fn wait_for_selected_tables_to_match_via_image(
+    pub fn wait_for_selected_tables_to_match_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         description: &str,
     ) -> VerifyCorrectnessAudit {
         for _ in 0..60 {
             self.assert_runner_process_alive();
-            let audit = self.verify_selected_tables_via_image(verify_image);
+            let audit = self.verify_selected_tables_via_verify_service(verify_service);
             if audit.selected_tables_match() {
                 return audit;
             }
             thread::sleep(Duration::from_secs(1));
         }
 
-        let audit = self.verify_selected_tables_via_image(verify_image);
+        let audit = self.verify_selected_tables_via_verify_service(verify_service);
         panic!(
-            "{description} did not converge through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            "{description} did not converge through the verify service correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
             self.runner_diagnostics(),
         );
     }
 
-    pub fn wait_for_selected_tables_to_mismatch_via_image(
+    pub fn wait_for_selected_tables_to_mismatch_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         description: &str,
     ) -> VerifyCorrectnessAudit {
         for _ in 0..60 {
             self.assert_runner_process_alive();
-            let audit = self.verify_selected_tables_via_image(verify_image);
+            let audit = self.verify_selected_tables_via_verify_service(verify_service);
             if audit.selected_tables_mismatch() {
                 return audit;
             }
             thread::sleep(Duration::from_secs(1));
         }
 
-        let audit = self.verify_selected_tables_via_image(verify_image);
+        let audit = self.verify_selected_tables_via_verify_service(verify_service);
         panic!(
-            "{description} did not diverge through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            "{description} did not diverge through the verify service correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
             self.runner_diagnostics(),
         );
     }
 
-    pub fn assert_selected_tables_match_via_image_stable(
+    pub fn assert_selected_tables_match_via_verify_service_stable(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         description: &str,
         duration: Duration,
     ) {
         let deadline = Instant::now() + duration;
         loop {
             self.assert_runner_process_alive();
-            let audit = self.verify_selected_tables_via_image(verify_image);
+            let audit = self.verify_selected_tables_via_verify_service(verify_service);
             assert!(
                 audit.selected_tables_match(),
-                "{description} stopped matching through the verify image correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
+                "{description} stopped matching through the verify service correctness boundary\nfinal audit={audit:?}\nrunner stderr:\n{}",
                 self.runner_diagnostics(),
             );
             if Instant::now() >= deadline {

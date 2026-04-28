@@ -17,11 +17,11 @@ use crate::e2e_harness::{
 };
 use crate::e2e_integrity::{VerifyCorrectnessAudit, VerifyJobResponse};
 
-pub struct VerifyImageHarness {
+pub struct VerifyServiceHarness {
     _private: (),
 }
 
-pub struct VerifyImageRun {
+pub struct VerifyServiceRun {
     pub source_url: String,
     pub source_ca_cert_path: PathBuf,
     pub source_client_cert_path: PathBuf,
@@ -33,14 +33,14 @@ pub struct VerifyImageRun {
     pub expected_tables: Vec<String>,
 }
 
-impl VerifyImageHarness {
+impl VerifyServiceHarness {
     pub fn start() -> Self {
         Self { _private: () }
     }
 
-    pub fn run_correctness_audit(&self, run: &VerifyImageRun) -> VerifyCorrectnessAudit {
+    pub fn run_correctness_audit(&self, run: &VerifyServiceRun) -> VerifyCorrectnessAudit {
         let runtime_files = VerifyRuntimeFiles::materialize(run);
-        let mut runtime = RunningVerifyImage::start(run, &runtime_files);
+        let mut runtime = RunningVerifyService::start(run, &runtime_files);
         runtime.wait_until_ready();
         let job_id = runtime.start_job(run);
         let response = runtime.wait_for_job(&job_id);
@@ -55,7 +55,7 @@ struct VerifyRuntimeFiles {
 }
 
 impl VerifyRuntimeFiles {
-    fn materialize(run: &VerifyImageRun) -> Self {
+    fn materialize(run: &VerifyServiceRun) -> Self {
         let temp_dir = tempfile::tempdir().expect("verify runtime temp dir should be created");
         let root_dir = temp_dir.path().to_path_buf();
         let listener_port = pick_unused_port();
@@ -133,7 +133,7 @@ verify:
     }
 }
 
-struct RunningVerifyImage {
+struct RunningVerifyService {
     process: Child,
     stdout_path: PathBuf,
     stderr_path: PathBuf,
@@ -141,8 +141,8 @@ struct RunningVerifyImage {
     client: Client,
 }
 
-impl RunningVerifyImage {
-    fn start(_run: &VerifyImageRun, files: &VerifyRuntimeFiles) -> Self {
+impl RunningVerifyService {
+    fn start(_run: &VerifyServiceRun, files: &VerifyRuntimeFiles) -> Self {
         let stdout_path = files.root_dir.join("verify-service.stdout.log");
         let stderr_path = files.root_dir.join("verify-service.stderr.log");
         let stdout = fs::File::create(&stdout_path).expect("verify stdout log should open");
@@ -206,13 +206,13 @@ impl RunningVerifyImage {
         }
 
         panic!(
-            "verify image runtime did not become ready on {}\n{}",
+            "verify service runtime did not become ready on {}\n{}",
             self.base_url,
             self.logs(),
         );
     }
 
-    fn start_job(&self, run: &VerifyImageRun) -> String {
+    fn start_job(&self, run: &VerifyServiceRun) -> String {
         let response = self
             .client
             .post(format!("{}/jobs", self.base_url))
@@ -225,19 +225,19 @@ impl RunningVerifyImage {
                 .to_string(),
             )
             .send()
-            .unwrap_or_else(|error| panic!("verify image POST /jobs should succeed: {error}"));
+            .unwrap_or_else(|error| panic!("verify service POST /jobs should succeed: {error}"));
         assert!(
             response.status().is_success(),
-            "verify image POST /jobs failed with status {}\n{}",
+            "verify service POST /jobs failed with status {}\n{}",
             response.status(),
             self.logs(),
         );
         let payload = parse_json::<VerifyStartResponse>(
             response
                 .text()
-                .unwrap_or_else(|error| panic!("verify image start response should read: {error}"))
+                .unwrap_or_else(|error| panic!("verify service start response should read: {error}"))
                 .as_str(),
-            "verify image start response",
+            "verify service start response",
         );
         payload.job_id
     }
@@ -250,11 +250,11 @@ impl RunningVerifyImage {
                 .get(format!("{}/jobs/{job_id}", self.base_url))
                 .send()
                 .unwrap_or_else(|error| {
-                    panic!("verify image GET /jobs/{job_id} should succeed: {error}")
+                    panic!("verify service GET /jobs/{job_id} should succeed: {error}")
                 });
             assert!(
                 response.status().is_success(),
-                "verify image GET /jobs/{job_id} failed with status {}\n{}",
+                "verify service GET /jobs/{job_id} failed with status {}\n{}",
                 response.status(),
                 self.logs(),
             );
@@ -262,10 +262,10 @@ impl RunningVerifyImage {
                 response
                     .text()
                     .unwrap_or_else(|error| {
-                        panic!("verify image job response should read: {error}")
+                        panic!("verify service job response should read: {error}")
                     })
                     .as_str(),
-                "verify image job response",
+                "verify service job response",
             );
             if !payload.is_running() {
                 return payload;
@@ -274,7 +274,7 @@ impl RunningVerifyImage {
         }
 
         panic!(
-            "verify image job `{job_id}` did not finish in time\n{}",
+            "verify service job `{job_id}` did not finish in time\n{}",
             self.logs(),
         );
     }
@@ -301,7 +301,7 @@ impl RunningVerifyImage {
     }
 }
 
-impl Drop for RunningVerifyImage {
+impl Drop for RunningVerifyService {
     fn drop(&mut self) {
         let _ = self.process.kill();
         let _ = self.process.wait();

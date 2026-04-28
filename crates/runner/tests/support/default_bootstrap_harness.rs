@@ -9,7 +9,7 @@ use crate::e2e_integrity::{
     PostSetupSourceAudit, ReconcileTransactionFailureAudit, RecreatedFeedReplayAudit,
     RuntimeShapeAudit, ScenarioOutcome, SchemaMismatchAudit, VerifyCorrectnessAudit,
 };
-use crate::verify_image_harness_support::VerifyImageHarness;
+use crate::verify_service_harness_support::VerifyServiceHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
 
 const DEFAULT_SOURCE_SCHEMA_SQL: &str = r#"
@@ -168,13 +168,13 @@ impl DefaultBootstrapHarness {
         );
     }
 
-    pub fn wait_for_selected_tables_to_match_via_verify_image(
+    pub fn wait_for_selected_tables_to_match_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
-        let audit = self.inner.wait_for_selected_tables_to_match_via_image(
-            verify_image,
-            "default selected tables should converge through the verify image",
+        let audit = self.inner.wait_for_selected_tables_to_match_via_verify_service(
+            verify_service,
+            "default selected tables should converge through the verify service",
         );
         self.wait_for_customer_tracking_progress(
             "default selected tables should not be treated as converged until customer tracking is fully reconciled",
@@ -189,24 +189,24 @@ impl DefaultBootstrapHarness {
         audit
     }
 
-    pub fn wait_for_selected_tables_to_mismatch_via_verify_image(
+    pub fn wait_for_selected_tables_to_mismatch_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
-        self.inner.wait_for_selected_tables_to_mismatch_via_image(
-            verify_image,
-            "default selected tables should expose divergence through the verify image",
+        self.inner.wait_for_selected_tables_to_mismatch_via_verify_service(
+            verify_service,
+            "default selected tables should expose divergence through the verify service",
         )
     }
 
-    pub fn assert_selected_tables_match_via_verify_image_stable(
+    pub fn assert_selected_tables_match_via_verify_service_stable(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         duration: Duration,
     ) {
-        self.inner.assert_selected_tables_match_via_image_stable(
-            verify_image,
-            "default selected tables should remain matched through the verify image",
+        self.inner.assert_selected_tables_match_via_verify_service_stable(
+            verify_service,
+            "default selected tables should remain matched through the verify service",
             duration,
         );
     }
@@ -285,10 +285,10 @@ impl DefaultBootstrapHarness {
 
     pub fn wait_for_customer_update_reconcile(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         audit: &CustomerLiveUpdateAudit,
     ) -> MappingTrackingProgress {
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service);
         self.wait_for_customer_tracking_progress(
             "customer update should reconcile through the received watermark without storing errors",
             |progress| {
@@ -323,9 +323,9 @@ impl DefaultBootstrapHarness {
 
     pub fn audit_concurrent_duplicate_customer_feeds(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> DuplicateFeedAudit {
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
         let added_changefeed_job_id = self
             .inner
@@ -342,7 +342,7 @@ impl DefaultBootstrapHarness {
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         self.assert_helper_shadow_customers(2);
         let verify_correctness =
-            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+            self.wait_for_selected_tables_to_match_via_verify_service(verify_service);
         self.assert_helper_shadow_customers_stable(
             &expected_helper_snapshot,
             Duration::from_secs(3),
@@ -373,15 +373,15 @@ impl DefaultBootstrapHarness {
 
     pub fn audit_recreated_customer_feed_replay(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> RecreatedFeedReplayAudit {
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
         self.update_source_customer_email(1, RECREATED_FEED_REPLAY_EMAIL);
         self.wait_for_helper_shadow_customers(&format!(
             "1:{RECREATED_FEED_REPLAY_EMAIL},2:bob@example.com"
         ));
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
         let original_changefeed_job_id = self
             .inner
@@ -404,7 +404,7 @@ impl DefaultBootstrapHarness {
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         self.assert_helper_shadow_customers(2);
         let verify_correctness =
-            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+            self.wait_for_selected_tables_to_match_via_verify_service(verify_service);
         self.assert_helper_shadow_customers_stable(
             &expected_helper_snapshot,
             Duration::from_secs(3),
@@ -436,9 +436,9 @@ impl DefaultBootstrapHarness {
 
     pub fn audit_customer_schema_mismatch(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> SchemaMismatchAudit {
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
         let baseline = self.customer_tracking_progress();
         self.introduce_customer_email_schema_mismatch();
@@ -458,7 +458,7 @@ impl DefaultBootstrapHarness {
         let expected_helper_snapshot = format!("1:{SCHEMA_MISMATCH_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         let verify_correctness =
-            self.wait_for_selected_tables_to_mismatch_via_verify_image(verify_image);
+            self.wait_for_selected_tables_to_mismatch_via_verify_service(verify_service);
         let failure_progress = self.wait_for_customer_tracking_progress(
             "schema mismatch should leave the new watermark received, the last good reconcile checkpoint intact, and a persisted error for operators",
             |progress| {
@@ -507,11 +507,11 @@ impl DefaultBootstrapHarness {
 
     pub fn audit_reconcile_transaction_failure_recovery(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
     ) -> ReconcileTransactionFailureAudit {
         const RECONCILE_FAILURE_EMAIL: &str = "alice+reconcile-failure@example.com";
 
-        self.wait_for_selected_tables_to_match_via_verify_image(verify_image)
+        self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
         let baseline = self.customer_tracking_progress();
         let destination_failure =
@@ -520,7 +520,7 @@ impl DefaultBootstrapHarness {
         let expected_helper_snapshot = format!("1:{RECONCILE_FAILURE_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         let failure_verify_correctness =
-            self.wait_for_selected_tables_to_mismatch_via_verify_image(verify_image);
+            self.wait_for_selected_tables_to_mismatch_via_verify_service(verify_service);
         let failure_progress = self.wait_for_customer_tracking_progress(
             "reconcile transaction failure should keep the runner alive while persisting the received watermark, the last good checkpoint, and a last_error",
             |progress| {
@@ -546,7 +546,7 @@ impl DefaultBootstrapHarness {
         drop(destination_failure);
 
         let recovery_verify_correctness =
-            self.wait_for_selected_tables_to_match_via_verify_image(verify_image);
+            self.wait_for_selected_tables_to_match_via_verify_service(verify_service);
         let recovery_progress = self.wait_for_customer_tracking_progress(
             "runner should reconcile the failed watermark in place and clear the stored error after destination writes recover",
             |progress| {

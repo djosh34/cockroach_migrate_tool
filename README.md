@@ -176,7 +176,7 @@ docker compose -f runner.compose.yml up runner
 
 ## Verify Quick Start
 
-Pull verify image and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in DB URLs. TLS reference: `docs/tls-configuration.md`.
+Pull verify service and write config. Use `listener.bind_addr` for HTTP, `cert_path` plus `key_path` for HTTPS, `client_ca_path` for mTLS, and `sslmode` in DB URLs. TLS reference: `docs/tls-configuration.md`.
 `openapi/verify-service.yaml`.
 
 ```bash

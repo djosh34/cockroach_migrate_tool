@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::e2e_harness::{CdcE2eHarness, CdcE2eHarnessConfig};
-use crate::verify_image_harness_support::VerifyImageHarness;
+use crate::verify_service_harness_support::VerifyServiceHarness;
 
 const SOURCE_SCHEMA_SQL: &str = r#"
 CREATE DATABASE demo_a;
@@ -114,9 +114,9 @@ impl CompositePkExclusionHarness {
         self.inner.bootstrap_migration();
     }
 
-    pub fn wait_for_initial_scan(&self, verify_image: &VerifyImageHarness) {
+    pub fn wait_for_initial_scan(&self, verify_service: &VerifyServiceHarness) {
         self.wait_for_included_state(
-            verify_image,
+            verify_service,
             INITIAL_CUSTOMERS,
             INITIAL_ORDER_ITEMS,
             "initial scan",
@@ -160,9 +160,9 @@ VALUES (2, 'live-write', 'should stay excluded');
         );
     }
 
-    pub fn wait_for_live_catchup(&self, verify_image: &VerifyImageHarness) {
+    pub fn wait_for_live_catchup(&self, verify_service: &VerifyServiceHarness) {
         self.wait_for_included_state(
-            verify_image,
+            verify_service,
             LIVE_CUSTOMERS,
             LIVE_ORDER_ITEMS,
             "live catch-up",
@@ -180,12 +180,12 @@ VALUES (2, 'live-write', 'should stay excluded');
 
     pub fn assert_included_tables_stable(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         duration: Duration,
     ) {
-        self.inner.assert_selected_tables_match_via_image_stable(
-            verify_image,
-            "included composite-key tables should stay matched through the verify image",
+        self.inner.assert_selected_tables_match_via_verify_service_stable(
+            verify_service,
+            "included composite-key tables should stay matched through the verify service",
             duration,
         );
         self.inner.assert_destination_query_stable(
@@ -215,16 +215,16 @@ VALUES (2, 'live-write', 'should stay excluded');
 
     fn wait_for_included_state(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         expected_customers: &str,
         expected_order_items: &str,
         description: &str,
     ) {
         self.inner
-            .wait_for_selected_tables_to_match_via_image(
-                verify_image,
+            .wait_for_selected_tables_to_match_via_verify_service(
+                verify_service,
                 &format!(
-                    "included composite-key tables should match through the verify image during {description}"
+                    "included composite-key tables should match through the verify service during {description}"
                 ),
             )
             .assert_selected_tables_match();

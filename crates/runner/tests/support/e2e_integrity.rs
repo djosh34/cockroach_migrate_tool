@@ -446,7 +446,7 @@ impl VerifyCorrectnessAudit {
     pub fn assert_finished_with_mismatch(&self) {
         assert!(
             self.finished_with_mismatch(),
-            "verify image job `{}` should finish as a mismatch failure when selected tables diverge: {:?}",
+            "verify service job `{}` should finish as a mismatch failure when selected tables diverge: {:?}",
             self.job_id,
             self
         );
@@ -455,7 +455,7 @@ impl VerifyCorrectnessAudit {
     pub fn assert_selected_tables_match(&self) {
         assert!(
             self.selected_tables_match(),
-            "verify image job `{}` should report selected-table correctness through the dedicated verify boundary: {:?}",
+            "verify service job `{}` should report selected-table correctness through the dedicated verify boundary: {:?}",
             self.job_id,
             self
         );
@@ -464,7 +464,7 @@ impl VerifyCorrectnessAudit {
     pub fn assert_detects_selected_table_mismatch(&self) {
         assert!(
             self.selected_tables_mismatch(),
-            "verify image job `{}` should expose selected-table mismatches through the dedicated verify boundary: {:?}",
+            "verify service job `{}` should expose selected-table mismatches through the dedicated verify boundary: {:?}",
             self.job_id,
             self
         );

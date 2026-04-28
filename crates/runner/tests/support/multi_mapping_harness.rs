@@ -17,7 +17,7 @@ use crate::e2e_harness::{
     pick_unused_port, read_file, run_audited_cockroach_sql, wait_for_runner_health,
 };
 use crate::e2e_integrity::VerifyCorrectnessAudit;
-use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
+use crate::verify_service_harness_support::{VerifyServiceHarness, VerifyServiceRun};
 
 const CHANGEFEED_RESOLVED_INTERVAL: &str = "1s";
 
@@ -247,11 +247,11 @@ impl MultiMappingHarness {
         self.apply_initial_changefeeds();
     }
 
-    pub fn wait_for_initial_scan(&self, verify_image: &VerifyImageHarness) {
-        self.wait_for_selected_tables_to_match_via_image(
-            verify_image,
+    pub fn wait_for_initial_scan(&self, verify_service: &VerifyServiceHarness) {
+        self.wait_for_selected_tables_to_match_via_verify_service(
+            verify_service,
             APP_A,
-            "app-a initial selected tables should match through the verify image",
+            "app-a initial selected tables should match through the verify service",
         )
         .assert_selected_tables_match();
         self.wait_for_destination_query(
@@ -260,10 +260,10 @@ impl MultiMappingHarness {
             APP_A_INITIAL_SNAPSHOT,
             "app-a initial helper snapshot",
         );
-        self.wait_for_selected_tables_to_match_via_image(
-            verify_image,
+        self.wait_for_selected_tables_to_match_via_verify_service(
+            verify_service,
             APP_B,
-            "app-b initial selected tables should match through the verify image",
+            "app-b initial selected tables should match through the verify service",
         )
         .assert_selected_tables_match();
         self.wait_for_destination_query(
@@ -359,11 +359,11 @@ VALUES (5003, 1, 'expansion-pack', 2);
         ));
     }
 
-    pub fn wait_for_live_catchup(&self, verify_image: &VerifyImageHarness) {
-        self.wait_for_selected_tables_to_match_via_image(
-            verify_image,
+    pub fn wait_for_live_catchup(&self, verify_service: &VerifyServiceHarness) {
+        self.wait_for_selected_tables_to_match_via_verify_service(
+            verify_service,
             APP_A,
-            "app-a live selected tables should match through the verify image",
+            "app-a live selected tables should match through the verify service",
         )
         .assert_selected_tables_match();
         self.wait_for_destination_query(
@@ -372,10 +372,10 @@ VALUES (5003, 1, 'expansion-pack', 2);
             APP_A_LIVE_SNAPSHOT,
             "app-a live helper snapshot",
         );
-        self.wait_for_selected_tables_to_match_via_image(
-            verify_image,
+        self.wait_for_selected_tables_to_match_via_verify_service(
+            verify_service,
             APP_B,
-            "app-b live selected tables should match through the verify image",
+            "app-b live selected tables should match through the verify service",
         )
         .assert_selected_tables_match();
         self.wait_for_destination_query(
@@ -388,13 +388,13 @@ VALUES (5003, 1, 'expansion-pack', 2);
 
     pub fn assert_mapping_state_stable(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         duration: Duration,
     ) {
-        self.assert_selected_tables_match_via_image_stable(
-            verify_image,
+        self.assert_selected_tables_match_via_verify_service_stable(
+            verify_service,
             APP_A,
-            "app-a selected tables should stay matched through the verify image",
+            "app-a selected tables should stay matched through the verify service",
             duration,
         );
         self.assert_destination_query_stable(
@@ -411,10 +411,10 @@ VALUES (5003, 1, 'expansion-pack', 2);
             "app-a helper inventory after repeated reconcile",
             duration,
         );
-        self.assert_selected_tables_match_via_image_stable(
-            verify_image,
+        self.assert_selected_tables_match_via_verify_service_stable(
+            verify_service,
             APP_B,
-            "app-b selected tables should stay matched through the verify image",
+            "app-b selected tables should stay matched through the verify service",
             duration,
         );
         self.assert_destination_query_stable(
@@ -433,14 +433,14 @@ VALUES (5003, 1, 'expansion-pack', 2);
         );
     }
 
-    fn verify_selected_tables_via_image(
+    fn verify_selected_tables_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         mapping: MappingSpec,
     ) -> VerifyCorrectnessAudit {
         let (include_schema_pattern, include_table_pattern) =
             verify_filter_patterns(mapping.selected_tables);
-        verify_image.run_correctness_audit(&VerifyImageRun {
+        verify_service.run_correctness_audit(&VerifyServiceRun {
             source_url: self.databases.verify_source_url(mapping.source_database),
             source_ca_cert_path: self.databases.cockroach_ca_cert_path(),
             source_client_cert_path: self.databases.cockroach_client_cert_path(),
@@ -461,32 +461,32 @@ VALUES (5003, 1, 'expansion-pack', 2);
         })
     }
 
-    fn wait_for_selected_tables_to_match_via_image(
+    fn wait_for_selected_tables_to_match_via_verify_service(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         mapping: MappingSpec,
         description: &str,
     ) -> VerifyCorrectnessAudit {
         for _ in 0..60 {
             self.assert_runner_alive();
-            let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+            let audit = self.verify_selected_tables_via_verify_service(verify_service, mapping);
             if audit.selected_tables_match() {
                 return audit;
             }
             thread::sleep(Duration::from_secs(1));
         }
 
-        let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+        let audit = self.verify_selected_tables_via_verify_service(verify_service, mapping);
         panic!(
-            "{description} did not converge through the verify image correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
+            "{description} did not converge through the verify service correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
             mapping.id,
             read_file(&self.runner_stderr_path),
         );
     }
 
-    fn assert_selected_tables_match_via_image_stable(
+    fn assert_selected_tables_match_via_verify_service_stable(
         &self,
-        verify_image: &VerifyImageHarness,
+        verify_service: &VerifyServiceHarness,
         mapping: MappingSpec,
         description: &str,
         duration: Duration,
@@ -494,10 +494,10 @@ VALUES (5003, 1, 'expansion-pack', 2);
         let deadline = Instant::now() + duration;
         loop {
             self.assert_runner_alive();
-            let audit = self.verify_selected_tables_via_image(verify_image, mapping);
+            let audit = self.verify_selected_tables_via_verify_service(verify_service, mapping);
             assert!(
                 audit.selected_tables_match(),
-                "{description} stopped matching through the verify image correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
+                "{description} stopped matching through the verify service correctness boundary\nmapping={}\nfinal audit={audit:?}\nrunner stderr:\n{}",
                 mapping.id,
                 read_file(&self.runner_stderr_path),
             );
