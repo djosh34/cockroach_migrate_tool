@@ -74,11 +74,12 @@ jobs:
       - name: Build platform foundation through Nix
         env:
           BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_OUTPUT_ID: ${{ matrix.build_output_id }}
           BUILD_RESULT_JSON: ${{ runner.temp }}/build-platform-evidence/build-result.json
           DRY_RUN_JSON: ${{ runner.temp }}/build-platform-evidence/dry-run.json
           DRY_RUN_LOG: ${{ runner.temp }}/build-platform-evidence/dry-run.log
           BUILD_LOG: ${{ runner.temp }}/build-platform-evidence/build.log
-          INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+          INSTALLABLE: ${{ matrix.installable }}
           PLATFORM: ${{ matrix.platform }}
           PLATFORM_TAG_SUFFIX: ${{ matrix.platform_tag_suffix }}
           SYSTEM: ${{ matrix.system }}
@@ -87,16 +88,14 @@ jobs:
           mkdir -p "$(dirname "${BUILD_PLATFORM_EVIDENCE_FILE}")"
           started_at_epoch_seconds="$(python3 -c 'import time; print(time.time())')"
           python3 - <<'PY'
-          import json
           import os
           import subprocess
 
-          installables = json.loads(os.environ["INSTALLABLES_JSON"])
           with open(os.environ["DRY_RUN_JSON"], "w", encoding="utf-8") as stdout, open(
               os.environ["DRY_RUN_LOG"], "w", encoding="utf-8"
           ) as stderr:
               subprocess.run(
-                  ["nix", "build", "--dry-run", "--json", *installables],
+                  ["nix", "build", "--dry-run", "--json", os.environ["INSTALLABLE"]],
                   check=True,
                   stdout=stdout,
                   stderr=stderr,
@@ -106,7 +105,7 @@ jobs:
               os.environ["BUILD_LOG"], "w", encoding="utf-8"
           ) as stderr:
               subprocess.run(
-                  ["nix", "build", "--json", "--no-link", *installables],
+                  ["nix", "build", "--json", "--no-link", os.environ["INSTALLABLE"]],
                   check=True,
                   stdout=stdout,
                   stderr=stderr,
@@ -204,6 +203,7 @@ jobs:
               root_paths.extend(outputs.values())
           root_records = describe_paths(root_paths)
           payload = {
+              "build_output_id": os.environ["BUILD_OUTPUT_ID"],
               "build_timing": {
                   "completed_at_epoch_seconds": float(
                       os.environ["COMPLETED_AT_EPOCH_SECONDS"]
@@ -218,7 +218,7 @@ jobs:
               },
               "build_result": build_result,
               "dry_run_plan": dry_run_plan,
-              "installables": json.loads(os.environ["INSTALLABLES_JSON"]),
+              "installable": os.environ["INSTALLABLE"],
               "platform": os.environ["PLATFORM"],
               "platform_tag_suffix": os.environ["PLATFORM_TAG_SUFFIX"],
               "reusable_output_records": discover_reusable_outputs(root_records),
@@ -234,7 +234,7 @@ jobs:
       - name: Upload build-platform evidence
         uses: actions/upload-artifact@v7
         with:
-          name: build-platform-evidence-${{ matrix.system }}
+          name: build-platform-evidence-${{ matrix.system }}-${{ matrix.build_output_id }}
           path: ${{ runner.temp }}/build-platform-evidence
           if-no-files-found: error
 
@@ -260,17 +260,19 @@ jobs:
       - name: Download build-platform evidence
         uses: actions/download-artifact@v8
         with:
-          name: build-platform-evidence-${{ matrix.system }}
+          pattern: build-platform-evidence-${{ matrix.system }}-*
           path: ${{ runner.temp }}/build-platform-evidence
+          merge-multiple: true
       - name: Validate repository lanes through Nix
         env:
           VALIDATION_EVIDENCE_FILE: ${{ runner.temp }}/validation-evidence/validation-evidence.json
-          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_PLATFORM_EVIDENCE_DIR: ${{ runner.temp }}/build-platform-evidence
           BUILD_RESULT_JSON: ${{ runner.temp }}/validation-evidence/build-result.json
           DRY_RUN_JSON: ${{ runner.temp }}/validation-evidence/dry-run.json
           DRY_RUN_LOG: ${{ runner.temp }}/validation-evidence/dry-run.log
           BUILD_LOG: ${{ runner.temp }}/validation-evidence/build.log
           INSTALLABLES_JSON: ${{ toJson(matrix.installables) }}
+          REQUIRED_BUILD_OUTPUT_IDS_JSON: ${{ toJson(matrix.required_build_output_ids) }}
           SYSTEM: ${{ matrix.system }}
           VALIDATION_ID: ${{ matrix.validation_id }}
         run: |
@@ -299,16 +301,37 @@ jobs:
           import os
           from pathlib import Path
 
-          build_platform_evidence = json.loads(
-              Path(os.environ["BUILD_PLATFORM_EVIDENCE_FILE"]).read_text()
+          build_evidence_paths = sorted(
+              Path(os.environ["BUILD_PLATFORM_EVIDENCE_DIR"]).glob("**/build-platform-evidence.json")
           )
+          if not build_evidence_paths:
+              raise SystemExit("missing build-platform evidence artifacts for validation")
+          required_build_output_ids = set(
+              json.loads(os.environ["REQUIRED_BUILD_OUTPUT_IDS_JSON"])
+          )
+          build_platform_evidence = [json.loads(path.read_text()) for path in build_evidence_paths]
+          available_build_output_ids = {
+              evidence["build_output_id"] for evidence in build_platform_evidence
+          }
+          missing_build_output_ids = sorted(
+              required_build_output_ids - available_build_output_ids
+          )
+          if missing_build_output_ids:
+              raise SystemExit(
+                  f"missing build-platform evidence for {missing_build_output_ids}"
+              )
           dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
-          reusable_drv_paths = {
-              record["drv_path"] for record in build_platform_evidence["reusable_output_records"]
-          }
-          reusable_out_paths = {
-              record["out_path"] for record in build_platform_evidence["reusable_output_records"]
-          }
+          reusable_drv_paths = set()
+          reusable_out_paths = set()
+          for evidence in build_platform_evidence:
+              if evidence["build_output_id"] not in required_build_output_ids:
+                  continue
+              reusable_drv_paths.update(
+                  record["drv_path"] for record in evidence["reusable_output_records"]
+              )
+              reusable_out_paths.update(
+                  record["out_path"] for record in evidence["reusable_output_records"]
+              )
           planned_drv_paths = {entry["drvPath"] for entry in dry_run_plan}
           planned_out_paths = {
               out_path
@@ -428,6 +451,9 @@ jobs:
                       os.environ["STARTED_AT_EPOCH_SECONDS"]
                   ),
               },
+              "required_build_output_ids": sorted(
+                  json.loads(os.environ["REQUIRED_BUILD_OUTPUT_IDS_JSON"])
+              ),
               "dry_run_plan": dry_run_plan,
               "installables": json.loads(os.environ["INSTALLABLES_JSON"]),
               "output_records": describe_paths(output_paths),
@@ -469,12 +495,13 @@ jobs:
       - name: Download build-platform evidence
         uses: actions/download-artifact@v8
         with:
-          name: build-platform-evidence-${{ matrix.platform.system }}
+          pattern: build-platform-evidence-${{ matrix.platform.system }}-*
           path: ${{ runner.temp }}/build-platform-evidence
+          merge-multiple: true
       - name: Build image archive through Nix
         env:
           IMAGE_EVIDENCE_FILE: ${{ runner.temp }}/image-archive/image-evidence.json
-          BUILD_PLATFORM_EVIDENCE_FILE: ${{ runner.temp }}/build-platform-evidence/build-platform-evidence.json
+          BUILD_PLATFORM_EVIDENCE_DIR: ${{ runner.temp }}/build-platform-evidence
           BUILD_RESULT_JSON: ${{ runner.temp }}/image-archive/build-result.json
           DRY_RUN_JSON: ${{ runner.temp }}/image-archive/dry-run.json
           DRY_RUN_LOG: ${{ runner.temp }}/image-archive/dry-run.log
@@ -488,6 +515,7 @@ jobs:
           PLATFORM: ${{ matrix.platform.platform }}
           PLATFORM_TAG_SUFFIX: ${{ matrix.platform.platform_tag_suffix }}
           QUAY_REPOSITORY_NAME: ${{ matrix.image.quay_repository }}
+          REQUIRED_BUILD_OUTPUT_IDS_JSON: ${{ toJson(matrix.required_build_output_ids) }}
           SYSTEM: ${{ matrix.platform.system }}
         run: |
           set -euo pipefail
@@ -513,16 +541,37 @@ jobs:
           import os
           from pathlib import Path
 
-          build_platform_evidence = json.loads(
-              Path(os.environ["BUILD_PLATFORM_EVIDENCE_FILE"]).read_text()
+          build_evidence_paths = sorted(
+              Path(os.environ["BUILD_PLATFORM_EVIDENCE_DIR"]).glob("**/build-platform-evidence.json")
           )
+          if not build_evidence_paths:
+              raise SystemExit("missing build-platform evidence artifacts for image build")
+          required_build_output_ids = set(
+              json.loads(os.environ["REQUIRED_BUILD_OUTPUT_IDS_JSON"])
+          )
+          build_platform_evidence = [json.loads(path.read_text()) for path in build_evidence_paths]
+          available_build_output_ids = {
+              evidence["build_output_id"] for evidence in build_platform_evidence
+          }
+          missing_build_output_ids = sorted(
+              required_build_output_ids - available_build_output_ids
+          )
+          if missing_build_output_ids:
+              raise SystemExit(
+                  f"missing build-platform evidence for {missing_build_output_ids}"
+              )
           dry_run_plan = json.loads(Path(os.environ["DRY_RUN_JSON"]).read_text())
-          reusable_drv_paths = {
-              record["drv_path"] for record in build_platform_evidence["reusable_output_records"]
-          }
-          reusable_out_paths = {
-              record["out_path"] for record in build_platform_evidence["reusable_output_records"]
-          }
+          reusable_drv_paths = set()
+          reusable_out_paths = set()
+          for evidence in build_platform_evidence:
+              if evidence["build_output_id"] not in required_build_output_ids:
+                  continue
+              reusable_drv_paths.update(
+                  record["drv_path"] for record in evidence["reusable_output_records"]
+              )
+              reusable_out_paths.update(
+                  record["out_path"] for record in evidence["reusable_output_records"]
+              )
           planned_drv_paths = {entry["drvPath"] for entry in dry_run_plan}
           planned_out_paths = {
               out_path
@@ -631,6 +680,9 @@ jobs:
                       os.environ["STARTED_AT_EPOCH_SECONDS"]
                   ),
               },
+              "required_build_output_ids": sorted(
+                  json.loads(os.environ["REQUIRED_BUILD_OUTPUT_IDS_JSON"])
+              ),
               "dry_run_plan": dry_run_plan,
               "ghcr_repository": os.environ["GHCR_REPOSITORY"],
               "image_id": os.environ["IMAGE_ID"],
@@ -860,12 +912,14 @@ jobs:
           image_evidence = [json.loads(path.read_text()) for path in image_evidence_paths]
           publish_evidence = [json.loads(path.read_text()) for path in publish_evidence_paths]
 
-          build_by_system = {}
+          build_by_output_id = {}
           for evidence in build_evidence:
-              system = evidence["system"]
-              if system in build_by_system:
-                  raise SystemExit(f"duplicate build-platform evidence for system {system}")
-              build_by_system[system] = evidence
+              build_output_id = evidence["build_output_id"]
+              if build_output_id in build_by_output_id:
+                  raise SystemExit(
+                      f"duplicate build-platform evidence for {build_output_id}"
+                  )
+              build_by_output_id[build_output_id] = evidence
 
           validation_by_id = {}
           for evidence in validation_evidence:
@@ -888,8 +942,8 @@ jobs:
                   raise SystemExit(f"duplicate publish evidence for {output_id}")
               publish_by_output_id[output_id] = evidence
 
-          missing_build_systems = sorted(
-              set(audit_catalog["required_build_systems"]) - set(build_by_system)
+          missing_build_output_ids = sorted(
+              set(audit_catalog["required_build_output_ids"]) - set(build_by_output_id)
           )
           missing_validation_ids = sorted(
               set(audit_catalog["required_validation_ids"]) - set(validation_by_id)
@@ -900,8 +954,10 @@ jobs:
           missing_publish_output_ids = sorted(
               set(audit_catalog["required_publish_output_ids"]) - set(publish_by_output_id)
           )
-          if missing_build_systems:
-              raise SystemExit(f"missing build-platform evidence for {missing_build_systems}")
+          if missing_build_output_ids:
+              raise SystemExit(
+                  f"missing build-platform evidence for {missing_build_output_ids}"
+              )
           if missing_validation_ids:
               raise SystemExit(f"missing validation evidence for {missing_validation_ids}")
           if missing_image_output_ids:
@@ -910,14 +966,16 @@ jobs:
               raise SystemExit(f"missing publish evidence for {missing_publish_output_ids}")
 
           for evidence in validation_evidence:
-              build_system = evidence["build_platform_system"]
-              foundation = build_by_system[build_system]
-              reusable_drv_paths = {
-                  record["drv_path"] for record in foundation["reusable_output_records"]
-              }
-              reusable_out_paths = {
-                  record["out_path"] for record in foundation["reusable_output_records"]
-              }
+              reusable_drv_paths = set()
+              reusable_out_paths = set()
+              for build_output_id in evidence["required_build_output_ids"]:
+                  foundation = build_by_output_id[build_output_id]
+                  reusable_drv_paths.update(
+                      record["drv_path"] for record in foundation["reusable_output_records"]
+                  )
+                  reusable_out_paths.update(
+                      record["out_path"] for record in foundation["reusable_output_records"]
+                  )
               planned_drv_paths = {entry["drvPath"] for entry in evidence["dry_run_plan"]}
               planned_out_paths = {
                   out_path
@@ -940,14 +998,16 @@ jobs:
                   )
 
           for evidence in image_evidence:
-              build_system = evidence["build_platform_system"]
-              foundation = build_by_system[build_system]
-              reusable_drv_paths = {
-                  record["drv_path"] for record in foundation["reusable_output_records"]
-              }
-              reusable_out_paths = {
-                  record["out_path"] for record in foundation["reusable_output_records"]
-              }
+              reusable_drv_paths = set()
+              reusable_out_paths = set()
+              for build_output_id in evidence["required_build_output_ids"]:
+                  foundation = build_by_output_id[build_output_id]
+                  reusable_drv_paths.update(
+                      record["drv_path"] for record in foundation["reusable_output_records"]
+                  )
+                  reusable_out_paths.update(
+                      record["out_path"] for record in foundation["reusable_output_records"]
+                  )
               planned_drv_paths = {entry["drvPath"] for entry in evidence["dry_run_plan"]}
               planned_out_paths = {
                   out_path
@@ -988,7 +1048,7 @@ jobs:
           summary_lines = [
               "## Immutable Identity Audit",
               "",
-              f"- Build systems audited: {', '.join(sorted(build_by_system))}",
+              f"- Build outputs audited: {', '.join(sorted(build_by_output_id))}",
               f"- Validation lanes audited: {', '.join(sorted(validation_by_id))}",
               f"- Image outputs audited: {', '.join(sorted(image_by_output_id))}",
               f"- Publish outputs audited: {', '.join(sorted(publish_by_output_id))}",

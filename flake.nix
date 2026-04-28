@@ -52,13 +52,64 @@
           quay_repository = "verify";
         }
       ];
-      githubCiBuildPlatforms = map (platform: platform // { installables = [ ".#packages.${platform.system}.ci-build-bundle" ]; }) githubPublishPlatforms;
+      githubCiBuildOutputs =
+        (map (platform: {
+          inherit (platform)
+            platform
+            platform_tag_suffix
+            runner
+            system
+            ;
+          build_output_id = "runner-runtime-deps-${platform.platform_tag_suffix}";
+          installable = ".#packages.${platform.system}.runner-runtime-deps";
+        }) githubPublishPlatforms)
+        ++ (map (platform: {
+          inherit (platform)
+            platform
+            platform_tag_suffix
+            runner
+            system
+            ;
+          build_output_id = "verify-runtime-go-modules-${platform.platform_tag_suffix}";
+          installable = ".#packages.${platform.system}.verify-runtime-go-modules";
+        }) githubPublishPlatforms)
+        ++ [
+          {
+            build_output_id = "runner-clippy-deps-amd64";
+            installable = ".#packages.x86_64-linux.runner-clippy-deps";
+            platform = "linux/amd64";
+            platform_tag_suffix = "amd64";
+            runner = "ubuntu-24.04";
+            system = "x86_64-linux";
+          }
+          {
+            build_output_id = "runner-test-deps-amd64";
+            installable = ".#packages.x86_64-linux.runner-test-deps";
+            platform = "linux/amd64";
+            platform_tag_suffix = "amd64";
+            runner = "ubuntu-24.04";
+            system = "x86_64-linux";
+          }
+          {
+            build_output_id = "verify-service-test-go-modules-amd64";
+            installable = ".#packages.x86_64-linux.verify-service-test-go-modules";
+            platform = "linux/amd64";
+            platform_tag_suffix = "amd64";
+            runner = "ubuntu-24.04";
+            system = "x86_64-linux";
+          }
+        ];
       githubCiValidationLanes = [
         {
           installables = [
             ".#checks.x86_64-linux.runner-clippy"
             ".#checks.x86_64-linux.runner-test"
             ".#checks.x86_64-linux.verify-service-test"
+          ];
+          required_build_output_ids = [
+            "runner-clippy-deps-amd64"
+            "runner-test-deps-amd64"
+            "verify-service-test-go-modules-amd64"
           ];
           runner = "ubuntu-24.04";
           system = "x86_64-linux";
@@ -72,18 +123,23 @@
             inherit image platform;
             image_installable = ".#packages.${platform.system}.${image.package_attr}";
             image_output_id = "${image.image_id}-${platform.platform_tag_suffix}";
+            required_build_output_ids =
+              if image.image_id == "runner" then
+                [ "runner-runtime-deps-${platform.platform_tag_suffix}" ]
+              else
+                [ "verify-runtime-go-modules-${platform.platform_tag_suffix}" ];
           }) githubPublishPlatforms
         ) githubPublishImages;
       };
       githubCiWorkflowCatalog = {
         audit = {
-          required_build_systems = map (platform: platform.system) githubCiBuildPlatforms;
+          required_build_output_ids = map (entry: entry.build_output_id) githubCiBuildOutputs;
           required_validation_ids = map (lane: lane.validation_id) githubCiValidationLanes;
           required_image_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
           required_publish_output_ids = map (entry: entry.image_output_id) githubCiImageMatrix.include;
         };
         build_platform_matrix = {
-          include = githubCiBuildPlatforms;
+          include = githubCiBuildOutputs;
         };
         image_matrix = githubCiImageMatrix;
         release_image_catalog = githubPublishImages;
@@ -360,6 +416,9 @@
           '';
         };
 
+        verifyRuntimeGoModules = moltRuntime.goModules;
+        verifyServiceTestGoModules = verifyServiceTest.goModules;
+
         mkRuntimeImage =
           {
             imageName,
@@ -414,23 +473,6 @@
           '';
         };
 
-        ciBuildBundleEntries = [
-          {
-            name = "runner-runtime-deps";
-            path = runnerRuntimeCargoArtifacts;
-          }
-          {
-            name = "runner-runtime";
-            path = runnerRuntime;
-          }
-          {
-            name = "verify-runtime";
-            path = moltRuntime;
-          }
-        ];
-
-        ciBuildBundle = pkgs.linkFarm "ci-build-bundle-${system}" ciBuildBundleEntries;
-
         checkApp =
           mkNixBuildApp
             "check"
@@ -448,7 +490,6 @@
           default = runner;
           runner = runner;
           "cargo-artifacts" = cargoArtifacts;
-          "ci-build-bundle" = ciBuildBundle;
           check = checkApp;
           lint = lintApp;
           test = testApp;
@@ -456,11 +497,16 @@
           molt = molt;
           "molt-runtime" = moltRuntime;
           "runner-runtime" = runnerRuntime;
+          "runner-runtime-deps" = runnerRuntimeCargoArtifacts;
+          "runner-clippy-deps" = runnerClippyCargoArtifacts;
+          "runner-test-deps" = runnerTestCargoArtifacts;
           "runner-image" = runnerImage;
           "runner-long-test" = runnerLongTest;
           "test-long" = longTestApp;
           "verify-image" = verifyImage;
+          "verify-runtime-go-modules" = verifyRuntimeGoModules;
           "verify-service" = verifyService;
+          "verify-service-test-go-modules" = verifyServiceTestGoModules;
         };
 
         apps = {
