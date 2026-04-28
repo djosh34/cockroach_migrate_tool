@@ -1,17 +1,6 @@
 # Current Tasks Summary
 
-Generated: Tue Apr 28 06:30:55 PM CEST 2026
-
-# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md`
-
-```
-## Bug: Fix nix flake check without Docker test assumptions <status>not_started</status> <passes>false</passes> <priority>high</priority>
-
-<description>
-`nix flake check` is currently not fully green. The known failures include both verify-binary tests and some long-test related failures.
-```
-
-==============
+Generated: Tue Apr 28 07:31:55 PM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/01-task-create-magic-nix-cache-matrix-workflow-and-combine-image-artifacts.md`
 

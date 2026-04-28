@@ -53,22 +53,49 @@ impl RowEvent {
 #[derive(Clone, Debug)]
 pub(crate) struct RowMutation {
     operation: RowOperation,
-    key: Map<String, Value>,
+    key: RowKey,
     values: Option<Map<String, Value>>,
 }
 
 impl RowMutation {
+    pub(crate) fn from_parts(
+        operation: RowOperation,
+        key: Map<String, Value>,
+        values: Option<Map<String, Value>>,
+    ) -> Self {
+        Self {
+            operation,
+            key: RowKey::Named(key),
+            values,
+        }
+    }
+
     pub(crate) fn operation(&self) -> RowOperation {
         self.operation
     }
 
     pub(crate) fn key(&self) -> &Map<String, Value> {
-        &self.key
+        match &self.key {
+            RowKey::Named(key) => key,
+            RowKey::Positional(_) => {
+                panic!("row mutation key should be normalized before persistence")
+            }
+        }
+    }
+
+    pub(crate) fn into_raw_parts(self) -> (RowOperation, RowKey, Option<Map<String, Value>>) {
+        (self.operation, self.key, self.values)
     }
 
     pub(crate) fn values(&self) -> Option<&Map<String, Value>> {
         self.values.as_ref()
     }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum RowKey {
+    Named(Map<String, Value>),
+    Positional(Vec<Value>),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -152,10 +179,7 @@ fn parse_row_event(value: Value) -> Result<RowEvent, RunnerWebhookPayloadError> 
     let object = value
         .as_object()
         .ok_or(RunnerWebhookPayloadError::InvalidRowEvent)?;
-    let source = object
-        .get("source")
-        .ok_or(RunnerWebhookPayloadError::MissingSource)
-        .and_then(parse_source_metadata)?;
+    let source = parse_row_source_metadata(object)?;
     Ok(RowEvent {
         source,
         mutation: parse_row_mutation(object)?,
@@ -166,12 +190,7 @@ fn parse_row_mutation(
     object: &serde_json::Map<String, Value>,
 ) -> Result<RowMutation, RunnerWebhookPayloadError> {
     let operation = parse_row_operation(object)?;
-    let key = parse_object_field(
-        object,
-        "key",
-        RunnerWebhookPayloadError::MissingKey,
-        RunnerWebhookPayloadError::InvalidKey,
-    )?;
+    let key = parse_key_field(object)?;
     let values = match operation {
         RowOperation::Upsert => Some(parse_object_field(
             object,
@@ -196,15 +215,73 @@ fn parse_row_operation(
         .get("op")
         .and_then(Value::as_str)
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or(RunnerWebhookPayloadError::MissingOperation)?;
+        .filter(|value| !value.is_empty());
 
     match op {
-        "c" | "u" | "r" => Ok(RowOperation::Upsert),
-        "d" => Ok(RowOperation::Delete),
-        other => Err(RunnerWebhookPayloadError::UnsupportedOperation {
+        Some("c" | "u" | "r") => Ok(RowOperation::Upsert),
+        Some("d") => Ok(RowOperation::Delete),
+        Some(other) => Err(RunnerWebhookPayloadError::UnsupportedOperation {
             op: other.to_owned(),
         }),
+        None => match object.get("after") {
+            Some(Value::Null) => Ok(RowOperation::Delete),
+            Some(Value::Object(_)) => Ok(RowOperation::Upsert),
+            Some(_) => Err(RunnerWebhookPayloadError::InvalidAfter),
+            None => Err(RunnerWebhookPayloadError::MissingOperation),
+        },
+    }
+}
+
+fn parse_row_source_metadata(
+    object: &serde_json::Map<String, Value>,
+) -> Result<SourceMetadata, RunnerWebhookPayloadError> {
+    if let Some(source) = object.get("source") {
+        return parse_source_metadata(source);
+    }
+
+    let topic = object
+        .get("topic")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or(RunnerWebhookPayloadError::MissingSource)?;
+    parse_topic_metadata(topic)
+}
+
+fn parse_topic_metadata(topic: &str) -> Result<SourceMetadata, RunnerWebhookPayloadError> {
+    let mut segments = topic.splitn(3, '.');
+    let Some(database_name) = segments.next() else {
+        return Err(RunnerWebhookPayloadError::InvalidTopic);
+    };
+    let Some(schema_name) = segments.next() else {
+        return Err(RunnerWebhookPayloadError::InvalidTopic);
+    };
+    let Some(table_name) = segments.next() else {
+        return Err(RunnerWebhookPayloadError::InvalidTopic);
+    };
+    if database_name.is_empty() || schema_name.is_empty() || table_name.is_empty() {
+        return Err(RunnerWebhookPayloadError::InvalidTopic);
+    }
+
+    Ok(SourceMetadata {
+        database_name: database_name.to_owned(),
+        source_table: QualifiedTableName::new(
+            SqlIdentifier::new(schema_name),
+            SqlIdentifier::new(table_name),
+        ),
+    })
+}
+
+fn parse_key_field(
+    object: &serde_json::Map<String, Value>,
+) -> Result<RowKey, RunnerWebhookPayloadError> {
+    let key = object
+        .get("key")
+        .ok_or(RunnerWebhookPayloadError::MissingKey)?;
+    match key {
+        Value::Object(map) => Ok(RowKey::Named(map.clone())),
+        Value::Array(values) => Ok(RowKey::Positional(values.clone())),
+        _ => Err(RunnerWebhookPayloadError::InvalidKey),
     }
 }
 

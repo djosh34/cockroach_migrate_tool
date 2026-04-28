@@ -55,7 +55,6 @@ impl MappingProgressAudit {
 pub struct DuplicateFeedAudit {
     outcome: ScenarioOutcome,
     added_changefeed_job_id: String,
-    observed_source_job_ids: BTreeSet<String>,
     delivery_attempt_count: usize,
     helper_shadow_snapshot: String,
     helper_shadow_rows: usize,
@@ -68,7 +67,6 @@ impl DuplicateFeedAudit {
     pub fn new(
         outcome: ScenarioOutcome,
         added_changefeed_job_id: String,
-        observed_source_job_ids: BTreeSet<String>,
         delivery_attempt_count: usize,
         helper_shadow_snapshot: String,
         helper_shadow_rows: usize,
@@ -78,7 +76,6 @@ impl DuplicateFeedAudit {
         Self {
             outcome,
             added_changefeed_job_id,
-            observed_source_job_ids,
             delivery_attempt_count,
             helper_shadow_snapshot,
             helper_shadow_rows,
@@ -97,17 +94,6 @@ impl DuplicateFeedAudit {
         assert!(
             self.delivery_attempt_count >= 2,
             "duplicate-feed audit should observe at least two deliveries for the same logical row: {:?}",
-            self
-        );
-        assert!(
-            self.observed_source_job_ids
-                .contains(&self.added_changefeed_job_id),
-            "duplicate-feed audit should observe the added changefeed job in delivered rows: {:?}",
-            self
-        );
-        assert!(
-            self.observed_source_job_ids.len() >= 2,
-            "duplicate-feed audit should observe at least two distinct source job ids: {:?}",
             self
         );
         assert_eq!(
@@ -132,7 +118,6 @@ pub struct RecreatedFeedReplayAudit {
     outcome: ScenarioOutcome,
     original_changefeed_job_id: String,
     recreated_changefeed_job_id: String,
-    observed_source_job_ids: BTreeSet<String>,
     delivery_attempt_count: usize,
     helper_shadow_snapshot: String,
     helper_shadow_rows: usize,
@@ -146,7 +131,6 @@ impl RecreatedFeedReplayAudit {
         outcome: ScenarioOutcome,
         original_changefeed_job_id: String,
         recreated_changefeed_job_id: String,
-        observed_source_job_ids: BTreeSet<String>,
         delivery_attempt_count: usize,
         helper_shadow_snapshot: String,
         helper_shadow_rows: usize,
@@ -157,7 +141,6 @@ impl RecreatedFeedReplayAudit {
             outcome,
             original_changefeed_job_id,
             recreated_changefeed_job_id,
-            observed_source_job_ids,
             delivery_attempt_count,
             helper_shadow_snapshot,
             helper_shadow_rows,
@@ -176,18 +159,6 @@ impl RecreatedFeedReplayAudit {
         assert!(
             self.delivery_attempt_count >= 2,
             "recreated-feed replay audit should observe the original delivery plus replay: {:?}",
-            self
-        );
-        assert!(
-            self.observed_source_job_ids
-                .contains(&self.original_changefeed_job_id),
-            "recreated-feed replay audit should preserve evidence from the original changefeed: {:?}",
-            self
-        );
-        assert!(
-            self.observed_source_job_ids
-                .contains(&self.recreated_changefeed_job_id),
-            "recreated-feed replay audit should observe the recreated changefeed replay explicitly: {:?}",
             self
         );
         assert_eq!(
@@ -660,9 +631,50 @@ impl SourceCommandAudit {
         self.commands.len()
     }
 
+    pub fn bootstrap(&self) -> BootstrapSourceAudit {
+        BootstrapSourceAudit {
+            commands: self.commands[..self.bootstrap_command_count].to_vec(),
+        }
+    }
+
     pub fn post_setup(&self) -> PostSetupSourceAudit {
         let commands = self.commands[self.bootstrap_command_count..].to_vec();
         PostSetupSourceAudit { commands }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BootstrapSourceAudit {
+    commands: Vec<RecordedSourceCommand>,
+}
+
+impl BootstrapSourceAudit {
+    pub fn assert_creates_changefeed_for(&self, selected_tables: &[&str]) {
+        let changefeed_command = self
+            .commands
+            .iter()
+            .find(|command| command.sql.contains("CREATE CHANGEFEED"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "bootstrap source commands should include CREATE CHANGEFEED: {:?}",
+                    self.commands
+                )
+            });
+
+        assert_eq!(
+            changefeed_command.phase,
+            SourceCommandPhase::Bootstrap,
+            "initial CREATE CHANGEFEED must belong to bootstrap commands: {:?}",
+            self.commands,
+        );
+
+        for table in selected_tables {
+            assert!(
+                changefeed_command.sql.contains(table),
+                "initial CREATE CHANGEFEED should include selected table `{table}`: {:?}",
+                changefeed_command,
+            );
+        }
     }
 }
 

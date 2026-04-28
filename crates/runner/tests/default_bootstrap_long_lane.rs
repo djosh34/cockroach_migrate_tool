@@ -84,7 +84,19 @@ DELETE FROM public.parents WHERE id = 2;
 
 #[test]
 #[ignore = "long lane"]
-fn ignored_long_lane_verify_service_proves_default_e2e_correctness_through_the_real_http_contract() {
+fn ignored_long_lane_default_bootstrap_creates_the_initial_changefeed_on_the_nix_runtime() {
+    let harness = DefaultBootstrapHarness::start();
+
+    harness.bootstrap_default_migration();
+    harness
+        .bootstrap_source_audit()
+        .assert_creates_changefeed_for(&["public.customers"]);
+}
+
+#[test]
+#[ignore = "long lane"]
+fn ignored_long_lane_verify_service_proves_default_e2e_correctness_through_the_real_http_contract()
+{
     let harness = DefaultBootstrapHarness::start();
     let verify_service = VerifyServiceHarness::start();
 
@@ -98,7 +110,7 @@ fn ignored_long_lane_verify_service_proves_default_e2e_correctness_through_the_r
 #[test]
 #[ignore = "long lane"]
 fn ignored_long_lane_verify_service_reports_selected_table_mismatches_through_the_real_http_contract()
-{
+ {
     let harness = DefaultBootstrapHarness::start();
     let verify_service = VerifyServiceHarness::start();
 

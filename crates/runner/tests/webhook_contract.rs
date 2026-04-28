@@ -1087,6 +1087,50 @@ fn run_persists_insert_row_batches_before_returning_200() {
 }
 
 #[test]
+fn run_persists_wrapped_row_batches_with_full_table_topics() {
+    let postgres = TestPostgres::start();
+    postgres.exec(
+        "postgres",
+        "CREATE ROLE migration_user_a LOGIN PASSWORD 'runner-secret-a';",
+    );
+    postgres.exec("postgres", "CREATE DATABASE app_a OWNER migration_user_a;");
+    postgres.exec(
+        "app_a",
+        "CREATE TABLE public.customers (id bigint PRIMARY KEY, email text NOT NULL);",
+    );
+
+    let temp_dir = tempfile::tempdir().expect("temp dir should be created");
+    let config_path = temp_dir.path().join("runner.yml");
+    postgres.write_runner_config(&config_path, 0);
+
+    let client = https_client();
+    let mut runner = HostProcessRunner::start(&config_path);
+    runner.assert_healthy(&client);
+
+    let row_batch = runner.post_mapping(
+        "app-a",
+        &client,
+        &wrapped_row_batch_body("demo_a.public.customers"),
+    );
+    let row_batch_status = row_batch.status();
+    let row_batch_body = row_batch
+        .text()
+        .expect("wrapped row-batch response body should be readable");
+    assert_eq!(
+        row_batch_status,
+        StatusCode::OK,
+        "runner must accept wrapped webhook payloads with full table topics, got body: {row_batch_body}",
+    );
+    assert_eq!(
+        postgres.query(
+            "app_a",
+            r#"SELECT id::text || '|' || email FROM _cockroach_migration_tool."app-a__public__customers""#,
+        ),
+        "1|customer@example.com"
+    );
+}
+
+#[test]
 fn run_routes_quoted_source_table_names_to_the_configured_mapping_table() {
     let postgres = TestPostgres::start();
     postgres.exec(
@@ -1394,6 +1438,12 @@ fn run_returns_non_200_and_rolls_back_partial_row_batch_failures() {
 fn row_batch_body(source_database: &str, table_name: &str) -> String {
     format!(
         r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"before":null,"key":{{"id":1}},"op":"c","source":{{"database_name":"{source_database}","schema_name":"public","table_name":"{table_name}"}},"ts_ns":1}}]}}"#
+    )
+}
+
+fn wrapped_row_batch_body(topic: &str) -> String {
+    format!(
+        r#"{{"length":1,"payload":[{{"after":{{"id":1,"email":"customer@example.com"}},"key":[1],"topic":"{topic}"}}]}}"#
     )
 }
 

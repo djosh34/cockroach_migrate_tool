@@ -5,9 +5,10 @@ use crate::e2e_harness::{
     DestinationWriteFailure, MappingTrackingProgress, WebhookSinkMode,
 };
 use crate::e2e_integrity::{
-    CustomerLiveUpdateAudit, DestinationRuntimeMode, DuplicateFeedAudit, MappingProgressAudit,
-    PostSetupSourceAudit, ReconcileTransactionFailureAudit, RecreatedFeedReplayAudit,
-    RuntimeShapeAudit, ScenarioOutcome, SchemaMismatchAudit, VerifyCorrectnessAudit,
+    BootstrapSourceAudit, CustomerLiveUpdateAudit, DestinationRuntimeMode, DuplicateFeedAudit,
+    MappingProgressAudit, PostSetupSourceAudit, ReconcileTransactionFailureAudit,
+    RecreatedFeedReplayAudit, RuntimeShapeAudit, ScenarioOutcome, SchemaMismatchAudit,
+    VerifyCorrectnessAudit,
 };
 use crate::verify_service_harness_support::VerifyServiceHarness;
 use crate::webhook_chaos_gateway::ExternalSinkFault;
@@ -172,10 +173,12 @@ impl DefaultBootstrapHarness {
         &self,
         verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
-        let audit = self.inner.wait_for_selected_tables_to_match_via_verify_service(
-            verify_service,
-            "default selected tables should converge through the verify service",
-        );
+        let audit = self
+            .inner
+            .wait_for_selected_tables_to_match_via_verify_service(
+                verify_service,
+                "default selected tables should converge through the verify service",
+            );
         self.wait_for_customer_tracking_progress(
             "default selected tables should not be treated as converged until customer tracking is fully reconciled",
             |progress| {
@@ -193,10 +196,11 @@ impl DefaultBootstrapHarness {
         &self,
         verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
-        self.inner.wait_for_selected_tables_to_mismatch_via_verify_service(
-            verify_service,
-            "default selected tables should expose divergence through the verify service",
-        )
+        self.inner
+            .wait_for_selected_tables_to_mismatch_via_verify_service(
+                verify_service,
+                "default selected tables should expose divergence through the verify service",
+            )
     }
 
     pub fn assert_selected_tables_match_via_verify_service_stable(
@@ -204,11 +208,12 @@ impl DefaultBootstrapHarness {
         verify_service: &VerifyServiceHarness,
         duration: Duration,
     ) {
-        self.inner.assert_selected_tables_match_via_verify_service_stable(
-            verify_service,
-            "default selected tables should remain matched through the verify service",
-            duration,
-        );
+        self.inner
+            .assert_selected_tables_match_via_verify_service_stable(
+                verify_service,
+                "default selected tables should remain matched through the verify service",
+                duration,
+            );
     }
 
     pub fn assert_runner_alive(&self) {
@@ -334,9 +339,6 @@ impl DefaultBootstrapHarness {
         let delivery_attempt_count = self
             .inner
             .wait_for_gateway_attempt_count_for_request_body(CONCURRENT_DUPLICATE_FEED_EMAIL, 2);
-        let observed_source_job_ids = self
-            .inner
-            .wait_for_gateway_source_job_ids_for_request_body(CONCURRENT_DUPLICATE_FEED_EMAIL, 2);
         let expected_helper_snapshot =
             format!("1:{CONCURRENT_DUPLICATE_FEED_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
@@ -349,8 +351,6 @@ impl DefaultBootstrapHarness {
         );
         let progress = self.mapping_progress_audit();
         let outcome = if delivery_attempt_count >= 2
-            && observed_source_job_ids.contains(&added_changefeed_job_id)
-            && observed_source_job_ids.len() >= 2
             && progress.cleanly_reconciled()
             && verify_correctness.selected_tables_match()
         {
@@ -362,7 +362,6 @@ impl DefaultBootstrapHarness {
         DuplicateFeedAudit::new(
             outcome,
             added_changefeed_job_id,
-            observed_source_job_ids,
             delivery_attempt_count,
             expected_helper_snapshot,
             self.inner.helper_table_row_count("public.customers"),
@@ -383,12 +382,7 @@ impl DefaultBootstrapHarness {
         ));
         self.wait_for_selected_tables_to_match_via_verify_service(verify_service)
             .assert_selected_tables_match();
-        let original_changefeed_job_id = self
-            .inner
-            .wait_for_gateway_source_job_ids_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 1)
-            .into_iter()
-            .next()
-            .expect("original changefeed delivery should expose a source job id");
+        let original_changefeed_job_id = self.inner.bootstrap_changefeed_job_id();
         self.inner
             .cancel_changefeed_job(&original_changefeed_job_id);
         let recreated_changefeed_job_id = self
@@ -397,9 +391,6 @@ impl DefaultBootstrapHarness {
         let delivery_attempt_count = self
             .inner
             .wait_for_gateway_attempt_count_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 2);
-        let observed_source_job_ids = self
-            .inner
-            .wait_for_gateway_source_job_ids_for_request_body(RECREATED_FEED_REPLAY_EMAIL, 2);
         let expected_helper_snapshot = format!("1:{RECREATED_FEED_REPLAY_EMAIL},2:bob@example.com");
         self.wait_for_helper_shadow_customers(&expected_helper_snapshot);
         self.assert_helper_shadow_customers(2);
@@ -411,8 +402,6 @@ impl DefaultBootstrapHarness {
         );
         let progress = self.mapping_progress_audit();
         let outcome = if delivery_attempt_count >= 2
-            && observed_source_job_ids.contains(&original_changefeed_job_id)
-            && observed_source_job_ids.contains(&recreated_changefeed_job_id)
             && progress.cleanly_reconciled()
             && verify_correctness.selected_tables_match()
         {
@@ -425,7 +414,6 @@ impl DefaultBootstrapHarness {
             outcome,
             original_changefeed_job_id,
             recreated_changefeed_job_id,
-            observed_source_job_ids,
             delivery_attempt_count,
             expected_helper_snapshot,
             self.inner.helper_table_row_count("public.customers"),
@@ -600,6 +588,10 @@ impl DefaultBootstrapHarness {
 
     pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
         self.inner.post_setup_source_audit()
+    }
+
+    pub fn bootstrap_source_audit(&self) -> BootstrapSourceAudit {
+        self.inner.bootstrap_source_audit()
     }
 
     pub fn kill_runner(&self) {

@@ -352,10 +352,12 @@ pub enum RunnerWebhookPayloadError {
     EmptyPayload,
     #[error("row-batch event must be a json object")]
     InvalidRowEvent,
-    #[error("row-batch event must include `source`")]
+    #[error("row-batch event must include `source` or `topic`")]
     MissingSource,
     #[error("row-batch event `source` must be a json object")]
     InvalidSource,
+    #[error("row-batch event `topic` must be `database.schema.table`")]
+    InvalidTopic,
     #[error("row-batch event source is missing `{field}`")]
     MissingSourceField { field: &'static str },
     #[error("row-batch event must include string `op`")]
@@ -390,6 +392,15 @@ pub enum RunnerWebhookRoutingError {
     },
     #[error("row-batch source table `{table}` is not selected by mapping `{mapping_id}`")]
     SourceTableNotMapped { mapping_id: String, table: String },
+    #[error(
+        "row-batch source key for mapping `{mapping_id}` table `{table}` has {actual} values but expected {expected}"
+    )]
+    InvalidPrimaryKeyCount {
+        mapping_id: String,
+        table: String,
+        expected: usize,
+        actual: usize,
+    },
     #[error(
         "row-batch spans multiple source tables for mapping `{mapping_id}`: `{first}` and `{second}`"
     )]

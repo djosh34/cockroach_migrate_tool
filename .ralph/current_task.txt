@@ -1,1 +1,0 @@
-.ralph/tasks/story-31-nix-github-workflow-cache-and-image-artifacts/01-task-create-ultra-simple-nix-github-workflow-with-cached-parallel-builds.md

@@ -235,7 +235,9 @@ impl RunningVerifyService {
         let payload = parse_json::<VerifyStartResponse>(
             response
                 .text()
-                .unwrap_or_else(|error| panic!("verify service start response should read: {error}"))
+                .unwrap_or_else(|error| {
+                    panic!("verify service start response should read: {error}")
+                })
                 .as_str(),
             "verify service start response",
         );

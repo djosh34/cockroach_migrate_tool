@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    collections::BTreeSet,
     fs,
     fs::{File, OpenOptions},
     io,
@@ -32,8 +31,9 @@ use destination_write_failure::DestinationWriteFailureSpec;
 use runner_process::RunnerProcess;
 
 use crate::e2e_integrity::{
-    CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit, DestinationRuntimeMode,
-    PostSetupSourceAudit, RuntimeShapeAudit, SourceCommandAudit, VerifyCorrectnessAudit,
+    BootstrapSourceAudit, CockroachRuntimeAudit, DestinationRoleAudit, DestinationRuntimeAudit,
+    DestinationRuntimeMode, PostSetupSourceAudit, RuntimeShapeAudit, SourceCommandAudit,
+    VerifyCorrectnessAudit,
 };
 use crate::verify_service_harness_support::{VerifyServiceHarness, VerifyServiceRun};
 use crate::webhook_chaos_gateway::{ExternalSinkFault, WebhookChaosGateway};
@@ -175,6 +175,7 @@ pub struct CdcE2eHarness {
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     bootstrap_command_count: RefCell<Option<usize>>,
+    bootstrap_changefeed_job_id: RefCell<Option<String>>,
     runner_process: RefCell<Option<RunnerRuntime>>,
 }
 
@@ -232,6 +233,7 @@ impl CdcE2eHarness {
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             bootstrap_command_count: RefCell::new(None),
+            bootstrap_changefeed_job_id: RefCell::new(None),
             runner_process: RefCell::new(None),
         };
         harness.materialize(webhook_sink_mode)
@@ -244,9 +246,10 @@ impl CdcE2eHarness {
             self.runner_port,
             || self.runner_logs(),
         );
-        self.apply_initial_changefeed_sql();
+        let bootstrap_changefeed_job_id = self.apply_initial_changefeed_sql();
         let bootstrap_command_count = self.read_source_command_count();
         *self.bootstrap_command_count.borrow_mut() = Some(bootstrap_command_count);
+        *self.bootstrap_changefeed_job_id.borrow_mut() = Some(bootstrap_changefeed_job_id);
     }
 
     pub fn kill_runner(&self) {
@@ -390,6 +393,10 @@ impl CdcE2eHarness {
 
     pub fn post_setup_source_audit(&self) -> PostSetupSourceAudit {
         self.source_command_audit().post_setup()
+    }
+
+    pub fn bootstrap_source_audit(&self) -> BootstrapSourceAudit {
+        self.source_command_audit().bootstrap()
     }
 
     pub fn assert_runner_alive(&self) {
@@ -573,36 +580,6 @@ impl CdcE2eHarness {
         );
     }
 
-    pub(crate) fn wait_for_gateway_source_job_ids_for_request_body(
-        &self,
-        body_substring: &str,
-        minimum_job_ids: usize,
-    ) -> BTreeSet<String> {
-        for _ in 0..120 {
-            self.assert_runner_process_alive();
-            let gateway = self
-                .webhook_chaos_gateway
-                .as_ref()
-                .expect("chaos gateway should be configured for this harness");
-            let observed_job_ids =
-                gateway.observed_source_job_ids_for_body_substring(body_substring);
-            if observed_job_ids.len() >= minimum_job_ids {
-                return observed_job_ids;
-            }
-            thread::sleep(Duration::from_secs(1));
-        }
-
-        let gateway = self
-            .webhook_chaos_gateway
-            .as_ref()
-            .expect("chaos gateway should be configured for this harness");
-        panic!(
-            "gateway did not observe at least {minimum_job_ids} source job ids for request body containing `{body_substring}`\nattempts={}\nrunner stderr:\n{}",
-            gateway.attempt_summary_for_body_substring(body_substring),
-            self.runner_diagnostics(),
-        );
-    }
-
     pub(crate) fn create_additional_changefeed_from_current_cursor(
         &self,
         initial_scan_mode: ChangefeedInitialScanMode,
@@ -615,6 +592,14 @@ impl CdcE2eHarness {
 
     pub(crate) fn cancel_changefeed_job(&self, job_id: &str) {
         self.run_audited_cockroach_sql(&format!("CANCEL JOB {};", job_id.trim()));
+    }
+
+    pub(crate) fn bootstrap_changefeed_job_id(&self) -> String {
+        self.bootstrap_changefeed_job_id
+            .borrow()
+            .as_ref()
+            .cloned()
+            .expect("bootstrap migration must finish before reading the initial changefeed job id")
     }
 
     pub(crate) fn runner_stderr_snapshot(&self) -> String {
@@ -975,11 +960,12 @@ impl CdcE2eHarness {
         *self.runner_process.borrow_mut() = Some(child);
     }
 
-    fn apply_initial_changefeed_sql(&self) {
+    fn apply_initial_changefeed_sql(&self) -> String {
         self.run_audited_cockroach_sql("SET CLUSTER SETTING kv.rangefeed.enabled = true;");
         let cursor = self.current_source_changefeed_cursor();
         let sql = self.render_changefeed_sql(&cursor, ChangefeedInitialScanMode::Yes);
-        self.run_audited_cockroach_sql(&sql);
+        let output = self.run_audited_cockroach_sql(&sql);
+        parse_changefeed_job_id(&output)
     }
 
     fn current_source_changefeed_cursor(&self) -> String {
@@ -1017,7 +1003,7 @@ impl CdcE2eHarness {
             .join(", ");
         let sink_url = self.changefeed_sink_url();
         format!(
-            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = '{initial_scan}', envelope = 'enriched', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
+            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = '{initial_scan}', envelope = 'wrapped', full_table_name, resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
         )
     }
 

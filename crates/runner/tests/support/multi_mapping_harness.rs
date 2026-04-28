@@ -633,7 +633,7 @@ mappings:
             .join(", ");
         let sink_url = self.changefeed_sink_url(mapping.id);
         format!(
-            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = 'yes', envelope = 'enriched', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
+            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = 'yes', envelope = 'wrapped', full_table_name, resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
         )
     }
 

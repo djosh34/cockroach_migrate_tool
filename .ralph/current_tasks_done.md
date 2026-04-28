@@ -1,6 +1,17 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 06:30:55 PM CEST 2026
+Generated: Tue Apr 28 07:31:55 PM CEST 2026
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md`
+
+```
+## Bug: Fix nix flake check without Docker test assumptions <status>done</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+`nix flake check` is currently not fully green. The known failures include both verify-binary tests and some long-test related failures.
+```
+
+==============
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-01-runner-config-ergonomics/task-01-runner-http-webhook-mode.md`
 

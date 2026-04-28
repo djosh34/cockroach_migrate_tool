@@ -183,11 +183,12 @@ VALUES (2, 'live-write', 'should stay excluded');
         verify_service: &VerifyServiceHarness,
         duration: Duration,
     ) {
-        self.inner.assert_selected_tables_match_via_verify_service_stable(
-            verify_service,
-            "included composite-key tables should stay matched through the verify service",
-            duration,
-        );
+        self.inner
+            .assert_selected_tables_match_via_verify_service_stable(
+                verify_service,
+                "included composite-key tables should stay matched through the verify service",
+                duration,
+            );
         self.inner.assert_destination_query_stable(
             HELPER_SHADOW_CUSTOMERS_SNAPSHOT_SQL,
             LIVE_CUSTOMERS,

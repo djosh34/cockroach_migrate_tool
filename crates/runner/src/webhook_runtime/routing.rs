@@ -4,7 +4,7 @@ use crate::{
     runtime_plan::MappingRuntimePlan,
     tracking_state::ResolvedTrackingTarget,
     webhook_runtime::{
-        payload::{ResolvedRequest, RowBatchRequest, WebhookRequest},
+        payload::{ResolvedRequest, RowBatchRequest, RowKey, RowMutation, WebhookRequest},
         persistence::RowMutationBatch,
     },
 };
@@ -67,17 +67,48 @@ fn route_row_batch(
         selected_table.ok_or_else(|| RunnerWebhookRoutingError::EmptyRowBatch {
             mapping_id: mapping.mapping_id().to_owned(),
         })?;
+    let rows = batch
+        .into_rows()
+        .into_iter()
+        .map(|row| normalize_row_mutation(mapping, &selected_table, row.into_mutation()))
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(DispatchTarget::RowBatch(Box::new(RowMutationBatch {
         mapping_id: mapping.mapping_id().to_owned(),
         destination: mapping.destination().clone(),
         table: selected_table,
-        rows: batch
-            .into_rows()
-            .into_iter()
-            .map(|row| row.into_mutation())
-            .collect(),
+        rows,
     })))
+}
+
+fn normalize_row_mutation(
+    mapping: &MappingRuntimePlan,
+    table: &HelperShadowTablePlan,
+    mutation: RowMutation,
+) -> Result<RowMutation, RunnerWebhookRoutingError> {
+    let (operation, key, values) = mutation.into_raw_parts();
+    let key = match key {
+        RowKey::Named(key) => key,
+        RowKey::Positional(values) => {
+            if values.len() != table.primary_key_columns().len() {
+                return Err(RunnerWebhookRoutingError::InvalidPrimaryKeyCount {
+                    mapping_id: mapping.mapping_id().to_owned(),
+                    table: table.source_table().label(),
+                    expected: table.primary_key_columns().len(),
+                    actual: values.len(),
+                });
+            }
+
+            table
+                .primary_key_columns()
+                .iter()
+                .zip(values)
+                .map(|(column, value)| (column.raw().to_owned(), value))
+                .collect()
+        }
+    };
+
+    Ok(RowMutation::from_parts(operation, key, values))
 }
 
 pub(crate) enum DispatchTarget {
