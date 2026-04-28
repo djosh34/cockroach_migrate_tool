@@ -31,7 +31,7 @@ fn verify_image_exposes_a_direct_verify_service_entrypoint() {
 fn verify_image_embeds_pgx_at_or_above_the_security_floor() {
     let harness = VerifyImageArtifactHarness::start();
 
-    harness.assert_embedded_module_meets_minimum_version("github.com/jackc/pgx/v5", "v5.9.0");
+    harness.assert_embedded_module_meets_minimum_version("github.com/jackc/pgx/v5", "v5.9.2");
 }
 
 #[test]

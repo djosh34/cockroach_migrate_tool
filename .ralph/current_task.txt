@@ -1,1 +1,0 @@
-.ralph/tasks/story-29-migrate-to-nix-crane/04-task-migrate-ci-to-nix-only.md

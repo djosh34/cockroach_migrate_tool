@@ -191,7 +191,7 @@
           version = goVersion;
           src = ./.;
           modRoot = "cockroachdb_molt/molt";
-          vendorHash = "sha256-2imVjNA9cJXqh4JIPoWnShh2quDpZA4ji+PmWT3DeMk=";
+          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
           subPackages = [ "." ];
           doCheck = false;
         };
@@ -201,7 +201,7 @@
           version = goVersion;
           src = ./.;
           modRoot = "cockroachdb_molt/molt";
-          vendorHash = "sha256-2imVjNA9cJXqh4JIPoWnShh2quDpZA4ji+PmWT3DeMk=";
+          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
           subPackages = [ "." ];
           nativeBuildInputs = [ pkgs.removeReferencesTo ];
           postFixup = ''
@@ -263,7 +263,7 @@
           version = goVersion;
           src = ./.;
           modRoot = "cockroachdb_molt/molt";
-          vendorHash = "sha256-2imVjNA9cJXqh4JIPoWnShh2quDpZA4ji+PmWT3DeMk=";
+          vendorHash = "sha256-7yHLVPjLmZxUbe9MxCzK3jqIPWEV27XKFQl/0yDgt4o=";
           subPackages = [ "." ];
           doCheck = true;
           checkPhase = ''

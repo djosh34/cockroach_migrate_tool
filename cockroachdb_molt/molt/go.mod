@@ -7,7 +7,7 @@ require (
 	github.com/cockroachdb/cockroachdb-parser v0.0.0-20230705064001-302c9ad52e1a
 	github.com/cockroachdb/datadriven v1.0.3-0.20230801171734-e384cf455877
 	github.com/cockroachdb/errors v1.9.1
-	github.com/jackc/pgx/v5 v5.9.0
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/lib/pq v1.10.6
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/prometheus/client_golang v1.18.0

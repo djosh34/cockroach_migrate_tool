@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 02:53:06 AM CEST 2026
+Generated: Tue Apr 28 03:11:21 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -130,6 +130,18 @@ The verify HTTP audit found that completed jobs are never pruned from `Service.j
 
 <description>
 During the receive-mail investigation for "How to use it?", the real verify HTTP service was run locally with `--log-format json` and exercised through curl against real PostgreSQL databases.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-verify-image-amd64-has-quay-vulnerability-findings.md`
+
+```
+## Bug: Verify image amd64 publish is blocked by real Quay vulnerability findings <status>completed</status> <passes>true</passes> <priority>high</priority>
+
+<description>
+Hosted GitHub Actions run `#76` on commit `b96ea3a7925c18e8fb5f1da8fb3cf3a9d7c234ed` proved the
+new Nix-only publish workflow is working through validation and per-architecture publication, and
 ```
 
 ==============
