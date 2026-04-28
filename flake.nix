@@ -148,6 +148,24 @@
           src = moltSrc;
           vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
           subPackages = [ "." ];
+          nativeBuildInputs = [ pkgs.binutils ];
+          env.CGO_ENABLED = "0";
+          tags = [
+            "netgo"
+            "osusergo"
+          ];
+          ldflags = [
+            "-s"
+            "-w"
+          ];
+
+          postInstall = ''
+            if readelf -l "$out/bin/molt" | grep -q 'Requesting program interpreter'; then
+              echo "verify-binary must be a pure Go static binary without glibc or musl" >&2
+              readelf -l "$out/bin/molt" >&2
+              exit 1
+            fi
+          '';
         };
 
         molt-go-test = pkgs.buildGoModule {
