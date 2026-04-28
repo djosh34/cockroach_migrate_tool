@@ -169,3 +169,4 @@
 .ralph/tasks/story-30-optimize-rust-build-story/01-task-optimize-nix-crane-rust-dependency-builds.md
 .ralph/tasks/smells/2026-04-28-runner-config-runtime-boundary.md
 NONE
+.ralph/tasks/story-29-migrate-to-nix-crane/06-task-fix-nix-ci-cd-artifact-reuse-and-cache-speed.md

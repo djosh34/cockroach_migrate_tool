@@ -27,6 +27,21 @@ Hard failure conditions:
 - Rebuilding any external dependency that was already built or cached in a previous run is a hard task failure.
 - Ignored shell errors, best-effort cache restores that hide misses, or log parsing that silently skips missing data are bugs and must be reported with `add-bug` if discovered.
 
+
+EXTRA CLEAR PO NOTE:
+
+previous run is failing hard! Many things are done incredibly wrong!
+
+First next steps when you see this: (HARD FIRST REQUIREMENT)
+
+- [ ] Remove all bad manual build kind scripts: e.g. cockroach_migrate_tool/scripts/nix_ci_artifacts.py REMOVE THAT IMMEDIATELY! DO NOT REINVENT THE WHEEL.
+- [ ] Fix nix build locally -> local nix build must use crane to split up, cargo build, test steps and also within nix the docker images must be build. This must NOT use any scripts/py-files, instead find existing tools that do this well!
+- [ ] After manually verifying that the entire nix build does not depend on any manual and bad scripties, and that locally the nix build can both build artifacts, then test the binary without full rebuild and then directly (dependent on build not test) can create docker image (with ZERO dep rebuild, VERY IMPORTANT!!), fix github workflow:
+Basically FULLY rewrite github workflow. No backwards compat. Totally redesign it, NOT THE SAME DESIGN!! really redesign it based on the new nix way
+github workflow must be basically simple nix commands and use the magic nix cache action to do the caching.
+- [ ] Continue altering github workflow until full run takes less than 10 min total in wall clock. Do parallel builds where makes sense
+
+
 </description>
 
 
