@@ -49,6 +49,7 @@
           (path: _type: lib.hasInfix "/crates/runner/tests/fixtures/" path)
           (path: _type: lib.hasInfix "/investigations/cockroach-webhook-cdc/certs/" path)
         ] ./.;
+        moltSrc = lib.cleanSource ./cockroachdb_molt/molt;
 
         # Common arguments can be set here to avoid repeating them later
         commonArgs = {
@@ -122,10 +123,36 @@
         verify-binary = pkgs.buildGoModule {
           pname = "verify-binary";
           version = "0.1.4";
-          src = ./cockroachdb_molt/molt;
+          src = moltSrc;
           vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
           subPackages = [ "." ];
         };
+
+        molt-go-test = pkgs.buildGoModule {
+          pname = "molt-go-test";
+          version = "0.1.4";
+          src = moltSrc;
+          vendorHash = "sha256-KFDOKXP+Q5fxR4lKWfE2j4V5Vjm+u3tjJbTW2cA8s54=";
+          subPackages = [ "." ];
+
+          checkPhase = ''
+            runHook preCheck
+            go test ./...
+            runHook postCheck
+          '';
+        };
+
+        commandApp =
+          name: checkNames:
+          flake-utils.lib.mkApp {
+            drv = pkgs.writeShellApplication {
+              inherit name;
+              runtimeInputs = [ pkgs.nix ];
+              text = ''
+                nix build --print-build-logs ${lib.concatMapStringsSep " " (checkName: ".#checks.${system}.${checkName}") checkNames}
+              '';
+            };
+          };
       in
       {
         checks = {
@@ -156,7 +183,9 @@
           # Run tests with cargo-nextest. The long lane uses the regular nextest
           # derivation as its cargoArtifacts input so it only runs after the
           # default nextest lane succeeds.
-          inherit runner-crate-nextest runner-crate-nextest-long;
+          inherit runner-crate-nextest runner-crate-nextest-long molt-go-test;
+          test-runner = runner-crate-nextest;
+          test-molt = molt-go-test;
           test-long = runner-crate-nextest-long;
         };
 
@@ -166,12 +195,33 @@
           inherit verify-binary;
         };
 
-        apps.default = (flake-utils.lib.mkApp {
-          drv = runner-crate;
-        }) // {
-          meta = {
-            description = "CockroachDB to PostgreSQL migration runner";
+        apps = {
+          default = (flake-utils.lib.mkApp {
+            drv = runner-crate;
+          }) // {
+            meta = {
+              description = "CockroachDB to PostgreSQL migration runner";
+            };
           };
+
+          check = commandApp "check" [
+            "runner-crate"
+            "runner-crate-clippy"
+            "runner-crate-fmt"
+            "test-runner"
+            "test-molt"
+          ];
+          lint = commandApp "lint" [
+            "runner-crate-clippy"
+            "runner-crate-fmt"
+          ];
+          test = commandApp "test" [
+            "test-runner"
+            "test-molt"
+          ];
+          test-runner = commandApp "test-runner" [ "test-runner" ];
+          test-molt = commandApp "test-molt" [ "test-molt" ];
+          test-long = commandApp "test-long" [ "test-long" ];
         };
 
         devShells.default = craneLib.devShell {
