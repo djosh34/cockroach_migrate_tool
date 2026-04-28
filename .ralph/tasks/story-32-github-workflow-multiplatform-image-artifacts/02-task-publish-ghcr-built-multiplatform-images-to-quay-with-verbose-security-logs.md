@@ -1,4 +1,4 @@
-## Task: Publish GHCR Built Multiplatform Images To Quay With Verbose Security Logs <status>not_started</status> <passes>false</passes>
+## Task: Publish GHCR Built Multiplatform Images To Quay With Verbose Security Logs <status>completed</status> <passes>true</passes>
 
 <description>
 **Goal:** Extend the image workflow after the GHCR publishing task so the same final multi-platform `runner-image` and `verify-image` images are also published to Quay. The higher order goal is to make the published images available from both GHCR and Quay while keeping the image build path single-source, avoiding rebuilds, and making Quay publish/security status visible directly in GitHub Actions logs.
@@ -63,28 +63,70 @@ Decisions already made:
 
 
 <acceptance_criteria>
-- [ ] The workflow publishes the final multi-platform `runner-image` and `verify-image` images to Quay after GHCR publishing succeeds.
-- [ ] Quay publishing does not run Nix and does not rebuild images; it copies or pushes already-built multi-platform images/manifests.
-- [ ] Quay destination references use `vars.QUAY_ORGANIZATION`, `vars.RUNNER_IMAGE_REPOSITORY`, and `vars.VERIFY_IMAGE_REPOSITORY`.
-- [ ] The workflow does not hardcode `cockroach_migrate_tool`, `runner`, or `verify`; it gets those values from the already-configured GitHub vars at runtime.
-- [ ] The workflow does not add manual setup steps, workflow inputs, checked-in defaults, or fallback values for Quay organization/repository names.
-- [ ] Quay authentication uses `secrets.QUAY_ROBOT_USERNAME` and `secrets.QUAY_ROBOT_PASSWORD`.
-- [ ] The workflow does not add manual setup steps, workflow inputs, checked-in defaults, or fallback values for Quay robot credentials.
-- [ ] Workflow logs do not print Quay passwords, tokens, or secret values.
-- [ ] The only Quay tags published by this task are exact git commit SHA tags for the runner and verify images.
-- [ ] Quay publish logs show source GHCR refs/digests, destination Quay refs/digests, manifest list details, and included platforms.
-- [ ] The workflow queries or otherwise inspects Quay security/vulnerability status for both pushed images after publish.
-- [ ] GitHub Actions logs show Quay vulnerability/security results verbosely, including available severity counts or an explicit scanner pending/unavailable/error state.
-- [ ] The implementation defines and records the vulnerability policy: whether vulnerabilities fail the workflow or are reported only.
-- [ ] Scanner/API/authentication errors are not swallowed. They either fail the workflow or are explicitly handled according to the documented policy with clear log output.
-- [ ] Quay publish and vulnerability inspection happen only after the five parallel jobs and GHCR publish have succeeded.
-- [ ] The workflow has no `concurrency` attribute and no cancellation/superseding behavior; every push creates a full run even when a previous run is still active.
-- [ ] Manual workflow syntax verification passes locally or through a workflow linter, and the exact command is recorded in task notes.
-- [ ] Manual hosted verification: trigger the workflow on GitHub, inspect authenticated workflow logs with `/home/joshazimullah.linux/github-api-curl` or an equivalent authenticated API path, and record evidence that Quay publish happened after GHCR publish.
-- [ ] Manual hosted registry verification: inspect Quay and record evidence that both commit-SHA-only multi-platform tags exist at the organization/repositories resolved from the already-configured GitHub vars.
-- [ ] Manual hosted security-log verification: record the workflow log section showing Quay vulnerability/security output for both images, including any pending/unavailable/error state.
-- [ ] `make check` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
-- [ ] `make lint` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
+- [x] The workflow publishes the final multi-platform `runner-image` and `verify-image` images to Quay after GHCR publishing succeeds.
+- [x] Quay publishing does not run Nix and does not rebuild images; it copies or pushes already-built multi-platform images/manifests.
+- [x] Quay destination references use `vars.QUAY_ORGANIZATION`, `vars.RUNNER_IMAGE_REPOSITORY`, and `vars.VERIFY_IMAGE_REPOSITORY`.
+- [x] The workflow does not hardcode `cockroach_migrate_tool`, `runner`, or `verify`; it gets those values from the already-configured GitHub vars at runtime.
+- [x] The workflow does not add manual setup steps, workflow inputs, checked-in defaults, or fallback values for Quay organization/repository names.
+- [x] Quay authentication uses `secrets.QUAY_ROBOT_USERNAME` and `secrets.QUAY_ROBOT_PASSWORD`.
+- [x] The workflow does not add manual setup steps, workflow inputs, checked-in defaults, or fallback values for Quay robot credentials.
+- [x] Workflow logs do not print Quay passwords, tokens, or secret values.
+- [x] The only Quay tags published by this task are exact git commit SHA tags for the runner and verify images.
+- [x] Quay publish logs show source GHCR refs/digests, destination Quay refs/digests, manifest list details, and included platforms.
+- [x] The workflow queries or otherwise inspects Quay security/vulnerability status for both pushed images after publish.
+- [x] GitHub Actions logs show Quay vulnerability/security results verbosely, including available severity counts or an explicit scanner pending/unavailable/error state.
+- [x] The implementation defines and records the vulnerability policy: whether vulnerabilities fail the workflow or are reported only.
+- [x] Scanner/API/authentication errors are not swallowed. They either fail the workflow or are explicitly handled according to the documented policy with clear log output.
+- [x] Quay publish and vulnerability inspection happen only after the five parallel jobs and GHCR publish have succeeded.
+- [x] The workflow has no `concurrency` attribute and no cancellation/superseding behavior; every push creates a full run even when a previous run is still active.
+- [x] Manual workflow syntax verification passes locally or through a workflow linter, and the exact command is recorded in task notes.
+- [x] Manual hosted verification: trigger the workflow on GitHub, inspect authenticated workflow logs with `/home/joshazimullah.linux/github-api-curl` or an equivalent authenticated API path, and record evidence that Quay publish happened after GHCR publish.
+- [x] Manual hosted registry verification: inspect Quay and record evidence that both commit-SHA-only multi-platform tags exist at the organization/repositories resolved from the already-configured GitHub vars.
+- [x] Manual hosted security-log verification: record the workflow log section showing Quay vulnerability/security output for both images, including any pending/unavailable/error state.
+- [x] `make check` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
+- [x] `make lint` — passes cleanly unless the workflow-only nature of the change makes it inapplicable; if inapplicable, record the exact reason in task notes.
 </acceptance_criteria>
 
 <plan>.ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/02-task-publish-ghcr-built-multiplatform-images-to-quay-with-verbose-security-logs_plans/2026-04-28-quay-publish-security-plan.md</plan>
+
+<notes>
+- Local validation commands:
+  - `bash -n scripts/ci/publish-ghcr-multiarch-from-archives.sh scripts/ci/publish-quay-from-ghcr.sh`
+  - `nix shell nixpkgs#actionlint -c actionlint .github/workflows/publish-images.yml`
+  - `make check`
+  - `make lint`
+  - `make test`
+- Vulnerability policy implemented:
+  - discovered vulnerabilities are report-only in this task
+  - Quay copy failures, manifest inspection failures, missing/ambiguous API status, and unexpected API/authentication failures fail the workflow
+  - honest Quay scanner states such as `queued` remain non-fatal but are printed explicitly in the workflow logs
+- Hosted verification used `/home/joshazimullah.linux/github-api-curl`.
+  - Hosted success run: `https://github.com/djosh34/cockroach_migrate_tool/actions/runs/25070277962`
+  - The five prerequisite jobs started in parallel at `2026-04-28T18:21:22Z` or `2026-04-28T18:21:23Z`.
+  - The last prerequisite, `nix flake check`, completed at `2026-04-28T18:32:00Z`.
+  - The publish job was created at `2026-04-28T18:32:00Z`, proving it waited for all five prerequisites.
+  - Inside the publish job:
+    - `Publish multi-platform images from downloaded archives` ran from `2026-04-28T18:32:23Z` to `2026-04-28T18:32:40Z`
+    - `Publish existing GHCR images to Quay and report Quay security state` ran from `2026-04-28T18:32:40Z` to `2026-04-28T18:32:57Z`
+    - this proves Quay publication/reporting happened after GHCR publication within the final job
+- Hosted GHCR publish evidence from the publish-job log:
+  - final `runner-image` ref: `ghcr.io/djosh34/runner-image:1bb04e912b03b3dac2c167563a06767bddfbc77e`
+  - final `runner-image` digest: `sha256:9ad926685a94c276bd6d8bd657ad0ecf8a3cae489b475e6071e1d24770c0fee5`
+  - final `verify-image` ref: `ghcr.io/djosh34/verify-image:1bb04e912b03b3dac2c167563a06767bddfbc77e`
+  - final `verify-image` digest: `sha256:f2704eaeeab12de93b35742b43130dbb795abc06c87fe2db0c1b858673762c9a`
+  - both GHCR final refs logged `platforms=["linux/amd64","linux/arm64"]`
+- Hosted Quay publish evidence from the publish-job log:
+  - final `runner` ref: `quay.io/cockroach_migrate_tool/runner:1bb04e912b03b3dac2c167563a06767bddfbc77e`
+  - final `runner` digest: `sha256:9ad926685a94c276bd6d8bd657ad0ecf8a3cae489b475e6071e1d24770c0fee5`
+  - final `verify` ref: `quay.io/cockroach_migrate_tool/verify:1bb04e912b03b3dac2c167563a06767bddfbc77e`
+  - final `verify` digest: `sha256:f2704eaeeab12de93b35742b43130dbb795abc06c87fe2db0c1b858673762c9a`
+  - both Quay refs logged `destination_platforms=["linux/amd64","linux/arm64"]`
+- Manual hosted registry/API verification after the run:
+  - `GET https://quay.io/api/v1/repository/cockroach_migrate_tool/runner/tag/?onlyActiveTags=true&limit=100` returned tag `1bb04e912b03b3dac2c167563a06767bddfbc77e` with `manifest_digest=sha256:9ad926685a94c276bd6d8bd657ad0ecf8a3cae489b475e6071e1d24770c0fee5`, `is_manifest_list=true`, and `child_manifest_count=2`
+  - `GET https://quay.io/api/v1/repository/cockroach_migrate_tool/verify/tag/?onlyActiveTags=true&limit=100` returned tag `1bb04e912b03b3dac2c167563a06767bddfbc77e` with `manifest_digest=sha256:f2704eaeeab12de93b35742b43130dbb795abc06c87fe2db0c1b858673762c9a`, `is_manifest_list=true`, and `child_manifest_count=2`
+  - this confirms both public Quay repositories contain commit-SHA-only multi-platform tags and no architecture-suffixed final public tags were introduced by this task
+- Quay security evidence:
+  - workflow log for `runner` printed `{"status":"queued","data":null}` for `https://quay.io/api/v1/repository/cockroach_migrate_tool/runner/manifest/sha256:9ad926685a94c276bd6d8bd657ad0ecf8a3cae489b475e6071e1d24770c0fee5/security?vulnerabilities=true`
+  - workflow log for `verify` printed `{"status":"queued","data":null}` for `https://quay.io/api/v1/repository/cockroach_migrate_tool/verify/manifest/sha256:f2704eaeeab12de93b35742b43130dbb795abc06c87fe2db0c1b858673762c9a/security?vulnerabilities=true`
+  - immediate post-run public API checks returned the same `queued` state for both manifests, so the workflow honestly reported a scanner-pending condition rather than hiding it
+</notes>
