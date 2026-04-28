@@ -8,3 +8,4 @@ We don't have legacy at all. If you find any legacy code/docs, remove it.
 No backwards compatibility allowed!
 You are encouraged to make large refactors and schema changes
 
+Never ever run cargo, use nix instead
