@@ -2,7 +2,7 @@ use std::{
     cell::RefCell,
     collections::BTreeSet,
     fs,
-    fs::File,
+    fs::{File, OpenOptions},
     io,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
@@ -171,7 +171,6 @@ pub struct CdcE2eHarness {
     webhook_sink_base_url: String,
     webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
-    wrapper_bin_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
@@ -218,8 +217,6 @@ impl CdcE2eHarness {
 
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let runner_port = pick_unused_port();
-        let wrapper_bin_dir = temp_dir.path().join("bin");
-        fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
 
         let harness = Self {
             _database_test_guard: database_test_guard,
@@ -231,7 +228,6 @@ impl CdcE2eHarness {
             webhook_sink_base_url: String::new(),
             webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
-            wrapper_bin_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
@@ -613,15 +609,12 @@ impl CdcE2eHarness {
     ) -> String {
         let cursor = self.current_source_changefeed_cursor();
         let sql = self.render_changefeed_sql(&cursor, initial_scan_mode);
-        let output = run_audited_cockroach_sql(&self.wrapper_bin_dir, &sql);
+        let output = self.run_audited_cockroach_sql(&sql);
         parse_changefeed_job_id(&output)
     }
 
     pub(crate) fn cancel_changefeed_job(&self, job_id: &str) {
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!("CANCEL JOB {};", job_id.trim()),
-        );
+        self.run_audited_cockroach_sql(&format!("CANCEL JOB {};", job_id.trim()));
     }
 
     pub(crate) fn runner_stderr_snapshot(&self) -> String {
@@ -629,10 +622,7 @@ impl CdcE2eHarness {
     }
 
     pub(crate) fn apply_source_workload_batch(&self, sql: &str) {
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!("USE {};\n{sql}", self.config.source_database),
-        );
+        self.run_audited_cockroach_sql(&format!("USE {};\n{sql}", self.config.source_database));
     }
 
     pub fn query_destination(&self, sql: &str) -> String {
@@ -956,13 +946,6 @@ impl CdcE2eHarness {
         self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
-
-        write_cockroach_wrapper_script(
-            &self.wrapper_bin_dir.join("cockroach"),
-            &self.cockroach_wrapper_log_path,
-            self.databases.cockroach_certs_dir(),
-            self.databases.cockroach_sql_port(),
-        );
         match webhook_sink_mode {
             WebhookSinkMode::DirectRunner => {
                 self.webhook_sink_base_url = format!("https://127.0.0.1:{}", self.runner_port);
@@ -996,24 +979,27 @@ impl CdcE2eHarness {
     }
 
     fn apply_initial_changefeed_sql(&self) {
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
-        );
+        self.run_audited_cockroach_sql("SET CLUSTER SETTING kv.rangefeed.enabled = true;");
         let cursor = self.current_source_changefeed_cursor();
         let sql = self.render_changefeed_sql(&cursor, ChangefeedInitialScanMode::Yes);
-        run_audited_cockroach_sql(&self.wrapper_bin_dir, &sql);
+        self.run_audited_cockroach_sql(&sql);
     }
 
     fn current_source_changefeed_cursor(&self) -> String {
-        let output = run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!(
-                "USE {};\nSELECT cluster_logical_timestamp() AS changefeed_cursor;",
-                self.config.source_database
-            ),
-        );
+        let output = self.run_audited_cockroach_sql(&format!(
+            "USE {};\nSELECT cluster_logical_timestamp() AS changefeed_cursor;",
+            self.config.source_database
+        ));
         parse_changefeed_cursor(&output)
+    }
+
+    fn run_audited_cockroach_sql(&self, sql: &str) -> String {
+        run_audited_cockroach_sql(
+            &self.cockroach_wrapper_log_path,
+            self.databases.cockroach_certs_dir(),
+            self.databases.cockroach_sql_port(),
+            sql,
+        )
     }
 
     fn render_changefeed_sql(
@@ -1226,7 +1212,7 @@ impl LocalDatabaseEnvironment {
             .expect("cockroach stdout log should open");
         let stderr = File::create(self._tls_material_dir.path().join("cockroach.stderr.log"))
             .expect("cockroach stderr log should open");
-        let child = Command::new("cockroach")
+        let child = cockroach_command()
             .args([
                 "start-single-node",
                 "--certs-dir",
@@ -1313,7 +1299,7 @@ impl LocalDatabaseEnvironment {
 
     pub(crate) fn wait_for_cockroach(&mut self) {
         for _ in 0..60 {
-            let status = Command::new("cockroach")
+            let status = cockroach_command()
                 .args([
                     "sql",
                     &format!("--certs-dir={}", self.cockroach_certs_dir.display()),
@@ -1413,7 +1399,7 @@ impl LocalDatabaseEnvironment {
 
     pub(crate) fn exec_cockroach_sql(&self, sql: &str) -> String {
         run_command_capture(
-            Command::new("cockroach").args([
+            cockroach_command().args([
                 "sql",
                 &format!("--certs-dir={}", self.cockroach_certs_dir.display()),
                 &format!("--host=127.0.0.1:{}", self.cockroach_sql_port),
@@ -1449,7 +1435,7 @@ impl LocalDatabaseEnvironment {
 
     pub(crate) fn cockroach_image(&self) -> String {
         run_command_capture(
-            Command::new("cockroach").arg("version"),
+            cockroach_command().arg("version"),
             "cockroach version",
         )
         .lines()
@@ -1567,7 +1553,7 @@ pub(crate) fn investigation_server_key_path() -> PathBuf {
 
 fn generate_cockroach_certs(certs_dir: &Path) {
     run_command_capture(
-        Command::new("cockroach").args([
+        cockroach_command().args([
             "cert",
             "create-ca",
             &format!("--certs-dir={}", certs_dir.display()),
@@ -1576,7 +1562,7 @@ fn generate_cockroach_certs(certs_dir: &Path) {
         "cockroach cert create-ca",
     );
     run_command_capture(
-        Command::new("cockroach").args([
+        cockroach_command().args([
             "cert",
             "create-node",
             "localhost",
@@ -1587,7 +1573,7 @@ fn generate_cockroach_certs(certs_dir: &Path) {
         "cockroach cert create-node",
     );
     run_command_capture(
-        Command::new("cockroach").args([
+        cockroach_command().args([
             "cert",
             "create-client",
             "root",
@@ -1751,42 +1737,6 @@ pub(crate) fn pick_unused_port() -> u16 {
         .port()
 }
 
-pub(crate) fn write_cockroach_wrapper_script(
-    path: &Path,
-    log_path: &Path,
-    certs_dir: &Path,
-    sql_port: u16,
-) {
-    fs::write(
-        path,
-        format!(
-            "#!/usr/bin/env bash\nset -euo pipefail\nrewritten=()\nfor arg in \"$@\"; do\n  escaped_arg=${{arg//\\\\/\\\\\\\\}}\n  escaped_arg=${{escaped_arg//$'\\n'/\\\\n}}\n  escaped_arg=${{escaped_arg//$'\\t'/\\\\t}}\n  printf 'ARG_ESC\\t%s\\n' \"$escaped_arg\" >> {log_path}\n  case \"$arg\" in\n    --certs-dir=/certs) rewritten+=(--certs-dir={certs_dir}) ;;\n    --host=localhost:26258) rewritten+=(--host=127.0.0.1:{sql_port}) ;;\n    *) rewritten+=(\"$arg\") ;;\n  esac\ndone\nprintf 'END\\n' >> {log_path}\nexec cockroach \"${{rewritten[@]}}\"\n",
-            log_path = shell_quote(log_path),
-            certs_dir = shell_quote_text(
-                certs_dir
-                    .to_str()
-                    .expect("cockroach cert dir path should be utf-8")
-            ),
-            sql_port = sql_port,
-        ),
-    )
-    .expect("wrapper script should be written");
-    make_executable(path);
-}
-
-fn make_executable(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-
-        let mut permissions = fs::metadata(path)
-            .expect("file metadata should exist")
-            .permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(path, permissions).expect("file should be executable");
-    }
-}
-
 pub(crate) fn https_client(certificate_path: &Path) -> Client {
     let certificate =
         Certificate::from_pem(&fs::read(certificate_path).expect("certificate should be readable"))
@@ -1818,18 +1768,52 @@ where
     );
 }
 
-pub(crate) fn run_audited_cockroach_sql(wrapper_bin_dir: &Path, sql: &str) -> String {
+pub(crate) fn run_audited_cockroach_sql(
+    log_path: &Path,
+    certs_dir: &Path,
+    sql_port: u16,
+    sql: &str,
+) -> String {
+    let logged_args = vec![
+        "sql".to_owned(),
+        "--certs-dir=/certs".to_owned(),
+        "--host=localhost:26258".to_owned(),
+        "--format=csv".to_owned(),
+        "-e".to_owned(),
+        sql.to_owned(),
+    ];
+    log_audited_cockroach_command(log_path, &logged_args);
+
     run_command_capture(
-        Command::new(wrapper_bin_dir.join("cockroach")).args([
+        cockroach_command().args([
             "sql",
-            "--certs-dir=/certs",
-            "--host=localhost:26258",
+            &format!("--certs-dir={}", certs_dir.display()),
+            &format!("--host=127.0.0.1:{sql_port}"),
             "--format=csv",
             "-e",
             sql,
         ]),
         "audited cockroach sql",
     )
+}
+
+fn log_audited_cockroach_command(log_path: &Path, args: &[String]) {
+    let mut entry = String::new();
+    for arg in args {
+        entry.push_str("ARG_ESC\t");
+        entry.push_str(&arg.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t"));
+        entry.push('\n');
+    }
+    entry.push_str("END\n");
+
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .expect("cockroach audit log should open");
+    use std::io::Write;
+    file.write_all(entry.as_bytes())
+        .expect("cockroach audit log entry should be written");
 }
 
 fn parse_changefeed_cursor(output: &str) -> String {
@@ -1870,6 +1854,10 @@ fn run_command_output(command: &mut Command, context: &str) -> std::process::Out
         String::from_utf8_lossy(&output.stderr)
     );
     output
+}
+
+fn cockroach_command() -> Command {
+    Command::new(std::env::var_os("COCKROACH_BIN").unwrap_or_else(|| "cockroach".into()))
 }
 
 pub(crate) fn read_file(path: &Path) -> String {
@@ -1937,12 +1925,4 @@ fn watermark_has_advanced(actual: Option<&str>, earlier: Option<&str>) -> bool {
         (Some(_), None) => true,
         _ => false,
     }
-}
-
-fn shell_quote(path: &Path) -> String {
-    shell_quote_text(&path.display().to_string())
-}
-
-fn shell_quote_text(value: &str) -> String {
-    format!("'{}'", value.replace('\'', r"'\''"))
 }

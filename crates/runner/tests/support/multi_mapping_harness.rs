@@ -15,7 +15,6 @@ use crate::e2e_harness::{
     LocalDatabaseEnvironment, encode_ca_cert_query_value, https_client, investigation_ca_cert_path,
     investigation_server_cert_path, investigation_server_key_path, lock_e2e_database_resources,
     pick_unused_port, read_file, run_audited_cockroach_sql, wait_for_runner_health,
-    write_cockroach_wrapper_script,
 };
 use crate::e2e_integrity::VerifyCorrectnessAudit;
 use crate::verify_image_harness_support::{VerifyImageHarness, VerifyImageRun};
@@ -195,7 +194,6 @@ pub struct MultiMappingHarness {
     temp_dir: TempDir,
     runner_port: u16,
     runner_config_path: PathBuf,
-    wrapper_bin_dir: PathBuf,
     cockroach_wrapper_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
@@ -223,8 +221,6 @@ impl MultiMappingHarness {
 
         let temp_dir = tempfile::tempdir().expect("temp dir should be created");
         let runner_port = pick_unused_port();
-        let wrapper_bin_dir = temp_dir.path().join("bin");
-        fs::create_dir_all(&wrapper_bin_dir).expect("wrapper bin dir should be created");
 
         let mut harness = Self {
             _database_test_guard: database_test_guard,
@@ -232,7 +228,6 @@ impl MultiMappingHarness {
             temp_dir,
             runner_port,
             runner_config_path: PathBuf::new(),
-            wrapper_bin_dir,
             cockroach_wrapper_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
