@@ -178,3 +178,4 @@ NONE
 .ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/02-task-publish-ghcr-built-multiplatform-images-to-quay-with-verbose-security-logs.md
 NONE
 .ralph/tasks/story-32-github-workflow-multiplatform-image-artifacts/03-task-replace-magic-nix-cache-with-cachix.md
+.ralph/tasks/bugs/bug-investigate-transient-cachix-502-push-failures-in-publish-images-workflow.md
