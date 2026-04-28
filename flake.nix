@@ -8,6 +8,11 @@
 
     flake-utils.url = "github:numtide/flake-utils";
 
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     advisory-db = {
       url = "github:rustsec/advisory-db";
       flake = false;
@@ -20,20 +25,35 @@
       nixpkgs,
       crane,
       flake-utils,
+      rust-overlay,
       advisory-db,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    flake-utils.lib.eachSystem [
+      "x86_64-linux"
+      "aarch64-linux"
+    ] (
       system:
       let
         pkgs = import nixpkgs {
           inherit system;
+          overlays = [ (import rust-overlay) ];
           config.allowUnfreePredicate = pkg: nixpkgs.lib.getName pkg == "cockroachdb";
         };
 
         inherit (pkgs) lib;
 
-        craneLib = crane.mkLib pkgs;
+        rustMuslTarget = {
+          x86_64-linux = "x86_64-unknown-linux-musl";
+          aarch64-linux = "aarch64-unknown-linux-musl";
+        }.${system};
+
+        craneLib = (crane.mkLib pkgs).overrideToolchain (
+          p:
+          p.rust-bin.stable.latest.default.override {
+            targets = [ rustMuslTarget ];
+          }
+        );
         cockroachdb =
           assert lib.hasPrefix "23.1." pkgs.cockroachdb.version;
           pkgs.cockroachdb;
@@ -57,6 +77,8 @@
           pname = "runner";
           version = "0.1.0";
           strictDeps = true;
+          CARGO_BUILD_TARGET = rustMuslTarget;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
 
           buildInputs = [
             # Add additional build inputs here
