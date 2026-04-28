@@ -7,15 +7,15 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        atomic::{AtomicU64, Ordering},
         Mutex, MutexGuard, OnceLock,
+        atomic::{AtomicU64, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use ingest_contract::MappingIngestPath;
-use reqwest::{blocking::Client, Certificate};
+use reqwest::{Certificate, blocking::Client};
 use serde::Deserialize;
 use tempfile::TempDir;
 
@@ -171,7 +171,7 @@ pub struct CdcE2eHarness {
     webhook_sink_base_url: String,
     webhook_chaos_gateway: Option<WebhookChaosGateway>,
     runner_config_path: PathBuf,
-    cockroach_wrapper_log_path: PathBuf,
+    cockroach_command_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     bootstrap_command_count: RefCell<Option<usize>>,
@@ -228,7 +228,7 @@ impl CdcE2eHarness {
             webhook_sink_base_url: String::new(),
             webhook_chaos_gateway: None,
             runner_config_path: PathBuf::new(),
-            cockroach_wrapper_log_path: PathBuf::new(),
+            cockroach_command_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             bootstrap_command_count: RefCell::new(None),
@@ -943,7 +943,7 @@ impl CdcE2eHarness {
 
     fn materialize(mut self, webhook_sink_mode: WebhookSinkMode) -> Self {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
-        self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
+        self.cockroach_command_log_path = self.temp_dir.path().join("cockroach-commands.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
         match webhook_sink_mode {
@@ -971,9 +971,6 @@ impl CdcE2eHarness {
                 &self.runner_stdout_path,
                 &self.runner_stderr_path,
             )),
-            DestinationRuntimeMode::SingleContainer => {
-                panic!("container destination runtime is not part of the Docker-free long lane")
-            }
         };
         *self.runner_process.borrow_mut() = Some(child);
     }
@@ -995,7 +992,7 @@ impl CdcE2eHarness {
 
     fn run_audited_cockroach_sql(&self, sql: &str) -> String {
         run_audited_cockroach_sql(
-            &self.cockroach_wrapper_log_path,
+            &self.cockroach_command_log_path,
             self.databases.cockroach_certs_dir(),
             self.databases.cockroach_sql_port(),
             sql,
@@ -1020,7 +1017,7 @@ impl CdcE2eHarness {
             .join(", ");
         let sink_url = self.changefeed_sink_url();
         format!(
-            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = '{initial_scan}', envelope = 'enriched', enriched_properties = 'source', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
+            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = '{initial_scan}', envelope = 'enriched', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
         )
     }
 
@@ -1101,27 +1098,18 @@ mappings:
     fn destination_runtime_postgres_host(&self) -> &'static str {
         match self.destination_runtime_mode {
             DestinationRuntimeMode::HostProcess => "127.0.0.1",
-            DestinationRuntimeMode::SingleContainer => {
-                panic!("container destination runtime is not part of the Docker-free long lane")
-            }
         }
     }
 
     fn destination_runtime_postgres_port(&self) -> u16 {
         match self.destination_runtime_mode {
             DestinationRuntimeMode::HostProcess => self.databases.postgres_host_port,
-            DestinationRuntimeMode::SingleContainer => {
-                panic!("container destination runtime is not part of the Docker-free long lane")
-            }
         }
     }
 
     fn destination_runtime_bind_port(&self) -> u16 {
         match self.destination_runtime_mode {
             DestinationRuntimeMode::HostProcess => self.runner_port,
-            DestinationRuntimeMode::SingleContainer => {
-                panic!("container destination runtime is not part of the Docker-free long lane")
-            }
         }
     }
 
@@ -1138,13 +1126,13 @@ mappings:
             .copied()
             .expect("bootstrap migration must finish before collecting source-command audit");
         SourceCommandAudit::from_cockroach_log(
-            &self.cockroach_wrapper_log_path,
+            &self.cockroach_command_log_path,
             bootstrap_command_count,
         )
     }
 
     fn read_source_command_count(&self) -> usize {
-        SourceCommandAudit::from_cockroach_log(&self.cockroach_wrapper_log_path, 0).command_count()
+        SourceCommandAudit::from_cockroach_log(&self.cockroach_command_log_path, 0).command_count()
     }
 
     fn changefeed_sink_url(&self) -> String {
@@ -1176,7 +1164,6 @@ pub(crate) struct LocalDatabaseEnvironment {
 
 impl LocalDatabaseEnvironment {
     pub(crate) fn new() -> Self {
-        let suffix = unique_suffix();
         let tls_material_dir = tempfile::tempdir().expect("tls material dir should be created");
         let cockroach_store_dir =
             tempfile::tempdir().expect("cockroach store dir should be created");
@@ -1434,14 +1421,11 @@ impl LocalDatabaseEnvironment {
     }
 
     pub(crate) fn cockroach_image(&self) -> String {
-        run_command_capture(
-            cockroach_command().arg("version"),
-            "cockroach version",
-        )
-        .lines()
-        .find_map(|line| line.strip_prefix("Build Tag:").map(str::trim))
-        .unwrap_or("unknown")
-        .to_owned()
+        run_command_capture(cockroach_command().arg("version"), "cockroach version")
+            .lines()
+            .find_map(|line| line.strip_prefix("Build Tag:").map(str::trim))
+            .unwrap_or("unknown")
+            .to_owned()
     }
 
     pub(crate) fn verify_source_url(&self, database: &str) -> String {
@@ -1801,7 +1785,11 @@ fn log_audited_cockroach_command(log_path: &Path, args: &[String]) {
     let mut entry = String::new();
     for arg in args {
         entry.push_str("ARG_ESC\t");
-        entry.push_str(&arg.replace('\\', "\\\\").replace('\n', "\\n").replace('\t', "\\t"));
+        entry.push_str(
+            &arg.replace('\\', "\\\\")
+                .replace('\n', "\\n")
+                .replace('\t', "\\t"),
+        );
         entry.push('\n');
     }
     entry.push_str("END\n");
@@ -1857,7 +1845,10 @@ fn run_command_output(command: &mut Command, context: &str) -> std::process::Out
 }
 
 fn cockroach_command() -> Command {
-    Command::new(std::env::var_os("COCKROACH_BIN").unwrap_or_else(|| "cockroach".into()))
+    Command::new(
+        std::env::var_os("COCKROACH_BIN")
+            .expect("COCKROACH_BIN should be provided by the Nix test environment"),
+    )
 }
 
 pub(crate) fn read_file(path: &Path) -> String {

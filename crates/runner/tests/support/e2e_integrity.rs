@@ -632,7 +632,7 @@ pub struct SourceCommandAudit {
 
 impl SourceCommandAudit {
     pub fn from_cockroach_log(log_path: &Path, bootstrap_command_count: usize) -> Self {
-        let commands = parse_logged_commands(log_path, "cockroach wrapper")
+        let commands = parse_logged_commands(log_path, "cockroach command log")
             .into_iter()
             .enumerate()
             .map(|(index, args)| RecordedSourceCommand {
@@ -647,7 +647,7 @@ impl SourceCommandAudit {
 
         assert!(
             commands.len() >= bootstrap_command_count,
-            "cockroach wrapper log should contain at least {bootstrap_command_count} audited source commands: {commands:?}",
+            "cockroach command log should contain at least {bootstrap_command_count} audited source commands: {commands:?}",
         );
 
         Self {
@@ -842,7 +842,6 @@ pub struct DestinationRuntimeAudit {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DestinationRuntimeMode {
     HostProcess,
-    SingleContainer,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -914,11 +913,11 @@ fn parse_logged_commands_from_text(log: &str, description: &str) -> Vec<Vec<Stri
 fn cockroach_sql_argument(args: &[String]) -> String {
     assert!(
         args.first().map(String::as_str) == Some("sql"),
-        "cockroach wrapper should be invoked with `sql`: {args:?}",
+        "cockroach command should be invoked with `sql`: {args:?}",
     );
     optional_flag_value(args, "-e")
         .or_else(|| optional_flag_value(args, "--execute"))
-        .unwrap_or_else(|| panic!("cockroach wrapper should include `-e` or `--execute`: {args:?}"))
+        .unwrap_or_else(|| panic!("cockroach command should include `-e` or `--execute`: {args:?}"))
 }
 
 fn optional_flag_value(args: &[String], flag: &str) -> Option<String> {

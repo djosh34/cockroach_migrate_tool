@@ -114,6 +114,7 @@
               pkgs.openssl
               pkgs.postgresql_16
             ];
+            COCKROACH_BIN = "${cockroachdb}/bin/cockroach";
             cargoNextestPartitionsExtraArgs = "--run-ignored ignored-only --no-tests=fail";
           }
         );
@@ -178,7 +179,7 @@
           checks = self.checks.${system};
 
           # Additional dev-shell environment variables can be set directly
-          # MY_CUSTOM_DEVELOPMENT_VAR = "something else";
+          COCKROACH_BIN = "${cockroachdb}/bin/cockroach";
 
           # Extra inputs can be added here; cargo and rustc are provided by default.
           packages = [

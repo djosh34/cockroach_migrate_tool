@@ -100,7 +100,7 @@ main() {
 -- Mapping: ${MAPPING_ID}
 -- Selected tables: ${SELECTED_TABLES}
 -- Replace __CHANGEFEED_CURSOR__ below with the decimal cursor returned above before running the CREATE CHANGEFEED statement.
-CREATE CHANGEFEED FOR TABLE ${CHANGEFEED_TABLES} INTO 'webhook-${WEBHOOK_BASE_URL}/ingest/${MAPPING_ID}?ca_cert=${CA_CERT_QUERY_VALUE}' WITH cursor = '__CHANGEFEED_CURSOR__', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = '${RESOLVED_INTERVAL}';
+CREATE CHANGEFEED FOR TABLE ${CHANGEFEED_TABLES} INTO 'webhook-${WEBHOOK_BASE_URL}/ingest/${MAPPING_ID}?ca_cert=${CA_CERT_QUERY_VALUE}' WITH cursor = '__CHANGEFEED_CURSOR__', initial_scan = 'yes', envelope = 'enriched', resolved = '${RESOLVED_INTERVAL}';
 EOF
     )"
     sql_contents+=$'\n'

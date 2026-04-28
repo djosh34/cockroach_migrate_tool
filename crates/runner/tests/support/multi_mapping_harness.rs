@@ -194,7 +194,7 @@ pub struct MultiMappingHarness {
     temp_dir: TempDir,
     runner_port: u16,
     runner_config_path: PathBuf,
-    cockroach_wrapper_log_path: PathBuf,
+    cockroach_command_log_path: PathBuf,
     runner_stdout_path: PathBuf,
     runner_stderr_path: PathBuf,
     runner_process: RefCell<Option<Child>>,
@@ -228,7 +228,7 @@ impl MultiMappingHarness {
             temp_dir,
             runner_port,
             runner_config_path: PathBuf::new(),
-            cockroach_wrapper_log_path: PathBuf::new(),
+            cockroach_command_log_path: PathBuf::new(),
             runner_stdout_path: PathBuf::new(),
             runner_stderr_path: PathBuf::new(),
             runner_process: RefCell::new(None),
@@ -314,12 +314,10 @@ impl MultiMappingHarness {
     }
 
     pub fn apply_live_source_changes(&self) {
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!(
-                "USE {};\n{}",
-                APP_A.source_database,
-                r#"
+        self.run_audited_cockroach_sql(&format!(
+            "USE {};\n{}",
+            APP_A.source_database,
+            r#"
 UPDATE public.customers
 SET email = 'alice+vip@example.com'
 WHERE id = 1;
@@ -336,14 +334,11 @@ WHERE order_id = 100 AND line_id = 2;
 INSERT INTO public.order_items (order_id, line_id, sku, quantity)
 VALUES (101, 1, 'replacement-kit', 3);
 "#,
-            ),
-        );
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!(
-                "USE {};\n{}",
-                APP_B.source_database,
-                r#"
+        ));
+        self.run_audited_cockroach_sql(&format!(
+            "USE {};\n{}",
+            APP_B.source_database,
+            r#"
 UPDATE public.invoices
 SET status = 'sent', amount_cents = 12500
 WHERE id = 5001;
@@ -361,8 +356,7 @@ WHERE invoice_id = 5001 AND line_id = 1;
 INSERT INTO public.invoice_lines (invoice_id, line_id, sku, quantity)
 VALUES (5003, 1, 'expansion-pack', 2);
 "#,
-            ),
-        );
+        ));
     }
 
     pub fn wait_for_live_catchup(&self, verify_image: &VerifyImageHarness) {
@@ -516,16 +510,10 @@ VALUES (5003, 1, 'expansion-pack', 2);
 
     fn materialize(&mut self) {
         self.runner_config_path = self.temp_dir.path().join("runner.yml");
-        self.cockroach_wrapper_log_path = self.temp_dir.path().join("cockroach-wrapper.log");
+        self.cockroach_command_log_path = self.temp_dir.path().join("cockroach-commands.log");
         self.runner_stdout_path = self.temp_dir.path().join("runner.stdout.log");
         self.runner_stderr_path = self.temp_dir.path().join("runner.stderr.log");
 
-        write_cockroach_wrapper_script(
-            &self.wrapper_bin_dir.join("cockroach"),
-            &self.cockroach_wrapper_log_path,
-            self.databases.cockroach_certs_dir(),
-            self.databases.cockroach_sql_port(),
-        );
         self.write_runner_config();
     }
 
@@ -603,22 +591,18 @@ mappings:
     }
 
     fn apply_initial_changefeeds(&self) {
-        run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            "SET CLUSTER SETTING kv.rangefeed.enabled = true;",
-        );
+        self.run_audited_cockroach_sql("SET CLUSTER SETTING kv.rangefeed.enabled = true;");
         for mapping in MAPPINGS {
             let cursor = self.current_changefeed_cursor(mapping.source_database);
             let sql = self.render_changefeed_sql(mapping, &cursor);
-            run_audited_cockroach_sql(&self.wrapper_bin_dir, &sql);
+            self.run_audited_cockroach_sql(&sql);
         }
     }
 
     fn current_changefeed_cursor(&self, database: &str) -> String {
-        let output = run_audited_cockroach_sql(
-            &self.wrapper_bin_dir,
-            &format!("USE {database};\nSELECT cluster_logical_timestamp() AS changefeed_cursor;"),
-        );
+        let output = self.run_audited_cockroach_sql(&format!(
+            "USE {database};\nSELECT cluster_logical_timestamp() AS changefeed_cursor;"
+        ));
         output
             .lines()
             .map(str::trim)
@@ -631,6 +615,15 @@ mappings:
             .to_owned()
     }
 
+    fn run_audited_cockroach_sql(&self, sql: &str) -> String {
+        run_audited_cockroach_sql(
+            &self.cockroach_command_log_path,
+            self.databases.cockroach_certs_dir(),
+            self.databases.cockroach_sql_port(),
+            sql,
+        )
+    }
+
     fn render_changefeed_sql(&self, mapping: MappingSpec, cursor: &str) -> String {
         let table_list = mapping
             .selected_tables
@@ -640,7 +633,7 @@ mappings:
             .join(", ");
         let sink_url = self.changefeed_sink_url(mapping.id);
         format!(
-            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = 'yes', envelope = 'enriched', enriched_properties = 'source', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
+            "CREATE CHANGEFEED FOR TABLE {table_list} INTO '{sink_url}' WITH cursor = '{cursor}', initial_scan = 'yes', envelope = 'enriched', resolved = '{CHANGEFEED_RESOLVED_INTERVAL}';"
         )
     }
 

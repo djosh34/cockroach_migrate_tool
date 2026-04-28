@@ -76,7 +76,6 @@ INTO 'webhook-https://{{ webhook_base_url }}/ingest/{{ mapping_id }}?ca_cert={{ 
 WITH cursor = '__PASTE_CAPTURED_CURSOR_HERE__',
      initial_scan = 'yes',
      envelope = 'enriched',
-     enriched_properties = 'source',
      resolved = '{{ resolved_interval }}';
 ```
 
@@ -86,7 +85,7 @@ What it does:
 - Uses fully qualified table names in the form `database.schema.table`.
 - Sends webhook batches to `/ingest/{{ mapping_id }}` on `runner`.
 - Forces an initial snapshot with `initial_scan = 'yes'`.
-- Uses the enriched webhook shape the runtime expects with `envelope = 'enriched'` and `enriched_properties = 'source'`.
+- Uses the enriched webhook shape the runtime expects with `envelope = 'enriched'`.
 - Emits resolved watermarks on the configured cadence.
 
 Prerequisites:
@@ -146,7 +145,6 @@ INTO 'webhook-https://runner.example.internal:8443/ingest/app-a?ca_cert=LS0tLS1C
 WITH cursor = '1745877420457561000.0000000000',
      initial_scan = 'yes',
      envelope = 'enriched',
-     enriched_properties = 'source',
      resolved = '5s';
 
 -- Database demo_b
@@ -158,7 +156,6 @@ INTO 'webhook-https://runner.example.internal:8443/ingest/app-b?ca_cert=LS0tLS1C
 WITH cursor = '1745877420459999000.0000000000',
      initial_scan = 'yes',
      envelope = 'enriched',
-     enriched_properties = 'source',
      resolved = '5s';
 ```
 
@@ -175,4 +172,4 @@ What this example demonstrates:
 - The `ca_cert` query parameter contains URL-safe certificate data.
 - The `cursor` value came from the matching source database and was captured once before the changefeed creation for that database.
 - The selected tables are fully qualified and belong to the same source database used in the cursor capture step.
-- The changefeed options are exactly `initial_scan = 'yes'`, `envelope = 'enriched'`, `enriched_properties = 'source'`, and `resolved = '{{ resolved_interval }}'`.
+- The changefeed options are exactly `initial_scan = 'yes'`, `envelope = 'enriched'`, and `resolved = '{{ resolved_interval }}'`.
