@@ -22,11 +22,22 @@ if [[ -z "${RUN_ID:-}" ]]; then
   exit 1
 fi
 
-dry_run="${DRY_RUN:-0}"
+if [[ -z "${GHCR_USERNAME:-}" ]]; then
+  echo "error: GHCR_USERNAME is required" >&2
+  exit 1
+fi
 
-required_commands=(sed)
+if [[ -z "${GHCR_PASSWORD:-}" ]]; then
+  echo "error: GHCR_PASSWORD is required" >&2
+  exit 1
+fi
+
+dry_run="${DRY_RUN:-0}"
+publish_summary_path="${PUBLISH_SUMMARY_PATH:-}"
+
+required_commands=(jq sed)
 if [[ "$dry_run" != "1" ]]; then
-  required_commands+=(docker)
+  required_commands+=(docker skopeo)
 fi
 
 for required_command in "${required_commands[@]}"; do
@@ -43,6 +54,9 @@ run_id="${RUN_ID}"
 registry_prefix="ghcr.io/${ghcr_owner}"
 
 declare -A temp_refs
+declare -A final_refs
+declare -A final_digests
+declare -A final_platforms
 
 read_metadata_value() {
   local metadata_file="$1"
@@ -93,6 +107,56 @@ load_and_push_archive() {
   temp_refs["${image_name}:${arch}"]="$temporary_ref"
 }
 
+inspect_remote_ref() {
+  local image_name="$1"
+  local final_ref="$2"
+  local inspect_json raw_manifest digest platforms_json
+
+  echo "Inspecting ${final_ref} with $(command -v skopeo)"
+  inspect_json="$(
+    skopeo inspect \
+      --creds "${GHCR_USERNAME}:${GHCR_PASSWORD}" \
+      "docker://${final_ref}"
+  )"
+  raw_manifest="$(
+    skopeo inspect \
+      --raw \
+      --creds "${GHCR_USERNAME}:${GHCR_PASSWORD}" \
+      "docker://${final_ref}"
+  )"
+
+  digest="$(jq -r '.Digest // empty' <<<"$inspect_json")"
+  if [[ -z "$digest" ]]; then
+    echo "error: skopeo inspect did not return a digest for ${final_ref}" >&2
+    exit 1
+  fi
+
+  platforms_json="$(
+    jq -c '
+      if (.manifests // null) == null then
+        []
+      else
+        [
+          .manifests[]
+          | .platform
+          | [ .os, .architecture, .variant ]
+          | map(select(. != null and . != ""))
+          | join("/")
+        ]
+      end
+    ' <<<"$raw_manifest"
+  )"
+
+  echo "Published ${image_name}:"
+  echo "  final_ref=${final_ref}"
+  echo "  digest=${digest}"
+  echo "  platforms=${platforms_json}"
+
+  final_refs["$image_name"]="$final_ref"
+  final_digests["$image_name"]="$digest"
+  final_platforms["$image_name"]="$platforms_json"
+}
+
 publish_manifest() {
   local image_name="$1"
   local amd64_ref="$2"
@@ -116,6 +180,47 @@ publish_manifest() {
 
   echo "Inspecting ${final_ref}"
   docker buildx imagetools inspect "$final_ref"
+
+  inspect_remote_ref "$image_name" "$final_ref"
+}
+
+write_publish_summary() {
+  if [[ -z "$publish_summary_path" || "$dry_run" == "1" ]]; then
+    return
+  fi
+
+  mkdir -p "$(dirname "$publish_summary_path")"
+
+  jq -n \
+    --arg git_sha "$git_sha" \
+    --arg ghcr_owner "$ghcr_owner" \
+    --arg runner_ref "${final_refs["runner-image"]}" \
+    --arg runner_digest "${final_digests["runner-image"]}" \
+    --argjson runner_platforms "${final_platforms["runner-image"]}" \
+    --arg verify_ref "${final_refs["verify-image"]}" \
+    --arg verify_digest "${final_digests["verify-image"]}" \
+    --argjson verify_platforms "${final_platforms["verify-image"]}" \
+    '{
+      git_sha: $git_sha,
+      ghcr_owner: $ghcr_owner,
+      images: [
+        {
+          logical_name: "runner-image",
+          final_ref: $runner_ref,
+          digest: $runner_digest,
+          platforms: $runner_platforms
+        },
+        {
+          logical_name: "verify-image",
+          final_ref: $verify_ref,
+          digest: $verify_digest,
+          platforms: $verify_platforms
+        }
+      ]
+    }' >"$publish_summary_path"
+
+  echo "Wrote GHCR publish summary to ${publish_summary_path}"
+  jq . "$publish_summary_path"
 }
 
 shopt -s nullglob
@@ -158,3 +263,5 @@ for image_name in runner-image verify-image; do
 
   publish_manifest "$image_name" "$amd64_ref" "$arm64_ref"
 done
+
+write_publish_summary

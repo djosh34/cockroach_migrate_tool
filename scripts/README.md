@@ -131,3 +131,7 @@ Both scripts fail fast with a readable `error:` message when:
   - consumes the per-architecture Nix image archives downloaded from GitHub Actions artifacts
   - pushes temporary architecture-specific GHCR refs without rebuilding the images
   - assembles the final multi-platform `runner-image:$GIT_SHA` and `verify-image:$GIT_SHA` tags with Docker Buildx
+- `ci/publish-quay-from-ghcr.sh`
+  - consumes the GHCR publish summary emitted by the GHCR publish script
+  - copies the final multi-platform GHCR refs to Quay with `skopeo copy --all` without rebuilding
+  - inspects the published Quay refs and prints the explicit Quay security/scanner state for each image
