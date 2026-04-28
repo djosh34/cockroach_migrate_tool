@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Tue Apr 28 03:50:01 AM CEST 2026
+Generated: Tue Apr 28 04:30:45 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-long-lane-crash-recovery-under-blocked-reconcile-still-fails.md`
 
@@ -1282,5 +1282,16 @@ Must use tdd skill to complete
 
 <description>
 **Goal:** Replace the existing GitHub workflow with a Nix-only CI and publish pipeline that uses the same Nix/crane build graph as local development and produces one tagged multi-platform image. The higher order goal is to eliminate CI/local drift while keeping the publish path efficient, secure, and verifiable.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-29-migrate-to-nix-crane/05-task-enable-development-without-host-nix.md`
+
+```
+## Task: Enable Development Without Host Nix <status>done</status> <passes>true</passes>
+
+<description>
+**Goal:** Add a Docker-based fallback for developers whose computers do not have Nix installed, where the container executes Nix inside the container and delegates to the same repository Nix flake used everywhere else. The higher order goal is to keep one canonical Nix workflow while still allowing contributors to build and test from machines that only have Docker.
 ```
 

@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+dockerfile_path="$repo_root/docker/dev-nix/Dockerfile"
+docker_context="$repo_root/docker/dev-nix"
+image_tag="$(
+  sha256sum "$dockerfile_path" "$docker_context/entrypoint.sh" \
+    | sha256sum \
+    | cut -c1-16
+)"
+image_name="cockroach-migrate-dev-nix:$image_tag"
+store_volume='cockroach-migrate-dev-nix-store'
+db_volume='cockroach-migrate-dev-nix-db'
+home_volume='cockroach-migrate-dev-nix-home'
+workspace_dir='/workspace'
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/dev-with-docker <build|check|lint|test|shell>
+
+Run the repository flake inside a Docker-hosted Nix environment for machines
+that do not have host Nix installed. The container runs privileged so Nix can
+keep Linux sandboxing enabled inside Docker.
+EOF
+}
+
+require_docker() {
+  command -v docker >/dev/null 2>&1 || {
+    printf 'error: docker is required\n' >&2
+    exit 1
+  }
+}
+
+ensure_image() {
+  if docker image inspect "$image_name" >/dev/null 2>&1; then
+    return
+  fi
+
+  docker build -t "$image_name" -f "$dockerfile_path" "$docker_context"
+}
+
+volume_has_contents() {
+  local volume_name="$1"
+
+  docker run --rm \
+    --entrypoint /usr/local/bin/busybox \
+    -v "$volume_name:/mnt" \
+    "$image_name" \
+    sh -c 'test -n "$(find /mnt -mindepth 1 -print -quit 2>/dev/null)"'
+}
+
+seed_store_volume() {
+  docker run --rm \
+    --entrypoint /bin/sh \
+    "$image_name" \
+    -lc '
+      seed_paths="$(nix-store --query --requisites "$(readlink -f /root/.nix-profile/bin/nix)" "$(readlink -f /nix/var/nix/profiles/default/etc/ssl/certs/ca-bundle.crt)")"
+      set --
+      for path in $seed_paths; do
+        store_item="${path#/nix/store/}"
+        set -- "$@" "${store_item%%/*}"
+      done
+      tar -C /nix/store -cf - "$@"
+    ' | docker run --rm -i \
+      --entrypoint /usr/local/bin/busybox \
+      -v "$store_volume:/mnt" \
+      "$image_name" \
+      sh -c 'tar -C /mnt -xf -'
+}
+
+seed_db_volume() {
+  docker run --rm \
+    --entrypoint /bin/sh \
+    "$image_name" \
+    -lc 'tar -C /nix/var/nix/db -cf - .' | docker run --rm -i \
+      --entrypoint /usr/local/bin/busybox \
+      -v "$db_volume:/mnt" \
+      "$image_name" \
+      sh -c 'tar -C /mnt -xf -'
+}
+
+ensure_seeded_volumes() {
+  if ! volume_has_contents "$store_volume"; then
+    seed_store_volume
+  fi
+
+  if ! volume_has_contents "$db_volume"; then
+    seed_db_volume
+  fi
+}
+
+tty_flags=()
+if [[ -t 0 && -t 1 ]]; then
+  tty_flags=(-it)
+else
+  tty_flags=(-i)
+fi
+
+subcommand="${1:-}"
+case "$subcommand" in
+  build)
+    command_string='nix build --no-link .#runner .#verify-service'
+    ;;
+  check)
+    command_string='nix run .#check'
+    ;;
+  lint)
+    command_string='nix run .#lint'
+    ;;
+  test)
+    command_string='nix run .#test'
+    ;;
+  shell)
+    command_string='nix develop -c /usr/local/bin/busybox sh'
+    ;;
+  ''|--help|-h)
+    usage
+    exit 0
+    ;;
+  *)
+    printf 'error: unknown subcommand: %s\n' "$subcommand" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
+
+require_docker
+ensure_image
+ensure_seeded_volumes
+
+exec docker run --rm \
+  --privileged \
+  "${tty_flags[@]}" \
+  -e DEV_NIX_COMMAND="$command_string" \
+  -e HOST_UID="$(id -u)" \
+  -e HOST_GID="$(id -g)" \
+  -v "$repo_root:$workspace_dir" \
+  -v "$store_volume:/nix/store" \
+  -v "$db_volume:/nix/var/nix/db" \
+  -v "$home_volume:/home/dev" \
+  -w "$workspace_dir" \
+  "$image_name"
