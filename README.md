@@ -2,9 +2,9 @@
 
 Run the published `runner` and `verify` images with inline configs.
 
-## Development Without Host Nix
+## Development
 
-The canonical local workflow is still the repository flake:
+Use the repository flake for local development:
 
 ```bash
 nix run .#check
@@ -12,18 +12,6 @@ nix run .#lint
 nix run .#test
 nix develop
 ```
-
-If your machine does not have Nix installed, use the Docker-hosted fallback instead:
-
-```bash
-./scripts/dev-with-docker build
-./scripts/dev-with-docker check
-./scripts/dev-with-docker lint
-./scripts/dev-with-docker test
-./scripts/dev-with-docker shell
-```
-
-This path is developer-only. It runs `nix` inside a privileged container so Linux sandboxed Nix builds still work, and it delegates to the same flake-backed commands listed above. The wrapper also keeps persistent Docker volumes for the Nix store, Nix database, and the container home cache so repeated runs stay warm while restoring checkout ownership on exit. It is not a production image build workflow; production runtime images still come from `flake.nix` outputs such as `.#runner-image` and `.#verify-image`.
 
 Before you start the runtime, prepare your CockroachDB changefeeds and destination PostgreSQL grants with operator-managed SQL for your environment. This repository no longer ships a dedicated SQL-emitter binary or compose artifact.
 
