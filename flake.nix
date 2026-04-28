@@ -62,27 +62,10 @@
           ];
         };
 
-        linkerForTarget =
-          target:
-          {
-            x86_64-unknown-linux-musl = "${pkgs.pkgsCross.musl64.stdenv.cc}/bin/${pkgs.pkgsCross.musl64.stdenv.cc.targetPrefix}cc";
-            aarch64-unknown-linux-musl = "${pkgs.pkgsCross.aarch64-multiplatform-musl.stdenv.cc}/bin/${pkgs.pkgsCross.aarch64-multiplatform-musl.stdenv.cc.targetPrefix}cc";
-          }
-          .${target};
-
-        envForTarget =
-          target:
-          let
-            linker = linkerForTarget target;
-          in
-          {
-            CARGO_BUILD_TARGET = target;
-            CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
-            CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = linker;
-            CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = linker;
-            CC_x86_64_unknown_linux_musl = linker;
-            CC_aarch64_unknown_linux_musl = linker;
-          };
+        envForTarget = target: {
+          CARGO_BUILD_TARGET = target;
+          CARGO_BUILD_RUSTFLAGS = "-C target-feature=+crt-static";
+        };
 
         buildRunnerFor =
           target:
@@ -116,7 +99,7 @@
           strictDeps = true;
           pname = "runner";
           version = "0.1.0";
-          cargoExtraArgs = "-p runner --all-targets";
+          cargoExtraArgs = "-p runner";
         };
 
         cargoCheck = craneLib.mkCargoDerivation {
