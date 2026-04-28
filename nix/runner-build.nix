@@ -121,10 +121,44 @@ flake-utils.lib.eachSystem systems (
       pname = "runner";
       version = "0.1.0";
     };
+
+    checkApp = pkgs.writeShellApplication {
+      name = "check";
+      runtimeInputs = [ pkgs.nix ];
+      text = ''
+        nix build --no-link \
+          ${self}#checks.${system}.runner \
+          ${self}#checks.${system}.cargoCheck \
+          ${self}#checks.${system}.cargoClippy \
+          ${self}#checks.${system}.cargoFmt
+      '';
+    };
+
+    lintApp = pkgs.writeShellApplication {
+      name = "lint";
+      runtimeInputs = [ pkgs.nix ];
+      text = ''
+        nix build --no-link ${self}#checks.${system}.cargoClippy
+      '';
+    };
+
+    fmtApp = pkgs.writeShellApplication {
+      name = "fmt";
+      runtimeInputs = [ pkgs.nix ];
+      text = ''
+        nix build --no-link ${self}#checks.${system}.cargoFmt
+      '';
+    };
+
   in
   {
     packages = {
-      inherit runner;
+      inherit
+        runner
+        cargoCheck
+        cargoClippy
+        cargoFmt
+        ;
       default = runner;
       runner-x86_64-linux = buildRunnerFor targetForSystem.x86_64-linux;
       runner-aarch64-linux = buildRunnerFor targetForSystem.aarch64-linux;
@@ -141,8 +175,22 @@ flake-utils.lib.eachSystem systems (
 
     formatter = pkgs.nixfmt;
 
-    apps.default = flake-utils.lib.mkApp {
-      drv = runner;
+    apps = {
+      default = flake-utils.lib.mkApp {
+        drv = runner;
+      };
+
+      check = flake-utils.lib.mkApp {
+        drv = checkApp;
+      };
+
+      lint = flake-utils.lib.mkApp {
+        drv = lintApp;
+      };
+
+      fmt = flake-utils.lib.mkApp {
+        drv = fmtApp;
+      };
     };
 
     devShells.default = craneLib.devShell {
