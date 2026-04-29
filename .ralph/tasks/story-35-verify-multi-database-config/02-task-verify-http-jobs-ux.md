@@ -70,6 +70,7 @@ Revised POST shape:
 - `databases` can be mixed:
   - string shorthand
   - object with per-database overrides
+- every database object must include `database_match`; do not allow object entries that only specify schema/table matching
 - matches use globs
 - `schema_match` and `table_match` can each be either string or array
 
@@ -91,6 +92,14 @@ Equivalent expanded meaning:
 }
 ```
 
+Equivalent compact form:
+
+```json
+{
+  "databases": "*"
+}
+```
+
 Example with one database:
 
 ```bash
@@ -98,6 +107,20 @@ curl -sS -X POST "$VERIFY_API/jobs" \
   -H 'Content-Type: application/json' \
   -d '{
     "databases": ["billing"]
+  }' | jq
+```
+
+Example with one detailed database object:
+
+```bash
+curl -sS -X POST "$VERIFY_API/jobs" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "databases": {
+      "database_match": "customer-*",
+      "schema_match": ["public", "archive"],
+      "table_match": ["orders*", "payments*"]
+    }
   }' | jq
 ```
 
@@ -224,15 +247,43 @@ Request schema:
 Rules:
 - `default_schema_match` optional, defaults to `"*"`
 - `default_table_match` optional, defaults to `"*"`
-- `databases` optional, defaults to `["*"]`
-- each string in `databases` is a database glob
-- each object in `databases` must have `database_match`
+- `default_schema_match` can be string or array of strings
+- `default_table_match` can be string or array of strings
+- `databases` optional, defaults to `"*"`
+- `databases` can be a string, object, or array
+- when `databases` is a string, it is a database glob
+- when `databases` is an object, it must have `database_match`
+- when `databases` is an object, it is one detailed database match object
+- when `databases` is an array, each string item is a database glob
+- when `databases` is an array, each object item must have `database_match`
+- object forms without `database_match` are invalid even if they contain `schema_match` or `table_match`
 - `schema_match` optional, defaults to `default_schema_match`
 - `table_match` optional, defaults to `default_table_match`
 - `schema_match` can be string or array of strings
 - `table_match` can be string or array of strings
 - all match fields are globs, not regex
 - normalize the flexible request shape once so the rest of the implementation does not care about string-vs-object or string-vs-array input forms
+
+Matching precedence from most specific to least specific:
+- object entry `schema_match` / `table_match` applies only to configured databases matched by that same object entry's `database_match`
+- string database entries use `default_schema_match` and `default_table_match`
+- top-level `databases` object entries use their own `schema_match` / `table_match` when present
+- if `default_schema_match` is omitted, it behaves as `"*"`
+- if `default_table_match` is omitted, it behaves as `"*"`
+- if `databases` is omitted, it behaves as `"*"` and uses the default schema/table matches
+- if multiple database entries match the same configured database, the service should merge the matched schema/table selections for that configured database rather than silently dropping one matching entry
+
+Example with default matches as arrays:
+
+```bash
+curl -sS -X POST "$VERIFY_API/jobs" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "default_schema_match": ["public", "archive"],
+    "default_table_match": ["orders*", "payments*"],
+    "databases": ["app", "billing"]
+  }' | jq
+```
 
 POST response:
 
@@ -669,7 +720,7 @@ Out of scope:
 
 <acceptance_criteria>
 - [ ] Red/green TDD covers default POST `{}` expanding to all configured databases with default schema/table glob matches
-- [ ] Red/green TDD covers `databases` entries as strings, object entries, and mixed string/object arrays
+- [ ] Red/green TDD covers `databases` as a string, `databases` as an object with `database_match`, `databases` as an array, array entries as strings, array entries as objects, and mixed string/object arrays
 - [ ] Red/green TDD covers `default_schema_match` and `default_table_match` inheritance into per-database matches
 - [ ] Red/green TDD covers per-database `schema_match` and `table_match` overrides as both strings and arrays
 - [ ] Red/green TDD proves request globs are not echoed as results; job responses show concrete matched database names, schema names, and table names where known
