@@ -33,19 +33,6 @@ type tableSummary struct {
 	NumLiveRetry      int    `json:"num_live_retry"`
 }
 
-type jobResultView struct {
-	Summary         resultSummaryView   `json:"summary"`
-	TableSummaries  []tableSummary      `json:"table_summaries"`
-	Findings        []findingView       `json:"findings"`
-	MismatchSummary mismatchSummaryView `json:"mismatch_summary"`
-}
-
-type resultSummaryView struct {
-	TablesVerified int  `json:"tables_verified"`
-	TablesWithData int  `json:"tables_with_data"`
-	HasMismatches  bool `json:"has_mismatches"`
-}
-
 type findingView struct {
 	Kind               string            `json:"kind"`
 	Schema             string            `json:"schema"`
@@ -69,13 +56,7 @@ type jobFinding struct {
 	message            string
 }
 
-type mismatchSummaryView struct {
-	HasMismatches  bool                `json:"has_mismatches"`
-	AffectedTables []tableIdentityView `json:"affected_tables"`
-	CountsByKind   map[string]int      `json:"counts_by_kind"`
-}
-
-type tableIdentityView struct {
+type tableIdentity struct {
 	Schema string `json:"schema"`
 	Table  string `json:"table"`
 }
@@ -185,15 +166,6 @@ func (s tableSummary) accumulate(other tableSummary) tableSummary {
 	}
 }
 
-func (r jobResult) hasData() bool {
-	return len(r.tableSummaries) > 0 ||
-		len(r.findings) > 0
-}
-
-func (r jobResult) hasMismatch() bool {
-	return len(r.mismatchTables) > 0
-}
-
 func (r jobResult) mismatchFailure() *operatorError {
 	mismatchTables := r.mismatchTablesView()
 	if len(mismatchTables) == 0 {
@@ -213,23 +185,6 @@ func (r jobResult) mismatchFailure() *operatorError {
 	)
 }
 
-func (r jobResult) response() *jobResultView {
-	return &jobResultView{
-		Summary:         r.summaryView(),
-		TableSummaries:  r.tableSummariesView(),
-		Findings:        r.findingsView(),
-		MismatchSummary: r.mismatchSummaryView(),
-	}
-}
-
-func (r jobResult) summaryView() resultSummaryView {
-	return resultSummaryView{
-		TablesVerified: len(r.tableSummaries),
-		TablesWithData: len(r.tableSummaries),
-		HasMismatches:  r.hasMismatch(),
-	}
-}
-
 func (r jobResult) findingsView() []findingView {
 	findings := make([]findingView, 0, len(r.findings))
 	for _, finding := range r.findings {
@@ -238,42 +193,16 @@ func (r jobResult) findingsView() []findingView {
 	return findings
 }
 
-func (r jobResult) mismatchSummaryView() mismatchSummaryView {
-	countsByKind := make(map[string]int)
-	for _, finding := range r.findings {
-		countsByKind[finding.kind]++
-	}
-	return mismatchSummaryView{
-		HasMismatches:  r.hasMismatch(),
-		AffectedTables: r.mismatchTablesView(),
-		CountsByKind:   countsByKind,
-	}
-}
-
-func (r jobResult) tableSummariesView() []tableSummary {
-	keys := make([]tableKey, 0, len(r.tableSummaries))
-	for key := range r.tableSummaries {
-		keys = append(keys, key)
-	}
-	sortTableKeys(keys)
-
-	summaries := make([]tableSummary, 0, len(keys))
-	for _, key := range keys {
-		summaries = append(summaries, r.tableSummaries[key])
-	}
-	return summaries
-}
-
-func (r jobResult) mismatchTablesView() []tableIdentityView {
+func (r jobResult) mismatchTablesView() []tableIdentity {
 	keys := make([]tableKey, 0, len(r.mismatchTables))
 	for key := range r.mismatchTables {
 		keys = append(keys, key)
 	}
 	sortTableKeys(keys)
 
-	tables := make([]tableIdentityView, 0, len(keys))
+	tables := make([]tableIdentity, 0, len(keys))
 	for _, key := range keys {
-		tables = append(tables, tableIdentityView{Schema: key.schema, Table: key.table})
+		tables = append(tables, tableIdentity{Schema: key.schema, Table: key.table})
 	}
 	return tables
 }

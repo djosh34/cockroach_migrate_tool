@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t *testing.T) {
+func TestVerifyRunnerUsesResolvedConnectionStringsAndGlobFilters(t *testing.T) {
 	t.Parallel()
 
 	cfg := singleDatabaseVerifyConfig(
@@ -41,19 +41,14 @@ func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t 
 			},
 		},
 	)
-	pair, err := cfg.Verify.ResolveDatabase("")
-	require.NoError(t, err)
-	sourceConnStr, err := pair.Source.ConnectionString()
-	require.NoError(t, err)
-	destinationConnStr, err := pair.Destination.ConnectionString()
-	require.NoError(t, err)
+	request := compileSingleRunRequest(t, cfg, JobRequest{
+		DefaultSchemaMatch: matchExpression{"public"},
+		DefaultTableMatch:  matchExpression{"accounts*", "orders"},
+	})
 
-	request, err := (JobRequest{
-		IncludeSchema: "^public$",
-		IncludeTable:  "accounts;$(touch /tmp/pwned)|orders",
-		ExcludeSchema: "audit|tmp;rm -rf /",
-		ExcludeTable:  "^tmp_",
-	}).Compile()
+	sourceConnStr, err := request.ResolvedDatabase.Source.ConnectionString()
+	require.NoError(t, err)
+	destinationConnStr, err := request.ResolvedDatabase.Destination.ConnectionString()
 	require.NoError(t, err)
 
 	var gotConnectCalls []struct {
@@ -97,36 +92,32 @@ func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t 
 		{id: "target", connStr: destinationConnStr},
 	}, gotConnectCalls)
 	require.Equal(t, utils.FilterConfig{
-		SchemaFilter:        "^public$",
-		TableFilter:         "accounts;$(touch /tmp/pwned)|orders",
-		ExcludeSchemaFilter: "audit|tmp;rm -rf /",
-		ExcludeTableFilter:  "^tmp_",
+		SchemaFilter: "^(?:public)$",
+		TableFilter:  "^(?:accounts.*|orders)$",
 	}, gotFilter)
 }
 
 func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
 	t.Parallel()
 
-	request, err := (JobRequest{}).Compile()
-	require.NoError(t, err)
+	request := compileSingleRunRequest(t, singleDatabaseVerifyConfig(
+		DatabaseConfig{
+			Host:     "source-db",
+			Port:     26257,
+			Database: "source_db",
+			User:     "verify_source",
+			SSLMode:  "disable",
+		},
+		DatabaseConfig{
+			Host:     "target-db",
+			Port:     26257,
+			Database: "target_db",
+			User:     "verify_target",
+			SSLMode:  "disable",
+		},
+	), JobRequest{})
 
 	runner := VerifyRunner{
-		config: singleDatabaseVerifyConfig(
-			DatabaseConfig{
-				Host:     "source-db",
-				Port:     26257,
-				Database: "source_db",
-				User:     "verify_source",
-				SSLMode:  "disable",
-			},
-			DatabaseConfig{
-				Host:     "target-db",
-				Port:     26257,
-				Database: "target_db",
-				User:     "verify_target",
-				SSLMode:  "disable",
-			},
-		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			if preferredID == "source" {
@@ -146,7 +137,7 @@ func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
 		},
 	}
 
-	err = runner.Run(context.Background(), request, noopReporter{})
+	err := runner.Run(context.Background(), request, noopReporter{})
 	require.Equal(
 		t,
 		&operatorError{
@@ -164,26 +155,24 @@ func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
 func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
 	t.Parallel()
 
-	request, err := (JobRequest{}).Compile()
-	require.NoError(t, err)
+	request := compileSingleRunRequest(t, singleDatabaseVerifyConfig(
+		DatabaseConfig{
+			Host:     "source-db",
+			Port:     26257,
+			Database: "source_db",
+			User:     "verify_source",
+			SSLMode:  "disable",
+		},
+		DatabaseConfig{
+			Host:     "target-db",
+			Port:     26257,
+			Database: "target_db",
+			User:     "verify_target",
+			SSLMode:  "disable",
+		},
+	), JobRequest{})
 
 	runner := VerifyRunner{
-		config: singleDatabaseVerifyConfig(
-			DatabaseConfig{
-				Host:     "source-db",
-				Port:     26257,
-				Database: "source_db",
-				User:     "verify_source",
-				SSLMode:  "disable",
-			},
-			DatabaseConfig{
-				Host:     "target-db",
-				Port:     26257,
-				Database: "target_db",
-				User:     "verify_target",
-				SSLMode:  "disable",
-			},
-		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			if preferredID == "target" {
@@ -203,7 +192,7 @@ func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
 		},
 	}
 
-	err = runner.Run(context.Background(), request, noopReporter{})
+	err := runner.Run(context.Background(), request, noopReporter{})
 	require.Equal(
 		t,
 		&operatorError{
@@ -221,26 +210,24 @@ func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
 func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 	t.Parallel()
 
-	request, err := (JobRequest{}).Compile()
-	require.NoError(t, err)
+	request := compileSingleRunRequest(t, singleDatabaseVerifyConfig(
+		DatabaseConfig{
+			Host:     "source-db",
+			Port:     26257,
+			Database: "source_db",
+			User:     "verify_source",
+			SSLMode:  "disable",
+		},
+		DatabaseConfig{
+			Host:     "target-db",
+			Port:     26257,
+			Database: "target_db",
+			User:     "verify_target",
+			SSLMode:  "disable",
+		},
+	), JobRequest{})
 
 	runner := VerifyRunner{
-		config: singleDatabaseVerifyConfig(
-			DatabaseConfig{
-				Host:     "source-db",
-				Port:     26257,
-				Database: "source_db",
-				User:     "verify_source",
-				SSLMode:  "disable",
-			},
-			DatabaseConfig{
-				Host:     "target-db",
-				Port:     26257,
-				Database: "target_db",
-				User:     "verify_target",
-				SSLMode:  "disable",
-			},
-		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			return fakeConn{id: preferredID}, nil
@@ -256,7 +243,7 @@ func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 		},
 	}
 
-	err = runner.Run(context.Background(), request, noopReporter{})
+	err := runner.Run(context.Background(), request, noopReporter{})
 	require.Equal(
 		t,
 		&operatorError{
@@ -271,7 +258,7 @@ func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 	)
 }
 
-func TestVerifyRunnerUsesRequestedConfiguredDatabase(t *testing.T) {
+func TestResolvedRunRequestUsesRequestedConfiguredDatabase(t *testing.T) {
 	t.Parallel()
 
 	cfg := Config{
@@ -303,91 +290,13 @@ func TestVerifyRunnerUsesRequestedConfiguredDatabase(t *testing.T) {
 		},
 	}
 
-	request, err := (JobRequest{Database: "billing"}).Compile()
-	require.NoError(t, err)
+	request := compileSingleRunRequest(t, cfg, JobRequest{
+		Databases: databaseRequestValue{{DatabaseMatch: "billing"}},
+	})
 
-	var gotConnectCalls []struct {
-		id      dbconn.ID
-		connStr string
-	}
-	runner := VerifyRunner{
-		config: cfg,
-		logger: zerolog.Nop(),
-		connect: func(_ context.Context, preferredID dbconn.ID, connStr string) (dbconn.Conn, error) {
-			gotConnectCalls = append(gotConnectCalls, struct {
-				id      dbconn.ID
-				connStr string
-			}{id: preferredID, connStr: connStr})
-			return fakeConn{id: preferredID, connStr: connStr}, nil
-		},
-		runVerify: func(
-			_ context.Context,
-			_ dbconn.OrderedConns,
-			_ zerolog.Logger,
-			_ inconsistency.Reporter,
-			_ utils.FilterConfig,
-		) error {
-			return nil
-		},
-	}
-
-	err = runner.Run(context.Background(), request, noopReporter{})
-	require.NoError(t, err)
-	require.Equal(t, []struct {
-		id      dbconn.ID
-		connStr string
-	}{
-		{id: "source", connStr: "postgresql://verify_source@source-db:26257/billing?sslmode=disable"},
-		{id: "target", connStr: "postgresql://verify_target@target-db:5432/billing_archive?sslmode=disable"},
-	}, gotConnectCalls)
-}
-
-func TestVerifyRunnerRejectsAmbiguousDatabaseSelection(t *testing.T) {
-	t.Parallel()
-
-	request, err := (JobRequest{}).Compile()
-	require.NoError(t, err)
-
-	runner := VerifyRunner{
-		config: Config{
-			Verify: VerifyConfig{
-				Source: &DatabaseConfig{
-					Host:    "source-db",
-					Port:    26257,
-					User:    "verify_source",
-					SSLMode: "disable",
-				},
-				Destination: &DatabaseConfig{
-					Host:    "target-db",
-					Port:    5432,
-					User:    "verify_target",
-					SSLMode: "disable",
-				},
-				Databases: []DatabaseMappingConfig{
-					{Name: "app", SourceDatabase: "app", DestinationDatabase: "app"},
-					{Name: "billing", SourceDatabase: "billing", DestinationDatabase: "billing"},
-				},
-			},
-		},
-		logger: zerolog.Nop(),
-	}
-
-	err = runner.Run(context.Background(), request, noopReporter{})
-	require.Equal(
-		t,
-		&operatorError{
-			category: "request_validation",
-			code:     "invalid_database_selection",
-			message:  "request validation failed",
-			details: []operatorErrorDetail{
-				{
-					Field:  "database",
-					Reason: "database selection is required when multiple databases are configured",
-				},
-			},
-		},
-		err,
-	)
+	require.Equal(t, "billing", request.DatabaseName)
+	require.Equal(t, "billing", request.ResolvedDatabase.Source.Database)
+	require.Equal(t, "billing_archive", request.ResolvedDatabase.Destination.Database)
 }
 
 type fakeConn struct {
@@ -447,4 +356,19 @@ func singleDatabaseVerifyConfig(source DatabaseConfig, destination DatabaseConfi
 			},
 		},
 	}
+}
+
+func compileSingleRunRequest(t *testing.T, cfg Config, request JobRequest) RunRequest {
+	t.Helper()
+
+	normalized, err := request.Compile()
+	require.NoError(t, err)
+
+	plan, err := normalized.Resolve(cfg.Verify)
+	require.NoError(t, err)
+	require.Len(t, plan.Databases, 1)
+
+	runRequest, err := plan.Databases[0].RunRequest()
+	require.NoError(t, err)
+	return runRequest
 }

@@ -9,21 +9,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cockroachdb/molt/verify/inconsistency"
 	"github.com/rs/zerolog"
 )
 
-type JobStatus string
-
-const (
-	JobStatusRunning   JobStatus = "running"
-	JobStatusSucceeded JobStatus = "succeeded"
-	JobStatusFailed    JobStatus = "failed"
-	JobStatusStopped   JobStatus = "stopped"
-
-	verifyRequestBodyMaxBytes = 64 << 10
-)
+const verifyRequestBodyMaxBytes = 64 << 10
 
 type Runner interface {
 	Run(ctx context.Context, request RunRequest, reporter inconsistency.Reporter) error
@@ -37,15 +29,13 @@ type Dependencies struct {
 }
 
 type Service struct {
-	mu               sync.Mutex
-	verifyConfig     VerifyConfig
-	runner           Runner
-	idGenerator      func() string
-	logger           zerolog.Logger
-	rawTableEnabled  bool
-	rawTableReader   RawTableReader
-	activeJob        *job
-	lastCompletedJob *job
+	verifyConfig    VerifyConfig
+	runner          Runner
+	idGenerator     func() string
+	logger          zerolog.Logger
+	rawTableEnabled bool
+	rawTableReader  RawTableReader
+	jobs            *jobStore
 }
 
 func NewService(cfg Config, deps Dependencies) *Service {
@@ -65,12 +55,14 @@ func NewService(cfg Config, deps Dependencies) *Service {
 		logger:          deps.Logger,
 		rawTableEnabled: cfg.Verify.RawTableOutput,
 		rawTableReader:  deps.RawTableReader,
+		jobs:            newJobStore(),
 	}
 }
 
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /jobs", s.handlePostJobs)
+	mux.HandleFunc("GET /jobs", s.handleGetJobs)
 	mux.HandleFunc("GET /jobs/{job_id}", s.handleGetJob)
 	mux.HandleFunc("POST /jobs/{job_id}/stop", s.handlePostJobStop)
 	mux.HandleFunc("POST /tables/raw", s.handlePostTablesRaw)
@@ -79,10 +71,7 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) Close() {
-	s.mu.Lock()
-	cancel := s.activeCancelLocked()
-	s.mu.Unlock()
-	if cancel != nil {
+	for _, cancel := range s.jobs.activeCancels() {
 		cancel()
 	}
 }
@@ -93,92 +82,76 @@ func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 		writeDecodeJSONError(w, err)
 		return
 	}
-	runRequest, err := jobRequest.Compile()
+
+	normalizedRequest, err := jobRequest.Compile()
 	if err != nil {
 		writeOperatorError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := runRequest.ValidateSelection(s.verifyConfig); err != nil {
+	jobPlan, err := normalizedRequest.Resolve(s.verifyConfig)
+	if err != nil {
 		writeOperatorError(w, http.StatusBadRequest, err)
 		return
 	}
 
-	job, err := s.startJob(runRequest)
+	job, err := s.startJob(jobPlan)
 	if err != nil {
-		if errors.Is(err, errJobAlreadyRunning) {
-			writeOperatorError(w, http.StatusConflict, err)
-			return
-		}
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusAccepted, struct {
-		JobID  string    `json:"job_id"`
-		Status JobStatus `json:"status"`
-	}{
-		JobID:  job.id,
-		Status: job.status,
-	})
+	writeJSON(w, http.StatusAccepted, job.response())
 }
 
-var errJobAlreadyRunning = newOperatorError("job_state", "job_already_running", "a verify job is already running")
-
-func (s *Service) startJob(request RunRequest) (*job, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.activeJob != nil {
-		return nil, errJobAlreadyRunning
-	}
-
+func (s *Service) startJob(plan ResolvedJobPlan) (*job, error) {
 	ctx, cancel := context.WithCancel(context.Background())
-	job := newJob(s.idGenerator(), cancel)
-	s.activeJob = job
+	now := time.Now().UTC()
+	job := newJob(s.idGenerator(), plan, now, cancel)
+	s.jobs.add(job)
 
-	go func() {
-		err := s.runner.Run(ctx, request, jobReporter{service: s, jobID: job.id})
-		s.finishJob(job.id, err)
-	}()
+	go s.runJob(ctx, job.id, plan)
 
 	return job, nil
 }
 
-func (s *Service) finishJob(jobID string, err error) {
-	s.mu.Lock()
-
-	job := s.activeJob
-	if job == nil || job.id != jobID {
-		s.mu.Unlock()
-		return
-	}
-
-	var failureToLog *operatorError
-	switch {
-	case err == nil:
-		if mismatchFailure := job.result.mismatchFailure(); mismatchFailure != nil {
-			job.status = JobStatusFailed
-			job.failure = mismatchFailure
-			failureToLog = mismatchFailure
-		} else {
-			job.status = JobStatusSucceeded
+func (s *Service) runJob(ctx context.Context, jobID string, plan ResolvedJobPlan) {
+	for _, databasePlan := range plan.Databases {
+		if ctx.Err() != nil {
+			s.jobs.stopJob(jobID, time.Now().UTC())
+			return
 		}
-	case errors.Is(err, context.Canceled):
-		job.status = JobStatusStopped
-	default:
-		job.status = JobStatusFailed
-		job.failure = classifyRunFailure(err)
-		failureToLog = job.failure
-	}
-	job.cancel = nil
-	s.lastCompletedJob = job
-	s.activeJob = nil
-	logger := s.logger
-	s.mu.Unlock()
 
-	if failureToLog != nil {
-		logJobFailure(logger, failureToLog)
+		runRequest, err := databasePlan.RunRequest()
+		if err != nil {
+			failure := classifyRunFailure(err)
+			s.jobs.failDatabase(jobID, databasePlan.Database.Name, time.Now().UTC(), failure)
+			logJobFailure(s.logger, failure)
+			continue
+		}
+
+		err = s.runner.Run(ctx, runRequest, jobReporter{
+			service:      s,
+			jobID:        jobID,
+			databaseName: databasePlan.Database.Name,
+		})
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				s.jobs.stopJob(jobID, time.Now().UTC())
+				return
+			}
+
+			failure := classifyRunFailure(err)
+			s.jobs.failDatabase(jobID, databasePlan.Database.Name, time.Now().UTC(), failure)
+			logJobFailure(s.logger, failure)
+			continue
+		}
+
+		if failure := s.jobs.completeDatabase(jobID, databasePlan.Database.Name, time.Now().UTC()); failure != nil {
+			logJobFailure(s.logger, failure)
+		}
 	}
+
+	s.jobs.finishJob(jobID, time.Now().UTC())
 }
 
 func logJobFailure(logger zerolog.Logger, failure *operatorError) {
@@ -193,9 +166,13 @@ func logJobFailure(logger zerolog.Logger, failure *operatorError) {
 	event.Msg(view.Message)
 }
 
+func (s *Service) handleGetJobs(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, s.jobs.list())
+}
+
 func (s *Service) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("job_id")
-	jobResponse, ok := s.getJobResponse(jobID)
+	jobResponse, ok := s.jobs.get(jobID)
 	if !ok {
 		writeOperatorError(w, http.StatusNotFound, errJobNotFound)
 		return
@@ -211,7 +188,8 @@ func (s *Service) handlePostJobStop(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := r.PathValue("job_id")
-	if err := s.stopJob(jobID); err != nil {
+	jobResponse, cancel, err := s.jobs.stop(jobID)
+	if err != nil {
 		if errors.Is(err, errJobNotFound) {
 			writeOperatorError(w, http.StatusNotFound, err)
 			return
@@ -219,14 +197,9 @@ func (s *Service) handlePostJobStop(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	cancel()
 
-	writeJSON(w, http.StatusOK, struct {
-		JobID  string `json:"job_id"`
-		Status string `json:"status"`
-	}{
-		JobID:  jobID,
-		Status: "stopping",
-	})
+	writeJSON(w, http.StatusOK, jobResponse)
 }
 
 func (s *Service) handlePostTablesRaw(w http.ResponseWriter, r *http.Request) {
@@ -256,41 +229,7 @@ func (s *Service) handlePostTablesRaw(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Service) getJobResponse(jobID string) (any, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.activeJob != nil && s.activeJob.id == jobID {
-		return s.activeJob.response(), true
-	}
-	if s.lastCompletedJob != nil && s.lastCompletedJob.id == jobID {
-		return s.lastCompletedJob.response(), true
-	}
-	return nil, false
-}
-
 var errJobNotFound = newOperatorError("job_state", "job_not_found", "job not found")
-
-func (s *Service) stopJob(jobID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.activeJob == nil || s.activeJob.id != jobID {
-		return errJobNotFound
-	}
-	if s.activeJob.cancel == nil {
-		return errJobNotFound
-	}
-	s.activeJob.cancel()
-	return nil
-}
-
-func (s *Service) activeCancelLocked() context.CancelFunc {
-	if s.activeJob == nil {
-		return nil
-	}
-	return s.activeJob.cancel
-}
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -353,12 +292,13 @@ func normalizeDecodeJSONError(err error) error {
 }
 
 type jobReporter struct {
-	service *Service
-	jobID   string
+	service      *Service
+	jobID        string
+	databaseName string
 }
 
 func (r jobReporter) Report(obj inconsistency.ReportableObject) {
-	r.service.recordReport(r.jobID, obj)
+	r.service.jobs.recordReport(r.jobID, r.databaseName, obj)
 }
 
 func (jobReporter) Close() {}
@@ -381,25 +321,4 @@ func max(left int, right int) int {
 		return left
 	}
 	return right
-}
-
-func (s *Service) recordReport(jobID string, obj inconsistency.ReportableObject) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	job := s.jobLocked(jobID)
-	if job == nil {
-		return
-	}
-	job.recordReport(obj)
-}
-
-func (s *Service) jobLocked(jobID string) *job {
-	if s.activeJob != nil && s.activeJob.id == jobID {
-		return s.activeJob
-	}
-	if s.lastCompletedJob != nil && s.lastCompletedJob.id == jobID {
-		return s.lastCompletedJob
-	}
-	return nil
 }

@@ -184,3 +184,4 @@ NONE
 .ralph/tasks/story-34-human-friendly-docs-rewrite/01-task-rewrite-docs-for-humans-through-deepseek-opencode-only.md
 NONE
 .ralph/tasks/story-35-verify-multi-database-config/01-task-verify-multi-db-config.md
+.ralph/tasks/story-35-verify-multi-database-config/02-task-verify-http-jobs-ux.md

@@ -38,8 +38,7 @@ func TestJobResultAccumulatesShardSummariesPerTable(t *testing.T) {
 		},
 	})
 
-	response := result.response()
-	require.Len(t, response.TableSummaries, 1)
+	require.Len(t, result.tableSummaries, 1)
 	require.Equal(
 		t,
 		tableSummary{
@@ -53,7 +52,7 @@ func TestJobResultAccumulatesShardSummariesPerTable(t *testing.T) {
 			NumExtraneous:     0,
 			NumLiveRetry:      0,
 		},
-		response.TableSummaries[0],
+		result.tableSummaries[newTableKey("public", "parents")],
 	)
 }
 
@@ -85,7 +84,6 @@ func TestJobResultProjectsStructuredMismatchFindings(t *testing.T) {
 		Info:       []string{"balance mismatch"},
 	})
 
-	response := result.response()
 	require.Equal(
 		t,
 		[]findingView{
@@ -106,19 +104,18 @@ func TestJobResultProjectsStructuredMismatchFindings(t *testing.T) {
 				Info: []string{"balance mismatch"},
 			},
 		},
-		response.Findings,
+		result.findingsView(),
 	)
 	require.Equal(
 		t,
-		mismatchSummaryView{
-			HasMismatches: true,
-			AffectedTables: []tableIdentityView{
-				{Schema: "public", Table: "accounts"},
-			},
-			CountsByKind: map[string]int{
-				"mismatching_column": 1,
+		&operatorError{
+			category: "mismatch",
+			code:     "mismatch_detected",
+			message:  "verify detected mismatches in 1 table",
+			details: []operatorErrorDetail{
+				{Reason: "mismatch detected for public.accounts"},
 			},
 		},
-		response.MismatchSummary,
+		result.mismatchFailure(),
 	)
 }

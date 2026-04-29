@@ -1,4 +1,4 @@
-## Task: Verify HTTP jobs UX <status>not_started</status> <passes>false</passes>
+## Task: Verify HTTP jobs UX <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -740,3 +740,5 @@ Out of scope:
 - [ ] `make lint` - passes cleanly
 - [ ] If this task impacts ultra-long tests or their selection: `make test-long` - passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-35-verify-multi-database-config/02-task-verify-http-jobs-ux_plans/2026-04-29-verify-http-jobs-ux-plan.md</plan>

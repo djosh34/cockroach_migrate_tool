@@ -51,6 +51,7 @@ func (c serviceMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	)
 	for _, status := range []JobStatus{
 		JobStatusRunning,
+		JobStatusStopping,
 		JobStatusSucceeded,
 		JobStatusFailed,
 		JobStatusStopped,
@@ -70,23 +71,5 @@ type metricsStatusSnapshot struct {
 }
 
 func (s *Service) metricsStatusSnapshot() metricsStatusSnapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	snapshot := metricsStatusSnapshot{
-		statusCounts: map[JobStatus]float64{
-			JobStatusRunning:   0,
-			JobStatusSucceeded: 0,
-			JobStatusFailed:    0,
-			JobStatusStopped:   0,
-		},
-	}
-	if s.activeJob != nil {
-		snapshot.activeJobs = 1
-		snapshot.statusCounts[s.activeJob.status]++
-	}
-	if s.lastCompletedJob != nil {
-		snapshot.statusCounts[s.lastCompletedJob.status]++
-	}
-	return snapshot
+	return s.jobs.metricsStatusSnapshot()
 }

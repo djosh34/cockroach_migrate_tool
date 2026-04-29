@@ -42,23 +42,11 @@ func (r VerifyRunner) Run(
 	request RunRequest,
 	reporter inconsistency.Reporter,
 ) (runErr error) {
-	databasePair, err := r.config.Verify.ResolveDatabase(request.Database)
-	if err != nil {
-		return newOperatorError(
-			"request_validation",
-			"invalid_database_selection",
-			"request validation failed",
-			operatorErrorDetail{
-				Field:  "database",
-				Reason: err.Error(),
-			},
-		)
-	}
-	sourceConnStr, err := databasePair.Source.ConnectionString()
+	sourceConnStr, err := request.ResolvedDatabase.Source.ConnectionString()
 	if err != nil {
 		return err
 	}
-	destinationConnStr, err := databasePair.Destination.ConnectionString()
+	destinationConnStr, err := request.ResolvedDatabase.Destination.ConnectionString()
 	if err != nil {
 		return err
 	}

@@ -219,6 +219,22 @@ func TestRunLogsFailedSourceAccessJobsAsStructuredJSON(t *testing.T) {
 			Listener: ListenerConfig{
 				BindAddr: bindAddr,
 			},
+			Verify: singleDatabaseVerifyConfig(
+				DatabaseConfig{
+					Host:     "source-db",
+					Port:     26257,
+					Database: "app",
+					User:     "verify_source",
+					SSLMode:  "disable",
+				},
+				DatabaseConfig{
+					Host:     "target-db",
+					Port:     5432,
+					Database: "app",
+					User:     "verify_target",
+					SSLMode:  "disable",
+				},
+			).Verify,
 		}, RuntimeDependencies{
 			Runner: runtimeReportingRunner(func(_ context.Context, _ inconsistency.Reporter) error {
 				return newOperatorError(
@@ -309,6 +325,22 @@ func TestRunLogsVerifyExecutionFailuresWithoutLeakingPasswords(t *testing.T) {
 			Listener: ListenerConfig{
 				BindAddr: bindAddr,
 			},
+			Verify: singleDatabaseVerifyConfig(
+				DatabaseConfig{
+					Host:     "source-db",
+					Port:     26257,
+					Database: "app",
+					User:     "verify_source",
+					SSLMode:  "disable",
+				},
+				DatabaseConfig{
+					Host:     "target-db",
+					Port:     5432,
+					Database: "app",
+					User:     "verify_target",
+					SSLMode:  "disable",
+				},
+			).Verify,
 		}, RuntimeDependencies{
 			Runner: runtimeReportingRunner(func(_ context.Context, _ inconsistency.Reporter) error {
 				return errors.New("checksum mismatch while reading postgresql://verify:supersecret@source.internal:5432/appdb")
