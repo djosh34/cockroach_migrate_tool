@@ -1,0 +1,55 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "verify-container.fullname" . }}-selfsigned-root
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "verify-container.fullname" . }}-ca
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+spec:
+  isCA: true
+  commonName: {{ include "verify-container.fullname" . }}-ca
+  secretName: {{ include "verify-container.fullname" . }}-ca
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "verify-container.fullname" . }}-selfsigned-root
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "verify-container.fullname" . }}-ca-issuer
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+spec:
+  ca:
+    secretName: {{ include "verify-container.fullname" . }}-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "verify-container.fullname" . }}-listener
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "verify-container.fullname" . }}-listener-tls
+  commonName: {{ include "verify-container.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  dnsNames:
+    - {{ include "verify-container.fullname" . }}
+    - {{ include "verify-container.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "verify-container.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: {{ include "verify-container.fullname" . }}-ca-issuer
+    kind: Issuer

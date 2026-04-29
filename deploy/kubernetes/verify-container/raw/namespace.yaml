@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: verify-container
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service

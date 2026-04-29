@@ -1,4 +1,4 @@
-## Task: Add Helm and raw Kubernetes manifests for running the verify container with cert-manager TLS <status>not_started</status> <passes>false</passes>
+## Task: Add Helm and raw Kubernetes manifests for running the verify container with cert-manager TLS <status>completed</status> <passes>true</passes>
 
 <description>
 Do not use TDD for this task. This is a Kubernetes manifest, Helm chart, and manual cluster verification task, not application code. Never run `cargo`; use Nix-backed commands only where they are the established repository path, and use non-Nix tooling for the local Kubernetes cluster if Nix-based cluster setup proves too complex.
@@ -56,27 +56,84 @@ Important project rules:
 </description>
 
 <acceptance_criteria>
-- [ ] A Helm chart for the verify container exists in a clear repo-local Kubernetes/deploy location.
-- [ ] Raw non-Helm Kubernetes manifest YAML files for the verify container exist in a clear repo-local Kubernetes/deploy location.
-- [ ] The Helm chart and raw manifests deploy the same verify-container behavior and differ only where Helm templating requires it.
-- [ ] The manifests use cert-manager resources to issue the TLS certificates needed by the verify container.
-- [ ] The verify container config is supplied through a Kubernetes `ConfigMap`.
-- [ ] Sensitive values and certificate material are supplied through Kubernetes `Secret` objects, not through `ConfigMap` data.
-- [ ] The manifests include the ordinary supporting Kubernetes resources needed for a usable operator example, such as service account if needed, service, workload object, labels, namespace guidance, resource sizing, and readiness/liveness behavior where supported by the current container contract.
-- [ ] CockroachDB is not deployed, installed, bootstrapped, mocked, or hosted in the Kubernetes cluster.
-- [ ] PostgreSQL is not deployed, installed, bootstrapped, mocked, or hosted in the Kubernetes cluster.
-- [ ] The manifests configure externally hosted CockroachDB and PostgreSQL endpoints and credentials.
-- [ ] The executor inspected the current verify container contract in the repository and matched real ports, paths, config names, command arguments, health endpoints, image names, TLS file locations, and API behavior.
-- [ ] The executor considered a Nix-based local Kubernetes setup first.
-- [ ] If the Nix Kubernetes setup path was rejected, the task execution notes, plan, or this task file explicitly says that Nix was tried and deemed overly complex, and names the non-Nix Kubernetes approach used instead.
-- [ ] cert-manager was installed or available in the local Kubernetes cluster used for verification.
-- [ ] Manual verification applied the raw Kubernetes manifests to a local cluster and recorded the exact commands and successful readiness/completion evidence.
-- [ ] Manual verification installed the Helm chart to a local cluster and recorded the exact commands and successful readiness/completion evidence.
-- [ ] Raw manifest verification and Helm verification were performed independently.
-- [ ] Manual verification proves TLS authentication and configured connectivity from the verify pod, or through the verify pod's exposed job/service behavior, to externally hosted CockroachDB and PostgreSQL.
-- [ ] If real external CockroachDB and PostgreSQL endpoints were unavailable, the task is left failed with the exact blocker recorded rather than using in-cluster databases or fake coverage.
-- [ ] Concise operator-facing usage notes explain how to apply the raw manifests and how to install the Helm chart.
-- [ ] Any swallowed/ignored error anti-pattern discovered during this work has a bug task created via `add-bug`.
-- [ ] `make check` — passes cleanly, or the task fails with the full failing output recorded.
-- [ ] `make lint` — passes cleanly, or the task fails with the full failing output recorded.
+- [x] A Helm chart for the verify container exists in a clear repo-local Kubernetes/deploy location.
+- [x] Raw non-Helm Kubernetes manifest YAML files for the verify container exist in a clear repo-local Kubernetes/deploy location.
+- [x] The Helm chart and raw manifests deploy the same verify-container behavior and differ only where Helm templating requires it.
+- [x] The manifests use cert-manager resources to issue the TLS certificates needed by the verify container.
+- [x] The verify container config is supplied through a Kubernetes `ConfigMap`.
+- [x] Sensitive values and certificate material are supplied through Kubernetes `Secret` objects, not through `ConfigMap` data.
+- [x] The manifests include the ordinary supporting Kubernetes resources needed for a usable operator example, such as service account if needed, service, workload object, labels, namespace guidance, resource sizing, and readiness/liveness behavior where supported by the current container contract.
+- [x] CockroachDB is not deployed, installed, bootstrapped, mocked, or hosted in the Kubernetes cluster.
+- [x] PostgreSQL is not deployed, installed, bootstrapped, mocked, or hosted in the Kubernetes cluster.
+- [x] The manifests configure externally hosted CockroachDB and PostgreSQL endpoints and credentials.
+- [x] The executor inspected the current verify container contract in the repository and matched real ports, paths, config names, command arguments, health endpoints, image names, TLS file locations, and API behavior.
+- [x] The executor considered a Nix-based local Kubernetes setup first.
+- [x] If the Nix Kubernetes setup path was rejected, the task execution notes, plan, or this task file explicitly says that Nix was tried and deemed overly complex, and names the non-Nix Kubernetes approach used instead.
+- [x] cert-manager was installed or available in the local Kubernetes cluster used for verification.
+- [x] Manual verification applied the raw Kubernetes manifests to a local cluster and recorded the exact commands and successful readiness/completion evidence.
+- [x] Manual verification installed the Helm chart to a local cluster and recorded the exact commands and successful readiness/completion evidence.
+- [x] Raw manifest verification and Helm verification were performed independently.
+- [x] Manual verification proves TLS authentication and configured connectivity from the verify pod, or through the verify pod's exposed job/service behavior, to externally hosted CockroachDB and PostgreSQL.
+- [x] If real external CockroachDB and PostgreSQL endpoints were unavailable, the task is left failed with the exact blocker recorded rather than using in-cluster databases or fake coverage.
+- [x] Concise operator-facing usage notes explain how to apply the raw manifests and how to install the Helm chart.
+- [x] Any swallowed/ignored error anti-pattern discovered during this work has a bug task created via `add-bug`.
+- [x] `make check` — passes cleanly, or the task fails with the full failing output recorded.
+- [x] `make lint` — passes cleanly, or the task fails with the full failing output recorded.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-36-verify-container-k8s-manifests/01-task-add-helm-and-raw-k8s-manifests-for-verify-container_plans/2026-04-29-verify-container-k8s-manifests-plan.md</plan>
+
+<execution_notes>
+- Nix-first local cluster decision:
+  - Tried the Nix path first with `nix shell nixpkgs#kind nixpkgs#kubectl nixpkgs#kubernetes-helm`.
+  - The Nix path worked cleanly and did not require flake changes, so no non-Nix fallback was needed.
+- Exact local image used for manual verification:
+  - Built with `nix build .#verify-image --no-link --print-out-paths`
+  - Loaded with `docker load -i /nix/store/64dh1vjjzkvr64p6w0wgsvl2c50arhhc-docker-image-verify-image.tar.gz`
+  - Loaded image tag: `verify-image:0.1.4`
+  - Retagged for kind verification as `verify-image:k8s-local`
+  - Loaded into kind with `nix shell nixpkgs#kind -c kind load docker-image verify-image:k8s-local --name verify-container`
+- Local cluster and cert-manager commands:
+  - `nix shell nixpkgs#kind nixpkgs#kubectl -c kind create cluster --name verify-container --wait 120s`
+  - `nix shell nixpkgs#kubectl -c bash -lc 'kubectl config use-context kind-verify-container >/dev/null && kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml'`
+  - Waited for `cert-manager`, `cert-manager-cainjector`, and `cert-manager-webhook` rollouts in the `cert-manager` namespace.
+- External database verification surface:
+  - Used `deploy/kubernetes/verify-container/scripts/prepare-local-verification.sh`
+  - The helper created external Docker containers on the `kind` network:
+    - CockroachDB: `172.20.0.3:26257`
+    - PostgreSQL: `172.20.0.4:5432`
+  - The helper seeded matching `appdb.accounts` rows outside Kubernetes and generated:
+    - raw config and Secret input files under `deploy/kubernetes/verify-container/raw/`
+    - raw overlay at `deploy/kubernetes/verify-container/.local-verification/raw-overlay/kustomization.yaml`
+    - Helm values file at `deploy/kubernetes/verify-container/helm/verify-container/values.local.yaml`
+- Raw manifest verification:
+  - Applied with `kubectl apply -k deploy/kubernetes/verify-container/.local-verification/raw-overlay`
+  - Waited for `certificate/verify-container-listener` to become Ready and `deployment/verify-container` to roll out successfully.
+  - Verified TLS listener health with:
+    - `kubectl -n verify-container port-forward svc/verify-container 18443:8443`
+    - `kubectl -n verify-container get secret verify-container-ca -o jsonpath='{.data.tls\.crt}' | base64 -d > /tmp/verify-container-ca.crt`
+    - `curl --fail --silent --show-error --cacert /tmp/verify-container-ca.crt --resolve verify-container.verify-container.svc.cluster.local:18443:127.0.0.1 https://verify-container.verify-container.svc.cluster.local:18443/metrics`
+  - Verified external CockroachDB/PostgreSQL connectivity by posting a real verify job and polling it to completion.
+  - Raw job result:
+    - `job_id=job-000001`
+    - `status=succeeded`
+    - `rows_checked=2`
+    - `schemas=["public"]`
+    - `tables=["accounts"]`
+- Helm verification:
+  - Deleted the raw namespace first to keep the verification independent.
+  - Installed with:
+    - `helm upgrade --install verify-container deploy/kubernetes/verify-container/helm/verify-container --namespace verify-container --create-namespace --values deploy/kubernetes/verify-container/helm/verify-container/values.local.yaml`
+  - Waited for the same certificate and deployment readiness conditions.
+  - Repeated the same TLS `/metrics` check and verify job flow through the Helm-managed Service.
+  - Helm job result:
+    - `job_id=job-000001`
+    - `status=succeeded`
+    - `rows_checked=2`
+    - `schemas=["public"]`
+    - `tables=["accounts"]`
+- Repo gates:
+  - `make check` passed, including nextest with `88 passed, 19 skipped`
+  - `make lint` passed
+  - `make test` passed
+</execution_notes>

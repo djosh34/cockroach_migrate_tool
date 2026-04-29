@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: verify-container
+
+resources:
+  - namespace.yaml
+  - listener-certificates.yaml
+  - service.yaml
+  - deployment.yaml
+
+configMapGenerator:
+  - name: verify-container-config
+    files:
+      - verify-service.yml=config/verify-service.yml
+
+secretGenerator:
+  - name: verify-container-db-credentials
+    files:
+      - source-username=secrets/source-username
+      - destination-username=secrets/destination-username
+      - destination-password=secrets/destination-password
+  - name: verify-container-db-tls
+    files:
+      - source-ca.crt=secrets/source-ca.crt
+      - source-client.crt=secrets/source-client.crt
+      - source-client.key=secrets/source-client.key
+      - destination-ca.crt=secrets/destination-ca.crt
+
+generatorOptions:
+  disableNameSuffixHash: true

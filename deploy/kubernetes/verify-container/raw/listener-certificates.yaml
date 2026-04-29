@@ -1,0 +1,59 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: verify-container-selfsigned-root
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: verify-container-ca
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service
+spec:
+  isCA: true
+  commonName: verify-container-ca
+  secretName: verify-container-ca
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: verify-container-selfsigned-root
+    kind: Issuer
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: verify-container-ca-issuer
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service
+spec:
+  ca:
+    secretName: verify-container-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: verify-container-listener
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service
+spec:
+  secretName: verify-container-listener-tls
+  commonName: verify-container.verify-container.svc.cluster.local
+  dnsNames:
+    - verify-container
+    - verify-container.verify-container.svc
+    - verify-container.verify-container.svc.cluster.local
+  privateKey:
+    algorithm: RSA
+    size: 2048
+  issuerRef:
+    name: verify-container-ca-issuer
+    kind: Issuer

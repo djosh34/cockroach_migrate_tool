@@ -1,0 +1,6 @@
+apiVersion: v2
+name: verify-container
+description: Helm chart for the verify-service Kubernetes deployment surface
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "verify-container.fullname" . }}-config
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+data:
+  verify-service.yml: |
+    listener:
+      bind_addr: 0.0.0.0:{{ .Values.service.port }}
+      tls:
+        cert_path: /config/certs/server.crt
+        key_path: /config/certs/server.key
+    verify:
+      source:
+        host: {{ .Values.config.source.host | quote }}
+        port: {{ .Values.config.source.port }}
+        username:
+          secret_file: /config/secrets/source-username
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/source-ca.crt
+          client_cert_path: /config/certs/source-client.crt
+          client_key_path: /config/certs/source-client.key
+      destination:
+        host: {{ .Values.config.destination.host | quote }}
+        port: {{ .Values.config.destination.port }}
+        username:
+          secret_file: /config/secrets/destination-username
+        password:
+          secret_file: /config/secrets/destination-password
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/destination-ca.crt
+      databases:
+        - name: {{ .Values.config.databaseMappingName | quote }}
+          source_database: {{ .Values.config.source.database | quote }}
+          destination_database: {{ .Values.config.destination.database | quote }}

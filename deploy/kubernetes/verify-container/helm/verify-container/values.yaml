@@ -1,0 +1,38 @@
+image:
+  repository: ghcr.io/example/verify-image
+  tag: replace-me
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8443
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+config:
+  source:
+    host: cockroach.external.example
+    port: 26257
+    database: appdb
+  destination:
+    host: postgres.external.example
+    port: 5432
+    database: appdb
+  databaseMappingName: app
+
+secrets:
+  credentials:
+    sourceUsername: ""
+    destinationUsername: ""
+    destinationPassword: ""
+  tls:
+    sourceCaPem: ""
+    sourceClientCertPem: ""
+    sourceClientKeyPem: ""
+    destinationCaPem: ""

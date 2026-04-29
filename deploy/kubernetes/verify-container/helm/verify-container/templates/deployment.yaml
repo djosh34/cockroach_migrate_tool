@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "verify-container.fullname" . }}
+  labels:
+    {{- include "verify-container.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "verify-container.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "verify-container.selectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: verify-service
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - verify-service
+            - run
+            - --log-format
+            - json
+            - --config
+            - /config/verify-service.yml
+          ports:
+            - name: https
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: verify-config
+              mountPath: /config/verify-service.yml
+              subPath: verify-service.yml
+              readOnly: true
+            - name: verify-certs
+              mountPath: /config/certs
+              readOnly: true
+            - name: verify-db-credentials
+              mountPath: /config/secrets
+              readOnly: true
+      volumes:
+        - name: verify-config
+          configMap:
+            name: {{ include "verify-container.fullname" . }}-config
+        - name: verify-certs
+          projected:
+            sources:
+              - secret:
+                  name: {{ include "verify-container.fullname" . }}-listener-tls
+                  items:
+                    - key: tls.crt
+                      path: server.crt
+                    - key: tls.key
+                      path: server.key
+              - secret:
+                  name: {{ include "verify-container.fullname" . }}-db-tls
+                  items:
+                    - key: source-ca.crt
+                      path: source-ca.crt
+                    - key: source-client.crt
+                      path: source-client.crt
+                    - key: source-client.key
+                      path: source-client.key
+                    - key: destination-ca.crt
+                      path: destination-ca.crt
+        - name: verify-db-credentials
+          secret:
+            secretName: {{ include "verify-container.fullname" . }}-db-credentials

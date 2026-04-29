@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verify-container
+  labels:
+    app.kubernetes.io/name: verify-container
+    app.kubernetes.io/component: verify-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: verify-container
+      app.kubernetes.io/component: verify-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: verify-container
+        app.kubernetes.io/component: verify-service
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: verify-service
+          image: ghcr.io/example/verify-image:replace-me
+          imagePullPolicy: IfNotPresent
+          args:
+            - verify-service
+            - run
+            - --log-format
+            - json
+            - --config
+            - /config/verify-service.yml
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: verify-config
+              mountPath: /config/verify-service.yml
+              subPath: verify-service.yml
+              readOnly: true
+            - name: verify-certs
+              mountPath: /config/certs
+              readOnly: true
+            - name: verify-db-credentials
+              mountPath: /config/secrets
+              readOnly: true
+      volumes:
+        - name: verify-config
+          configMap:
+            name: verify-container-config
+        - name: verify-certs
+          projected:
+            sources:
+              - secret:
+                  name: verify-container-listener-tls
+                  items:
+                    - key: tls.crt
+                      path: server.crt
+                    - key: tls.key
+                      path: server.key
+              - secret:
+                  name: verify-container-db-tls
+                  items:
+                    - key: source-ca.crt
+                      path: source-ca.crt
+                    - key: source-client.crt
+                      path: source-client.crt
+                    - key: source-client.key
+                      path: source-client.key
+                    - key: destination-ca.crt
+                      path: destination-ca.crt
+        - name: verify-db-credentials
+          secret:
+            secretName: verify-container-db-credentials
