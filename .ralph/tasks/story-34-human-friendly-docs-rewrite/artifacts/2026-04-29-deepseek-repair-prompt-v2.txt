@@ -1,0 +1,73 @@
+You are still the sole allowed documentation prose author for this task.
+
+Repository: cockroach_migrate_tool
+
+This is a targeted repair pass over the current docs, not a fresh rewrite from scratch.
+
+Hard constraints:
+
+- You are the only allowed writer of documentation prose.
+- Keep the docs human-friendly and aggressively simplify ownership boundaries where they are still muddy.
+- Do not add or preserve duplicate explanations when one page should own that topic.
+- Output complete file contents for every markdown file you want to change.
+- If no deletion is needed, say `FILES TO DELETE` and then `- (none)`.
+
+Use the current live docs bundle at:
+
+- `.ralph/tasks/story-34-human-friendly-docs-rewrite/artifacts/2026-04-29-current-docs-bundle.md`
+
+Authoritative facts you must preserve:
+
+- Images are published as `runner-image` and `verify-image`.
+- GHCR is the source of truth. Quay is a mirror.
+- The verify-service does not expose `/healthz`; health checks should use `GET /metrics` or a TCP connect check.
+- The TLS docs already correctly include dev-only self-signed certificate generation guidance.
+- The architecture docs already correctly include operational failure modes.
+- The config reference already contains real field types / required flags / defaults and should stay useful.
+
+Verified live issues to fix:
+
+1. `README.md` is still too busy as a routing table and creates page-ownership ambiguity.
+   - Make `README.md` a short landing page for humans.
+   - It should explain what the tool is in a few lines and route clearly to the canonical operator docs surface.
+   - Prefer a cleaner boundary over a large table of deep links.
+
+2. `docs/operator-guide/installation.md` still leaks internal implementation details that operators do not need.
+   - Remove references to internal CI/workflow/script file names and GitHub Actions template variables like `${{ github.repository_owner }}`.
+   - Keep the page focused on what an operator needs to know: image names, tag discovery, auth, pull/run examples, entrypoint asymmetry, and log-format behavior.
+
+3. `docs/operator-guide/installation.md` uses `-v ./config:/config:ro`, while the rest of the docs mostly use `-v "$(pwd)/config:/config:ro"`.
+   - Use one copy-paste-safe convention consistently across the human-facing docs.
+   - Favor the safer form already used elsewhere unless you have a better operator-friendly alternative.
+
+4. The boundary between installation, TLS, and config reference is still a little muddy.
+   - Installation should own image discovery/auth/pull/run conventions and log-format behavior.
+   - TLS Configuration should own certificate generation guidance and the certificate-mounting convention.
+   - Configuration Reference should own config-file shapes, field tables, required/default behavior, and operator decision guidance.
+   - If a page is not the canonical owner of a topic, link to the canonical owner instead of re-explaining it.
+
+5. Keep the recommended operator path coherent.
+   - Avoid a README-to-index ordering mismatch.
+   - Avoid making readers choose between multiple pages that all look like “the real config reference.”
+
+Preferred scope for this repair pass:
+
+- `README.md`
+- `docs/operator-guide/index.md`
+- `docs/operator-guide/installation.md`
+- `docs/operator-guide/getting-started.md`
+- `docs/operator-guide/config-reference.md`
+- `docs/operator-guide/tls-configuration.md`
+
+You may change fewer or more files if needed, but keep the scope tight and do not rewrite unaffected pages just for style.
+
+Output format:
+
+1. `FILES TO DELETE`
+2. `FILES TO WRITE`
+3. For each file to write:
+   - line with `=== BEGIN FILE: <path> ===`
+   - complete file contents
+   - line with `=== END FILE: <path> ===`
+
+Do not explain your choices first. Produce the deletion list and the complete rewritten markdown files directly.

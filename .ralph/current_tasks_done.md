@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Wed Apr 29 12:28:14 AM CEST 2026
+Generated: Wed Apr 29 02:20:28 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md`
 
@@ -1145,5 +1145,16 @@ Do not use TDD for this task because it is GitHub Actions/Nix workflow configura
 
 <description>
 Do not use TDD for this task because it is a documentation and manual verification task, not application code. Never run `cargo`; use Nix-backed validation commands only if local validation is needed.
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-34-human-friendly-docs-rewrite/01-task-rewrite-docs-for-humans-through-deepseek-opencode-only.md`
+
+```
+## Task: Rewrite the docs for humans through DeepSeek opencode-only authorship <status>completed</status> <passes>true</passes>
+
+<description>
+Do not use TDD for this task because it is documentation work, not application code. Never run `cargo`; use Nix-backed validation commands only if local validation is needed.
 ```
 

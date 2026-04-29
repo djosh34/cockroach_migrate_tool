@@ -1,0 +1,104 @@
+You are the sole allowed documentation prose author for this task.
+
+Repository: cockroach_migrate_tool
+
+Your job is to fully rewrite and reorganize the human-facing documentation because the current docs are not human friendly.
+
+Hard constraints:
+
+- You are the only allowed writer of documentation prose.
+- Rewrite aggressively. You may reorder, merge, delete, rename, recreate, or replace docs as needed.
+- The existing docs are source facts only, not a structure to preserve.
+- The repository is greenfield with zero users. Do not preserve legacy wording or layout for compatibility reasons.
+- Output complete file contents for every markdown file you want to change or create.
+- If a markdown file should be deleted, say so explicitly in a deletion list.
+
+Required outcome:
+
+- `README.md` becomes a short landing page for humans.
+- There must be one obvious canonical deeper docs surface.
+- The final docs must clearly cover:
+  - what this project is
+  - what problem it solves
+  - installation
+  - getting started
+  - configuration reference
+  - architecture
+  - verify workflow
+- The final docs must be understandable to a human operator who does not already know the repo.
+
+Authoritative facts you must preserve:
+
+- Images are built and published as `runner-image` and `verify-image`, not `cockroach-migrate-runner` or `cockroach-migrate-verify`.
+- GHCR is the source of truth. Quay is a mirror.
+- Runner CLI:
+  - `validate-config --config <PATH> [--deep]`
+  - `run --config <PATH>`
+  - global `--log-format text|json`
+- Runner endpoints:
+  - `GET /healthz`
+  - `GET /metrics`
+  - `POST /ingest/{mapping_id}`
+- Runner config:
+  - `webhook.mode` is `http` or `https`
+  - default mode is `https`
+  - `webhook.tls` is required for `https`
+  - `webhook.tls.client_ca_path` enables mTLS
+  - destination supports either `url` or decomposed host/port/database/user/password/tls
+- Verify-service CLI is under `verify-service`:
+  - `validate-config --config <path>`
+  - `run --config <path>`
+  - per-command `--log-format text|json`
+- Verify-service HTTP API:
+  - `POST /jobs`
+  - `GET /jobs/{job_id}`
+  - `POST /jobs/{job_id}/stop`
+  - `POST /tables/raw`
+  - `GET /metrics`
+  - only one active job at a time
+  - only the most recent completed job is retained
+  - retained job state is lost on process restart
+- Verify-service listener modes:
+  - `http`
+  - `https`
+  - `https+mtls`
+- SQL setup generators live in:
+  - `scripts/generate-cockroach-setup-sql.sh`
+  - `scripts/generate-postgres-grants-sql.sh`
+
+Current docs boundary problems to solve:
+
+- `README.md` currently contains too much low-level operator detail.
+- `docs/public_image_operator_guide/` overlaps with `README.md`, `docs/setup_sql/`, and `docs/tls-configuration.md`.
+- Duplicate or transitional docs should be removed instead of preserved.
+
+Relevant source files to inspect while rewriting:
+
+- `README.md`
+- `docs/public_image_operator_guide/`
+- `docs/setup_sql/`
+- `docs/tls-configuration.md`
+- `scripts/README.md`
+- `scripts/generate-cockroach-setup-sql.sh`
+- `scripts/generate-postgres-grants-sql.sh`
+- `.github/workflows/publish-images.yml`
+- `scripts/ci/publish-ghcr-multiarch-from-archives.sh`
+- `scripts/ci/publish-quay-from-ghcr.sh`
+- `crates/runner/src/lib.rs`
+- `crates/runner-config/src/config/mod.rs`
+- `crates/runner-config/src/config/parser.rs`
+- `openapi/verify-service.yaml`
+- `cockroachdb_molt/molt/cmd/verifyservice/verifyservice.go`
+- `cockroachdb_molt/molt/verifyservice/config.go`
+- `cockroachdb_molt/molt/verifyservice/service.go`
+
+Output format:
+
+1. `FILES TO DELETE`
+2. `FILES TO WRITE`
+3. For each file to write:
+   - line with `=== BEGIN FILE: <path> ===`
+   - complete file contents
+   - line with `=== END FILE: <path> ===`
+
+Do not explain your choices first. Produce the deletion list and complete rewritten markdown files directly.

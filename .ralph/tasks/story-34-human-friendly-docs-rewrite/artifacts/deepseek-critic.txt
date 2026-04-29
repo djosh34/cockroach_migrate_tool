@@ -1,0 +1,19 @@
+**VERDICT:** FAIL
+
+**README:** Concise, clearly names the two components and what they do, and uses a clean documentation table to route readers to all core pages without confusion.
+
+**INSTALLATION:** Covers GHCR auth, SHA-based image tags, pull commands, the Quay mirror, and container invocation competently, but the log-format table duplicates content that also lives in config-reference.md.
+
+**GETTING_STARTED:** A thorough 8-step walkthrough with real commands covering the full flow from image pull to verify job, though it re-teaches GHCR auth that installation.md already covers.
+
+**CONFIG_REFERENCE:** Works well as a hub mapping every config concern to its detail page, but it redundantly reproduces the certificate-mounting convention and log-format table from other pages.
+
+**ARCHITECTURE:** Excellent ASCII diagrams and structurally sound coverage of webhook ingestion, the reconcile loop, the `_cockroach_migration_tool` helper schema, and verify-service comparison internals.
+
+**ORDERING:** The index.md supplies a clear 9-step recommended reading order, the README table implies a sensible path, and cross-references are consistent with no circular links.
+
+**FINDINGS:**
+1. No TLS certificate generation instructions exist anywhere — every page mandates that certificates must be created before writing configs, but not a single page shows how to generate them (openssl, cfssl, or otherwise), which strands a new operator at the very first prerequisite.
+2. The verify-service has no `/healthz` endpoint documented while the runner does, leaving operators unable to health-check the verify-service container for orchestration or load-balancer probes.
+3. The certificate mounting convention (`/config/certs/...`) is copy-pasted verbatim into both `config-reference.md` and `tls-configuration.md`, and the log-format table appears identically in both `installation.md` and `config-reference.md` — guaranteed to diverge over time.
+4. The verify image entrypoint is `molt` with default command `verify-service` while the runner image entrypoint is simply `runner`; the asymmetry is documented but adds friction for operators switching between the two images.

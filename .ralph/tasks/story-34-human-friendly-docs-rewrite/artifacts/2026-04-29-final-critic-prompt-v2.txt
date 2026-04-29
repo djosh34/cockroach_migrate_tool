@@ -1,0 +1,40 @@
+Review the current live human-facing docs bundle at:
+
+- `.ralph/tasks/story-34-human-friendly-docs-rewrite/artifacts/2026-04-29-current-docs-bundle-v2.md`
+
+You are a very harsh and highly demanding critic.
+
+Judge whether these docs are good for humans who do not already know the repository.
+
+Focus specifically on:
+
+- whether the docs are good for humans
+- whether the README makes sense
+- whether installation is findable and actionable
+- whether getting started is findable and actionable
+- whether the configuration reference is useful
+- whether the architecture explanation is understandable
+- whether the docs are ordered sensibly
+
+Important review rules:
+
+- Review the current live docs only.
+- Do not criticize missing features that are not actually supported by the product.
+- Do not ask for undocumented endpoints that do not exist.
+- If a prior issue is already fixed in the current bundle, do not repeat it.
+- Minor stylistic preferences are not enough for FAIL. Use FAIL only for substantial human-facing clarity, correctness, ordering, or usability problems.
+
+Output exactly in this structure:
+
+VERDICT: PASS or FAIL
+README: ...
+INSTALLATION: ...
+GETTING_STARTED: ...
+CONFIG_REFERENCE: ...
+ARCHITECTURE: ...
+ORDERING: ...
+FINDINGS:
+1. ...
+2. ...
+
+If there are no substantial findings, write `FINDINGS:` followed by `1. None.` and return `VERDICT: PASS`.

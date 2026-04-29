@@ -1,0 +1,11 @@
+[0m
+> build · deepseek-v4-pro
+[0m
+[0m→ [0mRead .ralph/tasks/story-34-human-friendly-docs-rewrite/artifacts/2026-04-29-current-docs-bundle.md
+[0m→ [0mRead .ralph/tasks/story-34-human-friendly-docs-rewrite/artifacts/2026-04-29-current-docs-bundle.md[90m [offset=1280][0m
+[0m→ [0mRead README.md
+[0m→ [0mRead docs/operator-guide/index.md
+[0m→ [0mRead docs/operator-guide/installation.md
+[0m→ [0mRead docs/operator-guide/getting-started.md
+[0m→ [0mRead docs/operator-guide/config-reference.md
+[0m→ [0mRead docs/operator-guide/tls-configuration.md

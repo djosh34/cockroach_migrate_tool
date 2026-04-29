@@ -1,0 +1,17 @@
+[0m
+> build · kimi-k2.6
+[0m
+[0m→ [0mRead README.md
+[0m✱ [0mGlob "docs/operator-guide/*.md"[90m 10 matches[0m
+[0m→ [0mRead docs/operator-guide/getting-started.md
+[0m→ [0mRead docs/operator-guide/installation.md
+[0m→ [0mRead docs/operator-guide/config-reference.md
+[0m→ [0mRead docs/operator-guide/architecture.md
+[0m→ [0mRead docs/operator-guide/index.md
+[0m→ [0mRead docs/operator-guide/runner.md
+[0m→ [0mRead docs/operator-guide/verify-service.md
+[0m→ [0mRead docs/operator-guide/setup-sql.md
+[0m→ [0mRead docs/operator-guide/tls-configuration.md
+[0m→ [0mRead docs/operator-guide/troubleshooting.md
+[0m✱ [0mGlob "scripts/**/*.sh"[90m 5 matches[0m
+[0m✱ [0mGlob ".github/workflows/*.yml"[90m 1 match[0m

@@ -1,0 +1,3 @@
+XDG_CACHE_HOME="/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.cache/nix/test" nix run .#test
+warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
+warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty

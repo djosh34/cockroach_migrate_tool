@@ -1,0 +1,16 @@
+VERDICT: PASS
+
+README: Clear one-paragraph description, two-sentence explanation of runner vs verify-service, direct link to operator guide. Developer section with nix commands is appropriate for a repo that uses nix. Serves its purpose well.
+
+INSTALLATION: Well-structured: tag discovery, pull commands, Quay mirror, auth, running containers, entrypoint asymmetry callout, log format differences. The entrypoint asymmetry note is exactly the kind of detail that prevents hours of confusion. Actionable throughout.
+
+GETTING_STARTED: Eight clear steps with prerequisites, copy-paste-ready commands, and both success/failure JSON examples for verify. The HTTP-mode callout and production-secrets callout are appropriately scoped. Links to deeper pages for things not covered inline (ca_cert encoding, SQL generators).
+
+CONFIG_REFERENCE: Functions well as a hub. Field tables include types, required/default columns, and purpose. The "common operator decisions" sections give practical guidance beyond raw field lists. The summary table at the end maps questions to pages. Cross-links to TLS, runner, and verify-service pages are correct.
+
+ARCHITECTURE: The ASCII diagram is clear. Webhook ingestion and reconciliation are explained step by step. The `_cockroach_migration_tool` schema section with diagnostic SQL queries is immediately useful for operators. The runner vs verify-service separation is explicitly stated. Failure modes section gives concrete inspection steps, not just vague descriptions.
+
+ORDERING: The operator workflow (Getting Started → Install → TLS → Config Reference → Setup SQL → Runner → Verify → Architecture → Troubleshooting) is sensible. Getting Started first gives the full picture; subsequent pages deepen specific areas. Each page is self-contained enough to reference independently without forced linear reading. Cross-links between pages are consistent and go to the right places.
+
+FINDINGS:
+1. None.

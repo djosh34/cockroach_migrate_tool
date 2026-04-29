@@ -1,0 +1,16 @@
+VERDICT: PASS
+
+README: Concise and functional. Describes the project, points to the operator guide for all operational concerns, and shows dev commands. Could benefit from a one-line architecture summary or a prominent "quick install" link, but not a FAIL.
+
+INSTALLATION: Findable from the index (step 2) and actionable. Image paths, tag discovery, authentication, pull commands, Quay mirror, container invocation, entrypoint asymmetry, and log format are all covered. The Docker Compose asymmetry table is slightly confusing in its "default command" column for the runner (says "none" yet describes an invocation), but operationally clear.
+
+GETTING_STARTED: Findable (step 1 in the workflow) and actionable. Full 8-step walkthrough from auth to verify-job execution with concrete commands, config snippets, and success/failure output examples. Prerequisites are listed. Cross-references to detailed pages are appropriate.
+
+CONFIG_REFERENCE: Useful as a hub. Tables all config files, shows overall shape, lists every field with type/required/default/purpose, covers common operator decisions (URL vs decomposed, reconcile interval, mappings), includes validation commands, and has a summary table linking to detailed pages.
+
+ARCHITECTURE: Understandable. System overview diagram, detailed runner internals (webhook path, reconciliation loop), helper schema with diagnostic SQL queries, verify-service comparison pipeline, failure mode analysis per component with concrete inspection commands.
+
+ORDERING: Sensible. The index page provides an explicit numbered workflow with rationale ("Order matters: TLS certificates must exist before writing runner or verify-service configs..."). The physical page order in the bundle differs from the workflow order (e.g. runner.md appears last, verify-service.md appears before architecture.md), but the index tells the reader exactly what order to follow, so this is not a usability problem.
+
+FINDINGS:
+1. None.

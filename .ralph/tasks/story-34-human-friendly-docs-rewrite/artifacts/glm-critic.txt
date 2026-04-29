@@ -1,0 +1,21 @@
+VERDICT: FAIL
+
+**README:** The table clearly routes to all four key destinations (getting started, installation, config reference, architecture) plus five more, but the implicit row order contradicts the index's recommended reading order, which will mislead sequential readers.
+
+**INSTALLATION:** Thorough coverage of GHCR tags, auth, pull, run, entrypoint asymmetry, and log format — no gaps.
+
+**GETTING_STARTED:** Completes the full end-to-end flow in 8 steps, but Step 1 duplicates ~80% of the Installation page and uses `$(git rev-parse HEAD)` which assumes a local git checkout an operator may not have.
+
+**CONFIG_REFERENCE:** Functions well as a hub with top-level keys, operator decisions, and cross-links, but does not inline field types/defaults — every field lookup requires navigating away to runner.md or verify-service.md.
+
+**ARCHITECTURE:** Excellent system diagram, clear explanation of webhook→shadow→reconcile flow and helper schema, but omits failure modes entirely — what happens when an upsert pass fails mid-table or a webhook returns 500 is undocumented.
+
+**ORDERING:** The README table lists pages in one order (Getting Started → Setup SQL → Installation → Runner → Verify → TLS → Config Ref → Architecture) while index.md prescribes a different order (Getting Started → Install → TLS → Config Ref → Setup SQL → Runner → Verify → Architecture). This is a routing inconsistency that will confuse sequential readers.
+
+**FINDINGS:**
+
+1. Reading order mismatch between README table and index.md "Operator workflow" — TLS is row 6 in the README but step 3 in the index; Config Reference is row 7 vs step 4; the orders diverge on 4 out of 9 pages.
+2. Getting Started Step 1 re-states the GHCR auth block and image path table that Installation already covers — creates a maintenance liability and forces readers to reconcile two sources of truth for the same commands.
+3. `$(git rev-parse HEAD)` in Getting Started assumes the operator has a git checkout of the repository; an external operator pulling from GHCR won't, and the "or paste a known SHA" aside is not prominent enough.
+4. Architecture section has no failure-mode documentation — what happens on reconcile error, webhook 500, or shadow-table corruption is absent, leaving operators to guess recovery behavior.
+5. Config Reference does not inline field types, required status, or defaults — it routes to runner.md/verify-service.md for every field, making it a pure redirect page rather than a usable single-page reference.

@@ -1,0 +1,12 @@
+VERDICT: FAIL
+README: The README lists the four key destinations, but buries them in an undifferentiated 10-row table where “Runner Reference” and “Configuration Reference” both claim to be the “full configuration reference,” leaving readers uncertain which page holds runner field details.
+INSTALLATION: It explains tags, auth, and container commands clearly, but undermines copy-paste reliability by using `./config` in volume mounts while every sibling doc consistently uses `$(pwd)/config`.
+GETTING_STARTED: It is a thorough, well-sequenced walkthrough with sensible validation checkpoints, yet Step 1 unnecessarily leaks internal CI script and workflow filenames that operators do not need to know.
+CONFIG_REFERENCE: It succeeds as a navigational hub with clear tables mapping concerns to detailed pages, though it redundantly duplicates the log-format flag-position table already present in Installation.
+ARCHITECTURE: It provides a coherent, human-friendly explanation of the pipeline, shadow tables, and verify internals, supported by useful ASCII diagrams and diagnostic queries that remain consistent with the rest of the suite.
+ORDERING: The overall doc sequence is logical, but `getting-started.md` presents CockroachDB changefeed setup before PostgreSQL grants while `setup-sql.md` explicitly numbers grants before capturing cursors, creating a real coherence gap in the recommended execution order.
+FINDINGS:
+1. README routing ambiguity: “Runner Reference” and “Configuration Reference” are both described as “full configuration reference,” so a reader cannot tell at a glance which page contains the runner’s field-level docs.
+2. `installation.md` uses `./config` for Docker volume mounts, which breaks on some Docker versions, while `getting-started.md`, `runner.md`, `verify-service.md`, and `config-reference.md` all use the safer `$(pwd)/config`.
+3. `getting-started.md` Step 1 embeds internal implementation details—`.github/workflows/publish-images.yml` and `scripts/ci/publish-ghcr-multiarch-from-archives.sh`—that clutter the operator path.
+4. `setup-sql.md` and `getting-started.md` disagree on the relative order of PostgreSQL grants and CockroachDB changefeed cursor capture, undermining the docs’ factual coherence.

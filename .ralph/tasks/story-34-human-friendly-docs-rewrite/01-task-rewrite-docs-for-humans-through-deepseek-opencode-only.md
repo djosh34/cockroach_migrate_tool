@@ -1,4 +1,4 @@
-## Task: Rewrite the docs for humans through DeepSeek opencode-only authorship <status>not_started</status> <passes>false</passes>
+## Task: Rewrite the docs for humans through DeepSeek opencode-only authorship <status>completed</status> <passes>true</passes>
 
 <description>
 Do not use TDD for this task because it is documentation work, not application code. Never run `cargo`; use Nix-backed validation commands only if local validation is needed.
@@ -68,23 +68,25 @@ Important project rules:
 </description>
 
 <acceptance_criteria>
-- [ ] The task log or plan records the exact `opencode-go/*` model identifiers used for DeepSeek V4 Pro, GLM 5.1, and Kimi 2.6.
-- [ ] The executor inspected the current README/docs and repository facts before briefing DeepSeek V4 Pro.
-- [ ] DeepSeek V4 Pro, invoked through `opencode`, fully rewrote and reorganized the docs.
-- [ ] The executor did not directly write, rewrite, polish, or edit documentation prose.
-- [ ] The rewritten docs include a human-friendly intro and short explanation of what the project is.
-- [ ] The rewritten docs include findable getting started guidance.
-- [ ] The rewritten docs include findable installation guidance.
-- [ ] The rewritten docs include a useful operator-facing configuration reference.
-- [ ] The rewritten docs include an understandable architecture explanation.
-- [ ] The README no longer overfocuses on tiny implementation details and instead routes humans through the project clearly.
-- [ ] Legacy, confusing, duplicated, or badly ordered docs were merged, deleted, recreated, or reordered aggressively by DeepSeek V4 Pro as needed.
-- [ ] The executor verified factual claims against authoritative repository sources and supported workflows.
-- [ ] Any factual correction, missing section, bad ordering, or human-friendliness issue found by the executor was sent back to DeepSeek V4 Pro through `opencode`; the executor did not fix it directly.
-- [ ] DeepSeek V4 Pro reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
-- [ ] GLM 5.1 reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
-- [ ] Kimi 2.6 reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
-- [ ] If any final reviewer raised a substantial concern, DeepSeek V4 Pro rewrote the docs again and the full final critic gate was repeated.
-- [ ] `make check` — passes cleanly, or the task fails with the full failing output recorded.
-- [ ] `make lint` — passes cleanly, or the task fails with the full failing output recorded.
+- [x] The task log or plan records the exact `opencode-go/*` model identifiers used for DeepSeek V4 Pro, GLM 5.1, and Kimi 2.6.
+- [x] The executor inspected the current README/docs and repository facts before briefing DeepSeek V4 Pro.
+- [x] DeepSeek V4 Pro, invoked through `opencode`, fully rewrote and reorganized the docs.
+- [x] The executor did not directly write, rewrite, polish, or edit documentation prose.
+- [x] The rewritten docs include a human-friendly intro and short explanation of what the project is.
+- [x] The rewritten docs include findable getting started guidance.
+- [x] The rewritten docs include findable installation guidance.
+- [x] The rewritten docs include a useful operator-facing configuration reference.
+- [x] The rewritten docs include an understandable architecture explanation.
+- [x] The README no longer overfocuses on tiny implementation details and instead routes humans through the project clearly.
+- [x] Legacy, confusing, duplicated, or badly ordered docs were merged, deleted, recreated, or reordered aggressively by DeepSeek V4 Pro as needed.
+- [x] The executor verified factual claims against authoritative repository sources and supported workflows.
+- [x] Any factual correction, missing section, bad ordering, or human-friendliness issue found by the executor was sent back to DeepSeek V4 Pro through `opencode`; the executor did not fix it directly.
+- [x] DeepSeek V4 Pro reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
+- [x] GLM 5.1 reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
+- [x] Kimi 2.6 reviewed the final docs as a very harsh, highly demanding critic and agreed the docs are good.
+- [x] If any final reviewer raised a substantial concern, DeepSeek V4 Pro rewrote the docs again and the full final critic gate was repeated.
+- [x] `make check` — passes cleanly, or the task fails with the full failing output recorded.
+- [x] `make lint` — passes cleanly, or the task fails with the full failing output recorded.
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-34-human-friendly-docs-rewrite/01-task-rewrite-docs-for-humans-through-deepseek-opencode-only_plans/2026-04-29-human-friendly-docs-rewrite-plan.md</plan>
