@@ -6,3 +6,6 @@ result
 result-*
 
 investigations/cockroach-webhook-cdc/output/
+deploy/kubernetes/.local-work/
+deploy/kubernetes/raw/
+deploy/kubernetes/verify-container/.local-work/
