@@ -1,3 +1,163 @@
 XDG_CACHE_HOME="/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.cache/nix/test" nix run .#test
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
+these 2 derivations will be built:
+  /nix/store/m1wv4j2y5n6bmhzb0g3qp9ici0y3rb26-runner-nextest-0.1.0.drv
+  /nix/store/59bpp3x8ndglcwnsr1l893f1lk8nc2fc-runner-nextest-0.1.0.drv
+building '/nix/store/m1wv4j2y5n6bmhzb0g3qp9ici0y3rb26-runner-nextest-0.1.0.drv'...
+runner-nextest> Running phase: unpackPhase
+runner-nextest> unpacking source archive /nix/store/ri5jz2b7bb2vkwcjmifdnsy0vjy0hw3p-source
+runner-nextest> source root is source
+runner-nextest> Running phase: patchPhase
+runner-nextest> Executing configureCargoCommonVars
+runner-nextest> decompressing cargo artifacts from /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to target
+runner-nextest> Running phase: updateAutotoolsGnuConfigScriptsPhase
+runner-nextest> Running phase: configurePhase
+runner-nextest> #####################################################
+runner-nextest> ##                                                 ##
+runner-nextest> ## doCheck is not set, nextest tests will not run! ##
+runner-nextest> ##                                                 ##
+runner-nextest> #####################################################
+runner-nextest> will append /build/source/.cargo-home/config.toml with contents of /nix/store/01cm0phpl8myanr7y4hmnk9hqhx9sqn5-vendor-cargo-deps/config.toml
+runner-nextest> default configurePhase, nothing to do
+runner-nextest> Running phase: buildPhase
+runner-nextest> +++ command cargo --version
+runner-nextest> cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+runner-nextest> +++ command cargo nextest --version
+runner-nextest> cargo-nextest 0.9.133
+runner-nextest> release: 0.9.133
+runner-nextest> host: aarch64-unknown-linux-gnu
+runner-nextest> Running phase: installPhase
+runner-nextest> linking previous artifacts /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0/target.tar.zst
+runner-nextest> /*stdin*\            :  0.21%   (  10.0 KiB =>     22 B, /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0/target.tar.zst)
+runner-nextest> Running phase: fixupPhase
+runner-nextest> shrinking RPATHs of ELF executables and libraries in /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0
+runner-nextest> checking for references to /build/ in /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0...
+runner-nextest> patching script interpreter paths in /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0
+building '/nix/store/59bpp3x8ndglcwnsr1l893f1lk8nc2fc-runner-nextest-0.1.0.drv'...
+runner-nextest> Running phase: unpackPhase
+runner-nextest> unpacking source archive /nix/store/vm0rslkjpi4h2lvmanhxwc69771z9vhm-source
+runner-nextest> source root is source
+runner-nextest> Running phase: patchPhase
+runner-nextest> Executing configureCargoCommonVars
+runner-nextest> decompressing cargo artifacts from /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to target
+runner-nextest> decompressing cargo artifacts from /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0/target.tar.zst to target
+runner-nextest> Running phase: updateAutotoolsGnuConfigScriptsPhase
+runner-nextest> Running phase: configurePhase
+runner-nextest> will append /build/source/.cargo-home/config.toml with contents of /nix/store/01cm0phpl8myanr7y4hmnk9hqhx9sqn5-vendor-cargo-deps/config.toml
+runner-nextest> default configurePhase, nothing to do
+runner-nextest> Running phase: buildPhase
+runner-nextest> +++ command cargo --version
+runner-nextest> cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+runner-nextest> +++ command cargo nextest --version
+runner-nextest> cargo-nextest 0.9.133
+runner-nextest> release: 0.9.133
+runner-nextest> host: aarch64-unknown-linux-gnu
+runner-nextest> Running phase: checkPhase
+runner-nextest> +++ command cargo nextest run --cargo-profile release
+runner-nextest>    Compiling operator-log v0.1.0 (/build/source/crates/operator-log)
+runner-nextest>    Compiling ingest-contract v0.1.0 (/build/source/crates/ingest-contract)
+runner-nextest>    Compiling runner-config v0.1.0 (/build/source/crates/runner-config)
+runner-nextest>    Compiling runner v0.1.0 (/build/source/crates/runner)
+runner-nextest>     Finished `release` profile [optimized] target(s) in 15.83s
+runner-nextest> ------------
+runner-nextest>  Nextest run ID 9887a0bb-2db8-4fb5-8443-0b78e779e555 with nextest profile: default
+runner-nextest>     Starting 88 tests across 11 binaries (19 tests skipped)
+runner-nextest>         PASS [   1.604s] ( 1/88) runner::bootstrap_contract run_bootstraps_shared_destination_helper_state_when_mappings_mix_url_and_decomposed_targets
+runner-nextest>         PASS [   1.613s] ( 2/88) runner::bootstrap_contract run_fails_loudly_when_a_mapped_destination_table_is_missing
+runner-nextest>         PASS [   1.622s] ( 3/88) runner::bootstrap_contract run_adds_one_automatic_helper_index_for_primary_key_columns
+runner-nextest>         PASS [   1.653s] ( 4/88) runner::bootstrap_contract run_bootstraps_shared_destination_helper_state_per_mapping
+runner-nextest>         PASS [   1.661s] ( 5/88) runner::bootstrap_contract run_bootstraps_helper_schema_and_tracking_tables_in_destination_database
+runner-nextest>         PASS [   1.682s] ( 6/88) runner::bootstrap_contract run_fails_loudly_when_two_mappings_share_one_destination_table
+runner-nextest>         PASS [   1.681s] ( 7/88) runner::bootstrap_contract run_helper_shadow_tables_drop_defaults_and_generated_expressions
+runner-nextest>         PASS [   1.689s] ( 8/88) runner::bootstrap_contract run_fails_loudly_when_two_mappings_share_one_destination_with_conflicting_credentials
+runner-nextest>         PASS [   1.117s] ( 9/88) runner::bootstrap_contract run_serves_https_healthz_when_webhook_mode_is_explicit_https
+runner-nextest>         PASS [   1.172s] (10/88) runner::bootstrap_contract run_seeds_tracking_rows_for_stream_and_each_mapped_table
+runner-nextest>         PASS [   1.251s] (11/88) runner::bootstrap_contract run_prepares_a_helper_shadow_table_for_each_mapped_destination_table
+runner-nextest>         PASS [   1.203s] (12/88) runner::bootstrap_contract run_reports_startup_failures_as_json_error_events
+runner-nextest>         PASS [   1.175s] (13/88) runner::bootstrap_contract run_serves_healthz_after_binding_an_ephemeral_webhook_port
+runner-nextest>         PASS [   0.006s] (14/88) runner::config_contract validate_config_accepts_a_minimal_valid_yaml_file
+runner-nextest>         PASS [   0.006s] (15/88) runner::config_contract validate_config_accepts_a_postgresql_destination_url
+runner-nextest>         PASS [   0.013s] (16/88) runner::config_contract validate_config_accepts_a_postgresql_destination_url_with_tls_query_parameters
+runner-nextest>         PASS [   0.003s] (17/88) runner::config_contract validate_config_accepts_an_explicit_postgresql_destination_target
+runner-nextest>         PASS [   0.003s] (18/88) runner::config_contract validate_config_accepts_http_webhook_mode_without_tls
+runner-nextest>         PASS [   0.027s] (19/88) runner::config_contract validate_config_accepts_a_mounted_config_directory_convention
+runner-nextest>         PASS [   0.003s] (20/88) runner::config_contract validate_config_accepts_https_webhook_client_ca_and_reports_mtls_mode
+runner-nextest>         PASS [   1.262s] (21/88) runner::bootstrap_contract run_preserves_existing_table_sync_progress_on_restart
+runner-nextest>         PASS [   0.022s] (22/88) runner::config_contract validate_config_accepts_a_secure_postgresql_destination_with_tls_material
+runner-nextest>         PASS [   0.016s] (23/88) runner::config_contract validate_config_deep_reports_connection_failures_with_mapping_and_endpoint_context
+runner-nextest>         PASS [   0.013s] (24/88) runner::config_contract validate_config_defaults_webhook_mode_to_https_when_tls_is_present
+runner-nextest>         PASS [   0.004s] (25/88) runner::config_contract validate_config_fails_loudly_for_invalid_yaml_values
+runner-nextest>         PASS [   0.004s] (26/88) runner::config_contract validate_config_json_logs_omit_tls_for_http_webhook_mode
+runner-nextest>         PASS [   0.004s] (27/88) runner::config_contract validate_config_rejects_duplicate_mapping_ids
+runner-nextest>         PASS [   0.015s] (28/88) runner::config_contract validate_config_rejects_duplicate_source_tables_within_a_mapping
+runner-nextest>         PASS [   1.290s] (29/88) runner::bootstrap_contract run_requires_a_client_certificate_when_webhook_client_ca_is_configured
+runner-nextest>         PASS [   0.014s] (30/88) runner::config_contract validate_config_rejects_http_webhook_mode_with_tls_material
+runner-nextest>         PASS [   0.018s] (31/88) runner::config_contract validate_config_rejects_legacy_verify_sections
+runner-nextest>         PASS [   0.019s] (32/88) runner::config_contract validate_config_rejects_https_webhook_mode_without_tls
+runner-nextest>         PASS [   1.359s] (33/88) runner::bootstrap_contract run_preserves_existing_stream_and_table_tracking_progress_on_restart
+runner-nextest>         PASS [   0.007s] (34/88) runner::config_contract validate_config_rejects_mixing_destination_url_with_decomposed_fields
+runner-nextest>         PASS [   0.007s] (35/88) runner::config_contract validate_config_rejects_unqualified_source_tables
+runner-nextest>         PASS [   0.008s] (36/88) runner::config_contract validate_config_rejects_malformed_postgresql_destination_urls_with_parse_detail
+runner-nextest>         PASS [   0.005s] (37/88) runner::config_contract validate_config_requires_at_least_one_mapping
+runner-nextest>         PASS [   0.006s] (38/88) runner::config_contract validate_config_rejects_whitespace_only_string_fields
+runner-nextest>         PASS [   0.018s] (39/88) runner::config_contract validate_config_supports_json_operator_logs
+runner-nextest>         PASS [   0.016s] (40/88) runner::config_contract validate_config_without_deep_stays_offline_for_unreachable_destinations
+runner-nextest>         PASS [   1.239s] (41/88) runner::bootstrap_contract run_serves_plain_http_healthz_when_webhook_mode_is_http
+runner-nextest>         PASS [   1.197s] (42/88) runner::bootstrap_contract run_supports_json_operator_logs_for_runtime_startup
+runner-nextest>         PASS [   1.174s] (43/88) runner::config_contract validate_config_deep_fails_when_a_mapped_destination_table_is_missing
+runner-nextest>         PASS [   1.193s] (44/88) runner::config_contract validate_config_deep_accepts_url_destinations
+runner-nextest>         PASS [   1.193s] (45/88) runner::config_contract validate_config_deep_connects_to_the_destination_and_reports_success
+runner-nextest>         PASS [   2.086s] (46/88) runner::reconcile_contract run_advances_success_tracking_after_a_full_upsert_pass
+runner-nextest>         PASS [   1.973s] (47/88) runner::reconcile_contract run_exposes_cached_table_rows_and_current_reconcile_state_metrics_after_success
+runner-nextest>         PASS [   1.994s] (48/88) runner::reconcile_contract run_continuously_reconciles_helper_upserts_into_real_tables
+runner-nextest>         PASS [   3.172s] (49/88) runner::reconcile_contract run_advances_success_tracking_after_a_full_delete_pass
+runner-nextest>         PASS [   0.737s] (50/88) runner::reconcile_contract run_leaves_table_state_metric_samples_absent_before_first_refresh
+runner-nextest>         PASS [   2.915s] (51/88) runner::reconcile_contract run_exposes_reconcile_apply_timing_metrics_for_upsert_and_delete_phases
+runner-nextest>         PASS [   2.948s] (52/88) runner::reconcile_contract run_continuously_reconciles_helper_deletes_into_real_tables
+runner-nextest>         PASS [   2.919s] (53/88) runner::reconcile_contract run_exposes_current_reconcile_error_and_count_drift_after_failed_reconcile
+runner-nextest>         PASS [   2.661s] (54/88) runner::reconcile_contract run_keeps_table_row_metrics_cached_between_scrapes
+runner-nextest>         PASS [   1.924s] (55/88) runner::reconcile_contract run_reconciles_each_mapping_into_only_its_own_destination_database
+runner-nextest>         PASS [   2.780s] (56/88) runner::reconcile_contract run_reconciles_deletes_in_reverse_dependency_order
+runner-nextest>         PASS [   2.009s] (57/88) runner::reconcile_contract run_reconciles_tables_in_dependency_order_not_config_order
+runner-nextest>         PASS [   2.007s] (58/88) runner::reconcile_contract run_records_reconcile_delete_failure_metrics_without_exiting_runner
+runner-nextest>         PASS [   0.004s] (59/88) runner::verify_job_result_contract verify_correctness_audit_accepts_mismatch_failures_with_results
+runner-nextest>         PASS [   0.005s] (60/88) runner::verify_job_result_contract verify_correctness_audit_uses_structured_job_results_without_logs
+runner-nextest>         PASS [   2.045s] (61/88) runner::reconcile_contract run_reconciles_each_mapping_into_only_its_own_tables_inside_a_shared_destination_database
+runner-nextest>         PASS [   3.676s] (62/88) runner::reconcile_contract run_reconciles_deletes_only_within_the_target_mapping_database
+runner-nextest>         PASS [   0.888s] (63/88) runner::webhook_contract run_distinguishes_malformed_json_from_supported_payload_shapes
+runner-nextest>         PASS [   0.914s] (64/88) runner::webhook_contract run_deletes_helper_rows_from_row_batches
+runner-nextest>         PASS [   7.097s] (65/88) runner::reconcile_contract run_clears_recorded_reconcile_error_after_a_successful_retry
+runner-nextest>         PASS [   0.710s] (66/88) runner::webhook_contract run_exposes_mapping_scoped_ingest_paths_and_404s_unknown_mapping_ids
+runner-nextest>         PASS [   0.746s] (67/88) runner::webhook_contract run_exposes_webhook_apply_duration_and_attempt_metrics
+runner-nextest>         PASS [   0.763s] (68/88) runner::webhook_contract run_exposes_webhook_apply_failure_and_latest_outcome_metrics
+runner-nextest>         PASS [   0.715s] (69/88) runner::webhook_contract run_handles_duplicate_row_batch_delivery_idempotently
+runner-nextest>         PASS [   0.722s] (70/88) runner::webhook_contract run_isolates_resolved_tracking_state_per_mapping_destination
+runner-nextest>         PASS [   0.721s] (71/88) runner::webhook_contract run_keeps_resolved_watermarks_monotonic
+runner-nextest>         PASS [   0.765s] (72/88) runner::webhook_contract run_isolates_webhook_helper_state_per_mapping_in_a_shared_destination_database
+runner-nextest>         PASS [   0.627s] (73/88) runner::webhook_contract run_metrics_bound_webhook_outcomes_without_leaking_error_text_or_mapping_ids
+runner-nextest>         PASS [   0.676s] (74/88) runner::webhook_contract run_persists_composite_primary_key_tables
+runner-nextest>         PASS [   0.765s] (75/88) runner::webhook_contract run_persists_wrapped_row_batches_with_full_table_topics
+runner-nextest>         PASS [   0.808s] (76/88) runner::webhook_contract run_persists_insert_row_batches_before_returning_200
+runner-nextest>         PASS [   0.781s] (77/88) runner::webhook_contract run_persists_resolved_watermarks_before_returning_200
+runner-nextest>         PASS [   4.829s] (78/88) runner::reconcile_contract run_records_reconcile_failure_metrics_without_exiting_runner
+runner-nextest>         PASS [   0.723s] (79/88) runner::webhook_contract run_preserves_resolved_watermark_across_restart
+runner-nextest>         PASS [   3.971s] (80/88) runner::reconcile_contract run_repeats_upsert_reconcile_without_duplication
+runner-nextest>         PASS [   0.743s] (81/88) runner::webhook_contract run_returns_non_200_and_rolls_back_partial_row_batch_failures
+runner-nextest>         PASS [   0.763s] (82/88) runner::webhook_contract run_rejects_row_batches_that_do_not_match_mapping_source_contract
+runner-nextest>         PASS [   0.794s] (83/88) runner::webhook_contract run_routes_quoted_source_table_names_to_the_configured_mapping_table
+runner-nextest>         PASS [   0.666s] (84/88) runner::webhook_contract run_serves_healthz_over_real_tls_after_bootstrap
+runner-nextest>         PASS [   0.667s] (85/88) runner::webhook_contract run_serves_webhook_metrics_over_real_tls_after_successful_ingest
+runner-nextest>         PASS [   0.653s] (86/88) runner::webhook_contract run_updates_existing_helper_rows_by_primary_key
+runner-nextest>         PASS [   5.164s] (87/88) runner::reconcile_contract run_repeats_delete_reconcile_without_errors_or_reinserts
+runner-nextest>         PASS [   4.974s] (88/88) runner::reconcile_contract run_shows_helper_progress_ahead_of_real_tables_after_a_multi_table_failure
+runner-nextest> ------------
+runner-nextest>      Summary [  13.978s] 88 tests run: 88 passed, 19 skipped
+runner-nextest> checkPhase completed in 30 seconds
+runner-nextest> Running phase: installPhase
+runner-nextest> linking previous artifacts /nix/store/6b39kx9b3p6f1daflx6ghlp8zynff7ln-runner-nextest-0.1.0/target.tar.zst to /nix/store/8bmbhz2jjg224kg06l9c4csmh8lv0flp-runner-nextest-0.1.0/target.tar.zst
+runner-nextest> /*stdin*\            : 35.47%   (  42.9 MiB =>   15.2 MiB, /nix/store/8bmbhz2jjg224kg06l9c4csmh8lv0flp-runner-nextest-0.1.0/target.tar.zst)
+runner-nextest> Running phase: fixupPhase
+runner-nextest> shrinking RPATHs of ELF executables and libraries in /nix/store/8bmbhz2jjg224kg06l9c4csmh8lv0flp-runner-nextest-0.1.0
+runner-nextest> checking for references to /build/ in /nix/store/8bmbhz2jjg224kg06l9c4csmh8lv0flp-runner-nextest-0.1.0...
+runner-nextest> patching script interpreter paths in /nix/store/8bmbhz2jjg224kg06l9c4csmh8lv0flp-runner-nextest-0.1.0

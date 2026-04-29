@@ -1,3 +1,48 @@
 XDG_CACHE_HOME="/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.cache/nix/check" nix run .#check
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
+these 5 derivations will be built:
+  /nix/store/m1wv4j2y5n6bmhzb0g3qp9ici0y3rb26-runner-nextest-0.1.0.drv
+  /nix/store/59bpp3x8ndglcwnsr1l893f1lk8nc2fc-runner-nextest-0.1.0.drv
+  /nix/store/851bpzcv38sm2rm19vk17c2rm6p8xx8w-runner-clippy-0.1.0.drv
+  /nix/store/ahxyf0kfs0f6vz8j7a33h89npbyrlwil-runner-fmt-0.1.0.drv
+  /nix/store/s011ggjs69xw307dm2697bi4c5bf26j2-runner-0.1.0.drv
+building '/nix/store/s011ggjs69xw307dm2697bi4c5bf26j2-runner-0.1.0.drv'...
+runner> Running phase: unpackPhase
+runner> unpacking source archive /nix/store/ri5jz2b7bb2vkwcjmifdnsy0vjy0hw3p-source
+runner> source root is source
+runner> Running phase: patchPhase
+runner> Executing configureCargoCommonVars
+runner> decompressing cargo artifacts from /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to target
+runner> Running phase: updateAutotoolsGnuConfigScriptsPhase
+runner> Running phase: configurePhase
+runner> will append /build/source/.cargo-home/config.toml with contents of /nix/store/01cm0phpl8myanr7y4hmnk9hqhx9sqn5-vendor-cargo-deps/config.toml
+runner> default configurePhase, nothing to do
+runner> Running phase: buildPhase
+runner> +++ command cargo --version
+runner> cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+runner> +++ command cargo build --release --message-format json-render-diagnostics --locked
+runner>    Compiling operator-log v0.1.0 (/build/source/crates/operator-log)
+runner>    Compiling ingest-contract v0.1.0 (/build/source/crates/ingest-contract)
+runner>    Compiling runner-config v0.1.0 (/build/source/crates/runner-config)
+runner>    Compiling runner v0.1.0 (/build/source/crates/runner)
+runner>     Finished `release` profile [optimized] target(s) in 15.57s
+runner> searching for bins/libs to install from cargo build log at cargoBuildLogBNOk.json
+runner> installing /build/source/target/aarch64-unknown-linux-musl/release/runner in postBuildInstallFromCargoBuildLogOutTempizB/bin
+runner> searching for bins/libs complete
+runner> Running phase: installPhase
+runner> actually installing contents of postBuildInstallFromCargoBuildLogOutTempizB to /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0
+runner> stripping references to Rust toolchain
+runner> Rust toolchain at: /nix/store/62r2khxbfk3fg3y44m5rdclagijr5aqg-rust-default-1.95.0
+runner> stripping Rust toolchain references done
+runner> stripping references to cargoVendorDir from:
+runner> /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0/bin/runner
+runner> stripping references done
+runner> Running phase: fixupPhase
+runner> shrinking RPATHs of ELF executables and libraries in /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0
+runner> shrinking /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0/bin/runner
+runner> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+runner> checking for references to /build/ in /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0...
+runner> patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+runner> patching script interpreter paths in /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0
+runner> stripping (with command strip and flags -S -p) in  /nix/store/5klbr560n2nlsxwwy7c4lj95l3d3idlm-runner-0.1.0/bin

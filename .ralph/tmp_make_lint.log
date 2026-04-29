@@ -1,3 +1,56 @@
 XDG_CACHE_HOME="/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.cache/nix/lint" nix run .#lint
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
 warning: Git tree '/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool' is dirty
+these 2 derivations will be built:
+  /nix/store/851bpzcv38sm2rm19vk17c2rm6p8xx8w-runner-clippy-0.1.0.drv
+  /nix/store/ahxyf0kfs0f6vz8j7a33h89npbyrlwil-runner-fmt-0.1.0.drv
+building '/nix/store/851bpzcv38sm2rm19vk17c2rm6p8xx8w-runner-clippy-0.1.0.drv'...
+runner-clippy> Running phase: unpackPhase
+runner-clippy> unpacking source archive /nix/store/ri5jz2b7bb2vkwcjmifdnsy0vjy0hw3p-source
+runner-clippy> source root is source
+runner-clippy> Running phase: patchPhase
+runner-clippy> Executing configureCargoCommonVars
+runner-clippy> decompressing cargo artifacts from /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to target
+runner-clippy> Running phase: updateAutotoolsGnuConfigScriptsPhase
+runner-clippy> Running phase: configurePhase
+runner-clippy> will append /build/source/.cargo-home/config.toml with contents of /nix/store/01cm0phpl8myanr7y4hmnk9hqhx9sqn5-vendor-cargo-deps/config.toml
+runner-clippy> default configurePhase, nothing to do
+runner-clippy> Running phase: buildPhase
+runner-clippy> +++ command cargo --version
+runner-clippy> cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+runner-clippy> +++ command cargo clippy --release --locked --all-targets -- --deny warnings
+runner-clippy>     Checking operator-log v0.1.0 (/build/source/crates/operator-log)
+runner-clippy>     Checking ingest-contract v0.1.0 (/build/source/crates/ingest-contract)
+runner-clippy>     Checking runner-config v0.1.0 (/build/source/crates/runner-config)
+runner-clippy>     Checking runner v0.1.0 (/build/source/crates/runner)
+runner-clippy>     Finished `release` profile [optimized] target(s) in 8.47s
+runner-clippy> Running phase: installPhase
+runner-clippy> linking previous artifacts /nix/store/gz3wp8lryfbn5hj3x71c70mp04i658pd-runner-deps-0.1.0/target.tar.zst to /nix/store/qp58zk4l1wn7r8slvqiv98zjwq5qpq8b-runner-clippy-0.1.0/target.tar.zst
+runner-clippy> /*stdin*\            : 37.19%   (  1.39 MiB =>    528 KiB, /nix/store/qp58zk4l1wn7r8slvqiv98zjwq5qpq8b-runner-clippy-0.1.0/target.tar.zst)
+runner-clippy> Running phase: fixupPhase
+runner-clippy> shrinking RPATHs of ELF executables and libraries in /nix/store/qp58zk4l1wn7r8slvqiv98zjwq5qpq8b-runner-clippy-0.1.0
+runner-clippy> checking for references to /build/ in /nix/store/qp58zk4l1wn7r8slvqiv98zjwq5qpq8b-runner-clippy-0.1.0...
+runner-clippy> patching script interpreter paths in /nix/store/qp58zk4l1wn7r8slvqiv98zjwq5qpq8b-runner-clippy-0.1.0
+building '/nix/store/ahxyf0kfs0f6vz8j7a33h89npbyrlwil-runner-fmt-0.1.0.drv'...
+runner-fmt> cargoVendorDir not set, will not automatically configure vendored sources
+runner-fmt> cargoArtifacts not set, will not reuse any cargo artifacts
+runner-fmt> Running phase: unpackPhase
+runner-fmt> unpacking source archive /nix/store/ri5jz2b7bb2vkwcjmifdnsy0vjy0hw3p-source
+runner-fmt> source root is source
+runner-fmt> Running phase: patchPhase
+runner-fmt> Executing configureCargoCommonVars
+runner-fmt> Running phase: updateAutotoolsGnuConfigScriptsPhase
+runner-fmt> Running phase: configurePhase
+runner-fmt> default configurePhase, nothing to do
+runner-fmt> Running phase: buildPhase
+runner-fmt> +++ command cargo --version
+runner-fmt> cargo 1.95.0 (f2d3ce0bd 2026-03-21)
+runner-fmt> +++ command cargo fmt -- --check
+runner-fmt> Running phase: ensureTargetDir
+runner-fmt> Running phase: installPhase
+runner-fmt> no previous artifacts found, compressing and installing full archive of target to /nix/store/8krjr9al4a3cxi25rdkp39p0y8b1m8mg-runner-fmt-0.1.0/target.tar.zst
+runner-fmt> /*stdin*\            :  0.72%   (  10.0 KiB =>     74 B, /nix/store/8krjr9al4a3cxi25rdkp39p0y8b1m8mg-runner-fmt-0.1.0/target.tar.zst)
+runner-fmt> Running phase: fixupPhase
+runner-fmt> shrinking RPATHs of ELF executables and libraries in /nix/store/8krjr9al4a3cxi25rdkp39p0y8b1m8mg-runner-fmt-0.1.0
+runner-fmt> checking for references to /build/ in /nix/store/8krjr9al4a3cxi25rdkp39p0y8b1m8mg-runner-fmt-0.1.0...
+runner-fmt> patching script interpreter paths in /nix/store/8krjr9al4a3cxi25rdkp39p0y8b1m8mg-runner-fmt-0.1.0
