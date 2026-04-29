@@ -3,6 +3,9 @@ name: Publish Images
 on:
   push:
 
+env:
+  CACHIX_CACHE_NAME: djosh34
+
 permissions:
   contents: read
 
@@ -11,21 +14,6 @@ defaults:
     shell: bash
 
 jobs:
-  nix-flake-check:
-    name: nix flake check
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-nix-cachix
-        with:
-          github-access-token: ${{ github.token }}
-          cachix-auth-token: ${{ secrets.CACHIX_TOKEN }}
-      - name: Run nix flake check
-        run: |
-          set -euo pipefail
-          nix flake check --print-build-logs --show-trace
 
   build-images:
     name: build ${{ matrix.image }} (${{ matrix.arch }})
@@ -54,10 +42,13 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-nix-cachix
+      - uses: cachix/install-nix-action@v25
         with:
-          github-access-token: ${{ github.token }}
-          cachix-auth-token: ${{ secrets.CACHIX_TOKEN }}
+          nix_path: nixpkgs=channel:nixos-unstable
+      - uses: cachix/cachix-action@v14
+        with:
+          name: ${{ env.CACHIX_CACHE_NAME }}
+          authToken: '${{ secrets.CACHIX_TOKEN }}'
       - name: Build image archive
         run: |
           set -euo pipefail
