@@ -11,7 +11,7 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
+    username: verify_source
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -21,7 +21,7 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
+    username: verify_target
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt

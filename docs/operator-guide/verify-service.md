@@ -133,17 +133,28 @@ Both use the same shape:
 | `host` | string | yes after defaults and overrides are merged | Database hostname |
 | `port` | integer | yes after defaults and overrides are merged | Database port |
 | `database` | string | yes for fully specified per-database blocks | Database name |
-| `user` | string | yes after defaults and overrides are merged | Database user |
-| `password_file` | path | no | Password file path passed through as libpq `passfile` |
+| `username` | string or object | yes after defaults and overrides are merged | Database username credential. Scalar strings are shorthand for `{ value: ... }`. |
+| `password` | string or object | no | Optional database password credential. Omit it for passwordless certificate authentication. |
 | `sslmode` | string | yes after defaults and overrides are merged | `disable`, `require`, `verify-ca`, or `verify-full` |
 | `tls` | object | no | File paths for TLS certificates and keys |
+
+Credential objects must set exactly one source:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `value` | string | Inline credential value |
+| `env_ref` | string | Environment variable to read at startup |
+| `secret_file` | path | File to read at startup. One trailing newline is trimmed. |
 
 ```yaml
 verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
+    username:
+      env_ref: VERIFY_SOURCE_USERNAME
+    password:
+      secret_file: /config/secrets/source-password
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -152,7 +163,9 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
+    username: verify_target
+    password:
+      value: verify-target-password
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
@@ -209,8 +222,10 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
-    password_file: /config/secrets/source-password
+    username:
+      env_ref: VERIFY_SOURCE_USERNAME
+    password:
+      secret_file: /config/secrets/source-password
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -219,8 +234,9 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
-    password_file: /config/secrets/destination-password
+    username: verify_target
+    password:
+      value: verify-target-password
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
@@ -250,8 +266,9 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
-    password_file: /config/secrets/source-password
+    username: verify_source
+    password:
+      value: source-default-password
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -260,8 +277,9 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
-    password_file: /config/secrets/destination-password
+    username: verify_target
+    password:
+      env_ref: VERIFY_DESTINATION_PASSWORD
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
@@ -273,11 +291,14 @@ verify:
       source_database: audit
       destination_database: audit
       source:
-        user: verify_audit_source
-        password_file: /config/secrets/audit-source-password
+        username:
+          env_ref: AUDIT_SOURCE_USERNAME
+        password:
+          secret_file: /config/secrets/audit-source-password
       destination:
-        user: verify_audit_target
-        password_file: /config/secrets/audit-destination-password
+        username:
+          value: verify_audit_target
+        password: audit-destination-password
 ```
 
 Fully specified per-database connections without shared defaults:
@@ -297,8 +318,9 @@ verify:
         host: source.internal
         port: 26257
         database: app
-        user: verify_app_source
-        password_file: /config/secrets/app-source-password
+        username: verify_app_source
+        password:
+          env_ref: APP_SOURCE_PASSWORD
         sslmode: verify-full
         tls:
           ca_cert_path: /config/certs/source-ca.crt
@@ -308,8 +330,10 @@ verify:
         host: destination.internal
         port: 5432
         database: app
-        user: verify_app_target
-        password_file: /config/secrets/app-destination-password
+        username:
+          secret_file: /config/secrets/app-destination-username
+        password:
+          value: app-destination-password
         sslmode: verify-ca
         tls:
           ca_cert_path: /config/certs/destination-ca.crt
@@ -318,8 +342,10 @@ verify:
         host: source.internal
         port: 26257
         database: billing
-        user: verify_billing_source
-        password_file: /config/secrets/billing-source-password
+        username:
+          secret_file: /config/secrets/billing-source-username
+        password:
+          secret_file: /config/secrets/billing-source-password
         sslmode: verify-full
         tls:
           ca_cert_path: /config/certs/source-ca.crt
@@ -329,8 +355,10 @@ verify:
         host: destination.internal
         port: 5432
         database: billing_prod
-        user: verify_billing_target
-        password_file: /config/secrets/billing-destination-password
+        username:
+          value: verify_billing_target
+        password:
+          env_ref: BILLING_DESTINATION_PASSWORD
         sslmode: verify-ca
         tls:
           ca_cert_path: /config/certs/destination-ca.crt
@@ -601,16 +629,19 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
-    password_file: /config/secrets/source-password
+    username:
+      env_ref: VERIFY_SOURCE_USERNAME
+    password:
+      secret_file: /config/secrets/source-password
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
-    password_file: /config/secrets/destination-password
+    username: verify_target
+    password:
+      env_ref: VERIFY_DESTINATION_PASSWORD
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
@@ -633,7 +664,7 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
+    username: verify_source
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -642,8 +673,9 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
-    password_file: /config/secrets/destination-password
+    username: verify_target
+    password:
+      secret_file: /config/secrets/destination-password
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt

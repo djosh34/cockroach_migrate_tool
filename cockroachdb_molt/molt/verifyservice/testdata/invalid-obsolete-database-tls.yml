@@ -4,13 +4,13 @@ verify:
   source:
     host: source.internal
     port: 5432
-    user: verify_source
+    username: verify_source
     sslmode: verify-full
     ca_cert_path: /config/certs/source-ca.crt
   destination:
     host: crdb.internal
     port: 26257
-    user: verify_target
+    username: verify_target
     sslmode: verify-ca
     client_cert_path: /config/certs/destination-client.crt
   databases:

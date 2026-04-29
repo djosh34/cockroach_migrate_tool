@@ -11,8 +11,8 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
-    password_file: /config/secrets/source-password
+    username: verify_source
+    password: source-default-pass
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
@@ -22,8 +22,8 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
-    password_file: /config/secrets/destination-password
+    username: verify_target
+    password: destination-default-pass
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
@@ -41,8 +41,8 @@ verify:
       source_database: audit
       destination_database: audit
       source:
-        user: verify_audit_source
-        password_file: /config/secrets/audit-source-password
+        username: verify_audit_source
+        password: audit-source-pass
       destination:
-        user: verify_audit_target
-        password_file: /config/secrets/audit-destination-password
+        username: verify_audit_target
+        password: audit-destination-pass

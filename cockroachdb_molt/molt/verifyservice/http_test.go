@@ -574,16 +574,16 @@ func newVerifyServiceConfig(databaseNames ...string) verifyservice.Config {
 	return verifyservice.Config{
 		Verify: verifyservice.VerifyConfig{
 			Source: &verifyservice.DatabaseConfig{
-				Host:    "source.internal",
-				Port:    26257,
-				User:    "verify_source",
-				SSLMode: "disable",
+				Host:     "source.internal",
+				Port:     26257,
+				Username: verifyservice.CredentialValue{Value: "verify_source"},
+				SSLMode:  "disable",
 			},
 			Destination: &verifyservice.DatabaseConfig{
-				Host:    "destination.internal",
-				Port:    5432,
-				User:    "verify_target",
-				SSLMode: "disable",
+				Host:     "destination.internal",
+				Port:     5432,
+				Username: verifyservice.CredentialValue{Value: "verify_target"},
+				SSLMode:  "disable",
 			},
 			Databases: databases,
 		},

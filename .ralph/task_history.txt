@@ -185,3 +185,4 @@ NONE
 NONE
 .ralph/tasks/story-35-verify-multi-database-config/01-task-verify-multi-db-config.md
 .ralph/tasks/story-35-verify-multi-database-config/02-task-verify-http-jobs-ux.md
+.ralph/tasks/story-35-verify-multi-database-config/03-task-support-env-and-secret-file-database-credentials.md

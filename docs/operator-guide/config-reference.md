@@ -142,7 +142,10 @@ verify:
   source:
     host: source.internal
     port: 26257
-    user: verify_source
+    username:
+      env_ref: VERIFY_SOURCE_USERNAME
+    password:
+      secret_file: /config/secrets/source-password
     sslmode: verify-full
     tls:                        # optional
       ca_cert_path: /config/certs/source-ca.crt
@@ -151,7 +154,9 @@ verify:
   destination:
     host: destination.internal
     port: 5432
-    user: verify_target
+    username: verify_target
+    password:
+      value: verify-target-password
     sslmode: verify-ca
     tls:                        # optional
       ca_cert_path: /config/certs/destination-ca.crt
@@ -201,10 +206,18 @@ Both use the same shape:
 | `host` | string | yes after merge | — | Database hostname |
 | `port` | integer | yes after merge | — | Database port |
 | `database` | string | yes for fully specified per-database blocks | — | Database name |
-| `user` | string | yes after merge | — | Database user |
-| `password_file` | path | no | — | Password file path passed as libpq `passfile` |
+| `username` | string or object | yes after merge | — | Database username credential. Scalar strings are shorthand for `{ value: ... }`. |
+| `password` | string or object | no | — | Optional database password credential. Supports the same schema as `username`. |
 | `sslmode` | string | yes after merge | — | `disable`, `require`, `verify-ca`, or `verify-full` |
 | `tls` | object | no | — | Certificate file paths for TLS |
+
+Credential objects must set exactly one source:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `value` | string | Use the literal credential value directly |
+| `env_ref` | string | Read the credential from the named environment variable |
+| `secret_file` | path | Read the credential from a local file, trimming one trailing newline |
 
 ##### `tls` under source or destination
 
@@ -240,7 +253,7 @@ Every `verify.databases[]` entry must be an object. Scalar entries such as `- ap
 ### Supported verify-service shapes
 
 1. Shared defaults with per-database names only.
-2. Shared defaults with per-database overrides such as `user` and `password_file`.
+2. Shared defaults with per-database overrides using any mix of scalar values, `value`, `env_ref`, and `secret_file`.
 3. No shared defaults, where every `verify.databases[]` entry supplies full `source` and `destination` blocks including `database`.
 
 **Structured connection fields only.** The verify-service no longer accepts operator-facing raw `url` fields. It builds PostgreSQL connection strings internally from structured fields.

@@ -13,8 +13,8 @@ verify:
         host: source.internal
         port: 26257
         database: app
-        user: verify_app_source
-        password_file: /config/secrets/app-source-password
+        username: verify_app_source
+        password: app-source-pass
         sslmode: verify-full
         tls:
           ca_cert_path: /config/certs/source-ca.crt
@@ -24,8 +24,8 @@ verify:
         host: destination.internal
         port: 5432
         database: app
-        user: verify_app_target
-        password_file: /config/secrets/app-destination-password
+        username: verify_app_target
+        password: app-destination-pass
         sslmode: verify-ca
         tls:
           ca_cert_path: /config/certs/destination-ca.crt
@@ -35,8 +35,8 @@ verify:
         host: source.internal
         port: 26257
         database: billing
-        user: verify_billing_source
-        password_file: /config/secrets/billing-source-password
+        username: verify_billing_source
+        password: billing-source-pass
         sslmode: verify-full
         tls:
           ca_cert_path: /config/certs/source-ca.crt
@@ -46,8 +46,8 @@ verify:
         host: destination.internal
         port: 5432
         database: billing_prod
-        user: verify_billing_target
-        password_file: /config/secrets/billing-destination-password
+        username: verify_billing_target
+        password: billing-destination-pass
         sslmode: verify-ca
         tls:
           ca_cert_path: /config/certs/destination-ca.crt

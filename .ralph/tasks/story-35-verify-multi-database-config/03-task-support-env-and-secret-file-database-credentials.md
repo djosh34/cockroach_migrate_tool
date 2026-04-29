@@ -1,4 +1,4 @@
-## Task: Support env and secret-file database credentials in the multi-db config <status>not_started</status> <passes>false</passes>
+## Task: Support env and secret-file database credentials in the multi-db config <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -159,20 +159,22 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD proves direct scalar `username` and direct scalar `password` values are accepted and interpreted exactly like explicit `value` credentials
-- [ ] Red/green TDD proves `username.env_ref` and `password.env_ref` resolve for default source/destination database config and are used in the constructed source/destination connection strings
-- [ ] Red/green TDD proves `username.secret_file` and `password.secret_file` resolve for default source/destination database config and are used in the constructed source/destination connection strings
-- [ ] Red/green TDD proves per-database source/destination credential overrides can independently use direct scalar values, `value`, `env_ref`, and `secret_file`
-- [ ] Red/green TDD proves the no-defaults per-database config form accepts the same `username`/`password` credential object schema for every source and destination database
-- [ ] Red/green TDD proves missing, unset, and empty `env_ref` values fail with clear field-specific errors that do not include secret values
-- [ ] Red/green TDD proves missing, unreadable, and empty `secret_file` values fail with clear field-specific errors that do not include secret values
-- [ ] Red/green TDD proves credential objects with zero sources or multiple sources are rejected with clear field-specific errors
-- [ ] Red/green TDD proves the obsolete `password_file` field is rejected everywhere known-field YAML decoding applies
-- [ ] Red/green TDD proves secret files trim one trailing newline while preserving intentional interior credential content
-- [ ] Red/green TDD proves validation logs and `validate-config --log-format json` identify the failing field and source type without printing resolved username/password values
-- [ ] Operator docs and config examples show `username` and `password` using direct scalar values, `value`, `env_ref`, and `secret_file`, including one default-credentials example and one no-defaults per-database example
-- [ ] `make check` - passes cleanly
-- [ ] `make test` - passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` - passes cleanly
+- [x] Red/green TDD proves direct scalar `username` and direct scalar `password` values are accepted and interpreted exactly like explicit `value` credentials
+- [x] Red/green TDD proves `username.env_ref` and `password.env_ref` resolve for default source/destination database config and are used in the constructed source/destination connection strings
+- [x] Red/green TDD proves `username.secret_file` and `password.secret_file` resolve for default source/destination database config and are used in the constructed source/destination connection strings
+- [x] Red/green TDD proves per-database source/destination credential overrides can independently use direct scalar values, `value`, `env_ref`, and `secret_file`
+- [x] Red/green TDD proves the no-defaults per-database config form accepts the same `username`/`password` credential object schema for every source and destination database
+- [x] Red/green TDD proves missing, unset, and empty `env_ref` values fail with clear field-specific errors that do not include secret values
+- [x] Red/green TDD proves missing, unreadable, and empty `secret_file` values fail with clear field-specific errors that do not include secret values
+- [x] Red/green TDD proves credential objects with zero sources or multiple sources are rejected with clear field-specific errors
+- [x] Red/green TDD proves the obsolete `password_file` field is rejected everywhere known-field YAML decoding applies
+- [x] Red/green TDD proves secret files trim one trailing newline while preserving intentional interior credential content
+- [x] Red/green TDD proves validation logs and `validate-config --log-format json` identify the failing field and source type without printing resolved username/password values
+- [x] Operator docs and config examples show `username` and `password` using direct scalar values, `value`, `env_ref`, and `secret_file`, including one default-credentials example and one no-defaults per-database example
+- [x] `make check` - passes cleanly
+- [x] `make test` - passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` - passes cleanly
 - [ ] If this task impacts ultra-long tests or their selection: `make test-long` - passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-35-verify-multi-database-config/03-task-support-env-and-secret-file-database-credentials_plans/2026-04-29-verify-db-credential-sources-plan.md</plan>

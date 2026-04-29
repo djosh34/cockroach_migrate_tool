@@ -3,7 +3,9 @@ package verifyservice
 import (
 	"net"
 	"net/url"
+	"os"
 	"strconv"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 )
@@ -15,13 +17,23 @@ type ResolvedDatabasePair struct {
 }
 
 type ResolvedConnection struct {
-	Host         string
-	Port         int
-	Database     string
-	User         string
-	PasswordFile string
-	SSLMode      string
-	TLS          DatabaseTLSConfig
+	Host     string
+	Port     int
+	Database string
+	Username string
+	Password string
+	SSLMode  string
+	TLS      DatabaseTLSConfig
+}
+
+type effectiveDatabaseConfig struct {
+	Host     string
+	Port     int
+	Database string
+	Username CredentialValue
+	Password CredentialValue
+	SSLMode  string
+	TLS      DatabaseTLSConfig
 }
 
 func (cfg VerifyConfig) ResolveDatabase(name string) (ResolvedDatabasePair, error) {
@@ -73,17 +85,42 @@ func (cfg VerifyConfig) resolveDatabaseAt(path string, database DatabaseMappingC
 }
 
 func resolveConnection(path string, defaults *DatabaseConfig, override *DatabaseConfig, database string) (ResolvedConnection, error) {
-	resolved := ResolvedConnection{
-		Host:         firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.Host }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.Host })),
-		Port:         firstNonZero(databaseConfigIntValue(override, func(cfg DatabaseConfig) int { return cfg.Port }), databaseConfigIntValue(defaults, func(cfg DatabaseConfig) int { return cfg.Port })),
-		Database:     firstNonEmpty(database, databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.Database })),
-		User:         firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.User }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.User })),
-		PasswordFile: firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.PasswordFile }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.PasswordFile })),
-		SSLMode:      firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.SSLMode }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.SSLMode })),
+	effective := effectiveDatabaseConfig{
+		Host:     firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.Host }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.Host })),
+		Port:     firstNonZero(databaseConfigIntValue(override, func(cfg DatabaseConfig) int { return cfg.Port }), databaseConfigIntValue(defaults, func(cfg DatabaseConfig) int { return cfg.Port })),
+		Database: firstNonEmpty(database, databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.Database })),
+		Username: mergeCredential(
+			databaseConfigCredential(defaults, func(cfg DatabaseConfig) CredentialValue { return cfg.Username }),
+			databaseConfigCredential(override, func(cfg DatabaseConfig) CredentialValue { return cfg.Username }),
+		),
+		Password: mergeCredential(
+			databaseConfigCredential(defaults, func(cfg DatabaseConfig) CredentialValue { return cfg.Password }),
+			databaseConfigCredential(override, func(cfg DatabaseConfig) CredentialValue { return cfg.Password }),
+		),
+		SSLMode: firstNonEmpty(databaseConfigValue(override, func(cfg DatabaseConfig) string { return cfg.SSLMode }), databaseConfigValue(defaults, func(cfg DatabaseConfig) string { return cfg.SSLMode })),
 		TLS: mergeTLS(
 			databaseTLSConfig(defaults),
 			databaseTLSConfig(override),
 		),
+	}
+
+	username, err := resolveRequiredCredential(path+".username", effective.Username)
+	if err != nil {
+		return ResolvedConnection{}, err
+	}
+	password, err := resolveOptionalCredential(path+".password", effective.Password)
+	if err != nil {
+		return ResolvedConnection{}, err
+	}
+
+	resolved := ResolvedConnection{
+		Host:     effective.Host,
+		Port:     effective.Port,
+		Database: effective.Database,
+		Username: username,
+		Password: password,
+		SSLMode:  effective.SSLMode,
+		TLS:      effective.TLS,
 	}
 	if err := resolved.validate(path); err != nil {
 		return ResolvedConnection{}, err
@@ -98,7 +135,7 @@ func (cfg ResolvedConnection) validate(path string) error {
 	}{
 		{field: "host", value: cfg.Host},
 		{field: "database", value: cfg.Database},
-		{field: "user", value: cfg.User},
+		{field: "username", value: cfg.Username},
 		{field: "sslmode", value: cfg.SSLMode},
 	} {
 		if required.value == "" {
@@ -123,9 +160,6 @@ func (cfg ResolvedConnection) validate(path string) error {
 func (cfg ResolvedConnection) ConnectionString() (string, error) {
 	query := url.Values{}
 	query.Set("sslmode", cfg.SSLMode)
-	if cfg.PasswordFile != "" {
-		query.Set("passfile", cfg.PasswordFile)
-	}
 	if cfg.TLS.CACertPath != "" {
 		query.Set("sslrootcert", cfg.TLS.CACertPath)
 	}
@@ -134,9 +168,14 @@ func (cfg ResolvedConnection) ConnectionString() (string, error) {
 		query.Set("sslkey", cfg.TLS.ClientKeyPath)
 	}
 
+	userInfo := url.User(cfg.Username)
+	if cfg.Password != "" {
+		userInfo = url.UserPassword(cfg.Username, cfg.Password)
+	}
+
 	return (&url.URL{
 		Scheme:   "postgresql",
-		User:     url.User(cfg.User),
+		User:     userInfo,
 		Host:     net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)),
 		Path:     "/" + cfg.Database,
 		RawQuery: query.Encode(),
@@ -181,6 +220,13 @@ func databaseConfigIntValue(cfg *DatabaseConfig, getter func(DatabaseConfig) int
 	return getter(*cfg)
 }
 
+func databaseConfigCredential(cfg *DatabaseConfig, getter func(DatabaseConfig) CredentialValue) CredentialValue {
+	if cfg == nil {
+		return CredentialValue{}
+	}
+	return getter(*cfg)
+}
+
 func databasePath(index int) string {
 	return "verify.databases[" + strconv.Itoa(index) + "]"
 }
@@ -201,4 +247,88 @@ func firstNonZero(values ...int) int {
 		}
 	}
 	return 0
+}
+
+func mergeCredential(defaults CredentialValue, override CredentialValue) CredentialValue {
+	if override.declared() {
+		return override
+	}
+	return defaults
+}
+
+func resolveRequiredCredential(path string, value CredentialValue) (string, error) {
+	if !value.declared() {
+		return "", newCredentialConfigError(path, "must be set")
+	}
+	return resolveCredential(path, value)
+}
+
+func resolveOptionalCredential(path string, value CredentialValue) (string, error) {
+	if !value.declared() {
+		return "", nil
+	}
+	return resolveCredential(path, value)
+}
+
+func resolveCredential(path string, value CredentialValue) (string, error) {
+	if value.sourceCount() == 0 {
+		return "", newCredentialConfigError(path, "must specify exactly one of value, env_ref, or secret_file")
+	}
+	if value.sourceCount() > 1 {
+		return "", newCredentialConfigError(path, "must not specify more than one of value, env_ref, or secret_file")
+	}
+
+	switch {
+	case value.valueSet || value.Value != "":
+		if value.Value == "" {
+			return "", newCredentialConfigError(path+".value", "must not be empty")
+		}
+		return value.Value, nil
+	case value.envRefSet || value.EnvRef != "":
+		if value.EnvRef == "" {
+			return "", newCredentialConfigError(path+".env_ref", "must be set")
+		}
+		resolved, ok := os.LookupEnv(value.EnvRef)
+		if !ok {
+			return "", newCredentialConfigError(path+".env_ref", "references an unset environment variable")
+		}
+		if resolved == "" {
+			return "", newCredentialConfigError(path+".env_ref", "resolved to an empty credential")
+		}
+		return resolved, nil
+	case value.secretFileSet || value.SecretFile != "":
+		if value.SecretFile == "" {
+			return "", newCredentialConfigError(path+".secret_file", "must be set")
+		}
+		content, err := os.ReadFile(value.SecretFile)
+		if err != nil {
+			return "", newCredentialConfigError(path+".secret_file", "could not be read: "+err.Error())
+		}
+		resolved := trimTrailingCredentialNewline(string(content))
+		if resolved == "" {
+			return "", newCredentialConfigError(path+".secret_file", "resolved to an empty credential")
+		}
+		return resolved, nil
+	default:
+		return "", newCredentialConfigError(path, "must specify exactly one of value, env_ref, or secret_file")
+	}
+}
+
+func trimTrailingCredentialNewline(value string) string {
+	if strings.HasSuffix(value, "\r\n") {
+		return strings.TrimSuffix(value, "\r\n")
+	}
+	return strings.TrimSuffix(value, "\n")
+}
+
+func newCredentialConfigError(field string, reason string) error {
+	return newOperatorError(
+		"config",
+		"invalid_config",
+		"verify-service config is invalid",
+		operatorErrorDetail{
+			Field:  field,
+			Reason: reason,
+		},
+	)
 }

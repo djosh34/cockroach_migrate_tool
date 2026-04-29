@@ -26,20 +26,20 @@ type ListenerTLSConfig struct {
 }
 
 type VerifyConfig struct {
-	Source         *DatabaseConfig        `yaml:"source,omitempty"`
-	Destination    *DatabaseConfig        `yaml:"destination,omitempty"`
+	Source         *DatabaseConfig         `yaml:"source,omitempty"`
+	Destination    *DatabaseConfig         `yaml:"destination,omitempty"`
 	Databases      []DatabaseMappingConfig `yaml:"databases"`
-	RawTableOutput bool                   `yaml:"raw_table_output"`
+	RawTableOutput bool                    `yaml:"raw_table_output"`
 }
 
 type DatabaseConfig struct {
-	Host         string             `yaml:"host,omitempty"`
-	Port         int                `yaml:"port,omitempty"`
-	Database     string             `yaml:"database,omitempty"`
-	User         string             `yaml:"user,omitempty"`
-	PasswordFile string             `yaml:"password_file,omitempty"`
-	SSLMode      string             `yaml:"sslmode,omitempty"`
-	TLS          *DatabaseTLSConfig `yaml:"tls,omitempty"`
+	Host     string             `yaml:"host,omitempty"`
+	Port     int                `yaml:"port,omitempty"`
+	Database string             `yaml:"database,omitempty"`
+	Username CredentialValue    `yaml:"username,omitempty"`
+	Password CredentialValue    `yaml:"password,omitempty"`
+	SSLMode  string             `yaml:"sslmode,omitempty"`
+	TLS      *DatabaseTLSConfig `yaml:"tls,omitempty"`
 }
 
 type DatabaseMappingConfig struct {
@@ -54,6 +54,17 @@ type DatabaseTLSConfig struct {
 	CACertPath     string `yaml:"ca_cert_path,omitempty"`
 	ClientCertPath string `yaml:"client_cert_path,omitempty"`
 	ClientKeyPath  string `yaml:"client_key_path,omitempty"`
+}
+
+type CredentialValue struct {
+	Value      string `yaml:"value,omitempty"`
+	EnvRef     string `yaml:"env_ref,omitempty"`
+	SecretFile string `yaml:"secret_file,omitempty"`
+
+	present       bool
+	valueSet      bool
+	envRefSet     bool
+	secretFileSet bool
 }
 
 type verifyConfigDecode struct {
@@ -86,12 +97,7 @@ func LoadConfig(path string) (Config, error) {
 		)
 	}
 	if err := cfg.Validate(); err != nil {
-		return Config{}, newOperatorError(
-			"config",
-			"invalid_config",
-			"verify-service config is invalid",
-			operatorErrorDetail{Reason: err.Error()},
-		)
+		return Config{}, asInvalidConfigError(err)
 	}
 	return cfg, nil
 }
@@ -189,4 +195,85 @@ func decodeKnownFieldsNode(node *yaml.Node, target any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 	return decoder.Decode(target)
+}
+
+func (value *CredentialValue) UnmarshalYAML(node *yaml.Node) error {
+	if value == nil {
+		return errors.New("credential target must not be nil")
+	}
+
+	switch node.Kind {
+	case yaml.ScalarNode:
+		var literal string
+		if err := node.Decode(&literal); err != nil {
+			return err
+		}
+		*value = CredentialValue{
+			Value:    literal,
+			present:  true,
+			valueSet: true,
+		}
+		return nil
+	case yaml.MappingNode:
+		var decoded struct {
+			Value      *string `yaml:"value,omitempty"`
+			EnvRef     *string `yaml:"env_ref,omitempty"`
+			SecretFile *string `yaml:"secret_file,omitempty"`
+		}
+		if err := decodeKnownFieldsNode(node, &decoded); err != nil {
+			return err
+		}
+
+		next := CredentialValue{present: true}
+		if decoded.Value != nil {
+			next.Value = *decoded.Value
+			next.valueSet = true
+		}
+		if decoded.EnvRef != nil {
+			next.EnvRef = *decoded.EnvRef
+			next.envRefSet = true
+		}
+		if decoded.SecretFile != nil {
+			next.SecretFile = *decoded.SecretFile
+			next.secretFileSet = true
+		}
+		*value = next
+		return nil
+	default:
+		return errors.New("credential value must be a string or mapping object")
+	}
+}
+
+func (value CredentialValue) declared() bool {
+	return value.present || value.valueSet || value.envRefSet || value.secretFileSet ||
+		value.Value != "" || value.EnvRef != "" || value.SecretFile != ""
+}
+
+func (value CredentialValue) sourceCount() int {
+	count := 0
+	if value.valueSet || value.Value != "" {
+		count++
+	}
+	if value.envRefSet || value.EnvRef != "" {
+		count++
+	}
+	if value.secretFileSet || value.SecretFile != "" {
+		count++
+	}
+	return count
+}
+
+func asInvalidConfigError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if opErr, ok := asOperatorError(err); ok && opErr.category == "config" && opErr.code == "invalid_config" {
+		return opErr
+	}
+	return newOperatorError(
+		"config",
+		"invalid_config",
+		"verify-service config is invalid",
+		operatorErrorDetail{Reason: err.Error()},
+	)
 }

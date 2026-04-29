@@ -22,7 +22,7 @@ func TestVerifyRunnerUsesResolvedConnectionStringsAndGlobFilters(t *testing.T) {
 			Host:     "source-db",
 			Port:     26257,
 			Database: "source_db",
-			User:     "source-user",
+			Username: CredentialValue{Value: "source-user"},
 			SSLMode:  "verify-full",
 			TLS: &DatabaseTLSConfig{
 				CACertPath:     "/etc/source-ca.pem",
@@ -34,7 +34,7 @@ func TestVerifyRunnerUsesResolvedConnectionStringsAndGlobFilters(t *testing.T) {
 			Host:     "target-db",
 			Port:     26257,
 			Database: "target_db",
-			User:     "target-user",
+			Username: CredentialValue{Value: "target-user"},
 			SSLMode:  "verify-ca",
 			TLS: &DatabaseTLSConfig{
 				CACertPath: "/etc/target-ca.pem",
@@ -105,14 +105,14 @@ func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
 			Host:     "source-db",
 			Port:     26257,
 			Database: "source_db",
-			User:     "verify_source",
+			Username: CredentialValue{Value: "verify_source"},
 			SSLMode:  "disable",
 		},
 		DatabaseConfig{
 			Host:     "target-db",
 			Port:     26257,
 			Database: "target_db",
-			User:     "verify_target",
+			Username: CredentialValue{Value: "verify_target"},
 			SSLMode:  "disable",
 		},
 	), JobRequest{})
@@ -160,14 +160,14 @@ func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
 			Host:     "source-db",
 			Port:     26257,
 			Database: "source_db",
-			User:     "verify_source",
+			Username: CredentialValue{Value: "verify_source"},
 			SSLMode:  "disable",
 		},
 		DatabaseConfig{
 			Host:     "target-db",
 			Port:     26257,
 			Database: "target_db",
-			User:     "verify_target",
+			Username: CredentialValue{Value: "verify_target"},
 			SSLMode:  "disable",
 		},
 	), JobRequest{})
@@ -215,14 +215,14 @@ func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 			Host:     "source-db",
 			Port:     26257,
 			Database: "source_db",
-			User:     "verify_source",
+			Username: CredentialValue{Value: "verify_source"},
 			SSLMode:  "disable",
 		},
 		DatabaseConfig{
 			Host:     "target-db",
 			Port:     26257,
 			Database: "target_db",
-			User:     "verify_target",
+			Username: CredentialValue{Value: "verify_target"},
 			SSLMode:  "disable",
 		},
 	), JobRequest{})
@@ -264,16 +264,16 @@ func TestResolvedRunRequestUsesRequestedConfiguredDatabase(t *testing.T) {
 	cfg := Config{
 		Verify: VerifyConfig{
 			Source: &DatabaseConfig{
-				Host:    "source-db",
-				Port:    26257,
-				User:    "verify_source",
-				SSLMode: "disable",
+				Host:     "source-db",
+				Port:     26257,
+				Username: CredentialValue{Value: "verify_source"},
+				SSLMode:  "disable",
 			},
 			Destination: &DatabaseConfig{
-				Host:    "target-db",
-				Port:    5432,
-				User:    "verify_target",
-				SSLMode: "disable",
+				Host:     "target-db",
+				Port:     5432,
+				Username: CredentialValue{Value: "verify_target"},
+				SSLMode:  "disable",
 			},
 			Databases: []DatabaseMappingConfig{
 				{

@@ -1,6 +1,6 @@
 # Done Tasks Summary
 
-Generated: Wed Apr 29 10:25:13 AM CEST 2026
+Generated: Wed Apr 29 10:46:17 AM CEST 2026
 
 # Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/bugs/bug-fix-nix-flake-check-without-docker.md`
 
@@ -1175,6 +1175,17 @@ Must use tdd skill to complete
 
 ```
 ## Task: Verify HTTP jobs UX <status>done</status> <passes>true</passes>
+
+<description>
+Must use tdd skill to complete
+```
+
+==============
+
+# Task `/home/joshazimullah.linux/work_mounts/patroni_rewrite/cockroach_migrate_tool/.ralph/tasks/story-35-verify-multi-database-config/03-task-support-env-and-secret-file-database-credentials.md`
+
+```
+## Task: Support env and secret-file database credentials in the multi-db config <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete

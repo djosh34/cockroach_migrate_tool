@@ -70,7 +70,7 @@ func writeRuntimeConfig(t *testing.T) string {
 	serverKeyPath := locateRepoPath(t, "crates", "runner", "tests", "fixtures", "certs", "server.key")
 	clientCAPath := locateRepoPath(t, "investigations", "cockroach-webhook-cdc", "certs", "ca.crt")
 
-config := fmt.Sprintf(`listener:
+	config := fmt.Sprintf(`listener:
   bind_addr: 127.0.0.1:0
   tls:
     cert_path: %s
@@ -80,7 +80,7 @@ verify:
   source:
     host: source.internal
     port: 5432
-    user: verify_source
+    username: verify_source
     sslmode: verify-full
     tls:
       ca_cert_path: %s
@@ -89,7 +89,7 @@ verify:
   destination:
     host: crdb.internal
     port: 26257
-    user: verify_target
+    username: verify_target
     sslmode: verify-ca
     tls:
       ca_cert_path: %s
@@ -115,18 +115,18 @@ func writeHTTPRuntimeConfig(t *testing.T, bindAddr string) string {
 
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "verify-service.yml")
-config := fmt.Sprintf(`listener:
+	config := fmt.Sprintf(`listener:
   bind_addr: %s
 verify:
   source:
     host: source.internal
     port: 5432
-    user: verify_source
+    username: verify_source
     sslmode: disable
   destination:
     host: crdb.internal
     port: 26257
-    user: verify_target
+    username: verify_target
     sslmode: disable
   databases:
     - name: app
@@ -159,6 +159,14 @@ func locateRepoPath(t *testing.T, parts ...string) string {
 
 	t.Fatalf("failed to locate repo path for %v from %s", parts, wd)
 	return ""
+}
+
+func writeCommandConfig(t *testing.T, content string) string {
+	t.Helper()
+
+	configPath := filepath.Join(t.TempDir(), "verify-service.yml")
+	require.NoError(t, os.WriteFile(configPath, []byte(content), 0o600))
+	return configPath
 }
 
 func TestValidateConfig(t *testing.T) {
@@ -278,6 +286,62 @@ func TestValidateConfigReportsInvalidConfigAsJSONError(t *testing.T) {
 		[]any{
 			map[string]any{
 				"reason": "listener.tls.cert_path and listener.tls.key_path must both be set when listener.tls is configured",
+			},
+		},
+		payload["details"],
+	)
+}
+
+func TestValidateConfigReportsCredentialValidationErrorsAsJSONWithoutLeakingSecrets(t *testing.T) {
+	cmd := rootcmd.NewRootCmd()
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	cmd.SetArgs([]string{
+		"verify-service",
+		"validate-config",
+		"--log-format",
+		"json",
+		"--config",
+		writeCommandConfig(t, `listener:
+  bind_addr: 0.0.0.0:8080
+verify:
+  source:
+    host: source.internal
+    port: 26257
+    username: verify_source
+    sslmode: disable
+  destination:
+    host: destination.internal
+    port: 5432
+    username: verify_target
+    password:
+      value: super-secret-password
+      env_ref: VERIFY_DESTINATION_PASSWORD
+    sslmode: disable
+  databases:
+    - name: app
+      source_database: app
+      destination_database: app
+`),
+	})
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	require.Empty(t, stdout.String())
+	require.NotContains(t, stderr.String(), "super-secret-password")
+
+	payload := parseJSONLogLine(t, stderr.String())
+	require.Equal(t, "config", payload["category"])
+	require.Equal(t, "invalid_config", payload["code"])
+	require.Equal(t, "verify-service config is invalid", payload["message"])
+	require.Equal(
+		t,
+		[]any{
+			map[string]any{
+				"field":  "verify.databases[0].destination.password",
+				"reason": "must not specify more than one of value, env_ref, or secret_file",
 			},
 		},
 		payload["details"],
