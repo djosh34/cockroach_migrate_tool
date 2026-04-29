@@ -140,15 +140,25 @@ listener:
 verify:
   raw_table_output: false       # optional, defaults to false
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 26257
+    user: verify_source
+    sslmode: verify-full
     tls:                        # optional
       ca_cert_path: /config/certs/source-ca.crt
       client_cert_path: /config/certs/source-client.crt   # optional (mTLS)
       client_key_path: /config/certs/source-client.key     # optional (mTLS)
   destination:
-    url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    sslmode: verify-ca
     tls:                        # optional
       ca_cert_path: /config/certs/destination-ca.crt
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 ```
 
 ### Top-level fields
@@ -156,7 +166,7 @@ verify:
 | Key | Type | Required | Default | Purpose |
 |-----|------|----------|---------|---------|
 | `listener` | object | yes | — | HTTP(S) listener for the job API and metrics |
-| `verify` | object | yes | — | Source and destination database connections for row-level comparison |
+| `verify` | object | yes | — | Shared connection defaults plus named database mappings for row-level comparison |
 
 ### `listener`
 
@@ -177,17 +187,23 @@ verify:
 
 | Field | Type | Required | Default | Purpose |
 |-------|------|----------|---------|---------|
-| `source` | object | yes | — | Source (CockroachDB) database connection |
-| `destination` | object | yes | — | Destination PostgreSQL database connection |
+| `source` | object | no | — | Default source connection settings shared by one or more mappings |
+| `destination` | object | no | — | Default destination connection settings shared by one or more mappings |
+| `databases` | list of objects | yes | — | Named database mappings to verify |
 | `raw_table_output` | boolean | no | `false` | Enable `POST /tables/raw` for diagnostic row reads |
 
-#### `verify.source` and `verify.destination`
+#### `verify.source`, `verify.destination`, and per-database endpoint blocks
 
 Both use the same shape:
 
 | Field | Type | Required | Default | Purpose |
 |-------|------|----------|---------|---------|
-| `url` | string | yes | — | Connection URL. Scheme must be `postgresql://` or `postgres://`. Include `sslmode` as a query parameter. |
+| `host` | string | yes after merge | — | Database hostname |
+| `port` | integer | yes after merge | — | Database port |
+| `database` | string | yes for fully specified per-database blocks | — | Database name |
+| `user` | string | yes after merge | — | Database user |
+| `password_file` | path | no | — | Password file path passed as libpq `passfile` |
+| `sslmode` | string | yes after merge | — | `disable`, `require`, `verify-ca`, or `verify-full` |
 | `tls` | object | no | — | Certificate file paths for TLS |
 
 ##### `tls` under source or destination
@@ -209,11 +225,29 @@ Both use the same shape:
 
 ### Common operator decisions
 
-**Source URL choice.** The verify-service connects to CockroachDB natively via the PostgreSQL wire protocol. Use a `postgresql://` URL pointing at the CockroachDB cluster. For production, use `sslmode=verify-full` with a CA certificate.
+#### `verify.databases[]`
+
+| Field | Type | Required | Default | Purpose |
+|-------|------|----------|---------|---------|
+| `name` | string | yes | — | Stable configured database name used by the API |
+| `source_database` | string | yes when shared defaults are used | — | Source database name for this mapping |
+| `destination_database` | string | yes when shared defaults are used | — | Destination database name for this mapping |
+| `source` | object | no | — | Per-database source overrides or a fully specified source block |
+| `destination` | object | no | — | Per-database destination overrides or a fully specified destination block |
+
+Every `verify.databases[]` entry must be an object. Scalar entries such as `- app` are rejected.
+
+### Supported verify-service shapes
+
+1. Shared defaults with per-database names only.
+2. Shared defaults with per-database overrides such as `user` and `password_file`.
+3. No shared defaults, where every `verify.databases[]` entry supplies full `source` and `destination` blocks including `database`.
+
+**Structured connection fields only.** The verify-service no longer accepts operator-facing raw `url` fields. It builds PostgreSQL connection strings internally from structured fields.
 
 **`raw_table_output`.** Enable `verify.raw_table_output: true` to allow raw row reads via `POST /tables/raw`. This is useful for diagnostics but exposes table contents to any caller that can reach the verify-service API. Disabled by default.
 
-**Job filters.** When starting a verify job (`POST /jobs`), passing `{}` verifies all user tables on both sides. Use `include_schema`, `include_table`, `exclude_schema`, `exclude_table` as POSIX regexes to narrow the scope. All four are optional.
+**Job database selection.** `POST /jobs` accepts a `database` field naming one configured mapping. When multiple mappings are configured, omitting `database` is rejected.
 
 ## TLS configuration
 

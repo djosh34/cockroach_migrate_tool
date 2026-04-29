@@ -119,31 +119,47 @@ listener:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `source` | object | yes | Source (CockroachDB or PostgreSQL) database connection |
-| `destination` | object | yes | Destination PostgreSQL database connection |
+| `source` | object | no | Default source connection settings shared across database mappings |
+| `destination` | object | no | Default destination connection settings shared across database mappings |
+| `databases` | list of objects | yes | Named database mappings to verify |
 | `raw_table_output` | boolean | no | Enable `POST /tables/raw` endpoint. Defaults to `false`. |
 
-#### `verify.source` and `verify.destination`
+#### Connection blocks
 
 Both use the same shape:
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `url` | string | yes | Connection URL. Must use `postgresql://` or `postgres://` scheme. Include `sslmode` as a query parameter. |
+| `host` | string | yes after defaults and overrides are merged | Database hostname |
+| `port` | integer | yes after defaults and overrides are merged | Database port |
+| `database` | string | yes for fully specified per-database blocks | Database name |
+| `user` | string | yes after defaults and overrides are merged | Database user |
+| `password_file` | path | no | Password file path passed through as libpq `passfile` |
+| `sslmode` | string | yes after defaults and overrides are merged | `disable`, `require`, `verify-ca`, or `verify-full` |
 | `tls` | object | no | File paths for TLS certificates and keys |
 
 ```yaml
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 26257
+    user: verify_source
+    sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
       client_cert_path: /config/certs/source-client.crt
       client_key_path: /config/certs/source-client.key
   destination:
-    url: postgresql://verify_target:secret@destination.internal:5432/appdb?sslmode=verify-ca
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 ```
 
 ##### `tls` under source or destination
@@ -163,9 +179,23 @@ verify:
 | `verify-ca` | TLS, verify against CA | Yes |
 | `verify-full` | TLS, verify CA + hostname | Yes |
 
-When `sslmode=verify-ca` or `sslmode=verify-full`, `ca_cert_path` is required. `client_cert_path` and `client_key_path` must always appear as a pair. For passwordless client-certificate auth, omit the password from the URL.
+When `sslmode=verify-ca` or `sslmode=verify-full`, `ca_cert_path` is required. `client_cert_path` and `client_key_path` must always appear as a pair.
 
-### Full example
+#### `verify.databases[]`
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Stable configured database name used by the API |
+| `source_database` | string | yes when shared defaults are used | Source database name for this mapping |
+| `destination_database` | string | yes when shared defaults are used | Destination database name for this mapping |
+| `source` | object | no | Per-database source overrides or a fully specified source block |
+| `destination` | object | no | Per-database destination overrides or a fully specified destination block |
+
+Every `verify.databases[]` entry must be an object. Scalar entries such as `- app` are rejected.
+
+### Full examples
+
+Shared defaults; each mapping only names source and destination databases:
 
 ```yaml
 listener:
@@ -177,17 +207,133 @@ listener:
 verify:
   raw_table_output: true
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 26257
+    user: verify_source
+    password_file: /config/secrets/source-password
+    sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
       client_cert_path: /config/certs/source-client.crt
       client_key_path: /config/certs/source-client.key
   destination:
-    url: postgresql://verify_target@destination.internal:5432/appdb?sslmode=verify-ca
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    password_file: /config/secrets/destination-password
+    sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
-      client_cert_path: /config/certs/destination-client.crt
-      client_key_path: /config/certs/destination-client.key
+  databases:
+    - name: app
+      source_database: app
+      destination_database: app
+    - name: billing
+      source_database: billing
+      destination_database: billing
+    - name: support
+      source_database: support
+      destination_database: support_archive
+```
+
+Shared defaults with per-database credential overrides:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+verify:
+  raw_table_output: true
+  source:
+    host: source.internal
+    port: 26257
+    user: verify_source
+    password_file: /config/secrets/source-password
+    sslmode: verify-full
+    tls:
+      ca_cert_path: /config/certs/source-ca.crt
+      client_cert_path: /config/certs/source-client.crt
+      client_key_path: /config/certs/source-client.key
+  destination:
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    password_file: /config/secrets/destination-password
+    sslmode: verify-ca
+    tls:
+      ca_cert_path: /config/certs/destination-ca.crt
+  databases:
+    - name: app
+      source_database: app
+      destination_database: app
+    - name: audit
+      source_database: audit
+      destination_database: audit
+      source:
+        user: verify_audit_source
+        password_file: /config/secrets/audit-source-password
+      destination:
+        user: verify_audit_target
+        password_file: /config/secrets/audit-destination-password
+```
+
+Fully specified per-database connections without shared defaults:
+
+```yaml
+listener:
+  bind_addr: 0.0.0.0:8443
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+verify:
+  raw_table_output: true
+  databases:
+    - name: app
+      source:
+        host: source.internal
+        port: 26257
+        database: app
+        user: verify_app_source
+        password_file: /config/secrets/app-source-password
+        sslmode: verify-full
+        tls:
+          ca_cert_path: /config/certs/source-ca.crt
+          client_cert_path: /config/certs/source-client.crt
+          client_key_path: /config/certs/source-client.key
+      destination:
+        host: destination.internal
+        port: 5432
+        database: app
+        user: verify_app_target
+        password_file: /config/secrets/app-destination-password
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/destination-ca.crt
+    - name: billing
+      source:
+        host: source.internal
+        port: 26257
+        database: billing
+        user: verify_billing_source
+        password_file: /config/secrets/billing-source-password
+        sslmode: verify-full
+        tls:
+          ca_cert_path: /config/certs/source-ca.crt
+          client_cert_path: /config/certs/source-client.crt
+          client_key_path: /config/certs/source-client.key
+      destination:
+        host: destination.internal
+        port: 5432
+        database: billing_prod
+        user: verify_billing_target
+        password_file: /config/secrets/billing-destination-password
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/destination-ca.crt
 ```
 
 ## Job lifecycle
@@ -209,10 +355,11 @@ POST /jobs
 Content-Type: application/json
 ```
 
-Request body (all fields optional POSIX regular expressions):
+Request body (`database` selects the configured mapping; the filter fields remain optional POSIX regular expressions):
 
 ```json
 {
+  "database": "app",
   "include_schema": "^public$",
   "include_table": "^(accounts|orders)$"
 }
@@ -220,6 +367,7 @@ Request body (all fields optional POSIX regular expressions):
 
 | Field | Description |
 |-------|-------------|
+| `database` | Configured database mapping name. Required when more than one mapping is configured. |
 | `include_schema` | Include schemas matching this regex |
 | `include_table` | Include tables matching this regex |
 | `exclude_schema` | Exclude schemas matching this regex |
@@ -244,7 +392,7 @@ Filters are POSIX regular expressions applied against `pg_class` / `pg_namespace
 **Validation error — `400`:**
 
 ```json
-{"error": {"category": "request_validation", "code": "unknown_field", "message": "request body contains an unsupported field", "details": [{"field": "extra", "reason": "unknown field"}]}}
+{"error": {"category": "request_validation", "code": "invalid_database_selection", "message": "request validation failed", "details": [{"field": "database", "reason": "database selection is required when multiple databases are configured"}]}}
 ```
 
 ### Poll job status
@@ -400,7 +548,7 @@ Returns Prometheus-formatted metrics as `text/plain`. Metric names are prefixed 
 POST /tables/raw
 Content-Type: application/json
 
-{"database": "source", "schema": "public", "table": "accounts"}
+{"database": "app", "side": "source", "schema": "public", "table": "accounts"}
 ```
 
 Only available when `verify.raw_table_output` is `true`. Returns `403` if disabled.
@@ -451,13 +599,25 @@ listener:
   bind_addr: 0.0.0.0:8080
 verify:
   source:
-    url: postgresql://verify_source:source-password@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 26257
+    user: verify_source
+    password_file: /config/secrets/source-password
+    sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
   destination:
-    url: postgresql://verify_target:target-password@destination.internal:5432/appdb?sslmode=verify-ca
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    password_file: /config/secrets/destination-password
+    sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 ```
 
 HTTPS with mTLS:
@@ -471,15 +631,26 @@ listener:
     client_ca_path: /config/certs/client-ca.crt
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 26257
+    user: verify_source
+    sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
       client_cert_path: /config/certs/source-client.crt
       client_key_path: /config/certs/source-client.key
   destination:
-    url: postgresql://verify_target:secret@destination.internal:5432/appdb?sslmode=verify-ca
+    host: destination.internal
+    port: 5432
+    user: verify_target
+    password_file: /config/secrets/destination-password
+    sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 ```
 
 ### 3. Validate

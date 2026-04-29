@@ -38,6 +38,7 @@ type Dependencies struct {
 
 type Service struct {
 	mu               sync.Mutex
+	verifyConfig     VerifyConfig
 	runner           Runner
 	idGenerator      func() string
 	logger           zerolog.Logger
@@ -58,6 +59,7 @@ func NewService(cfg Config, deps Dependencies) *Service {
 		deps.RawTableReader = newConfigBackedRawTableReader(cfg)
 	}
 	return &Service{
+		verifyConfig:    cfg.Verify,
 		runner:          deps.Runner,
 		idGenerator:     deps.IDGenerator,
 		logger:          deps.Logger,
@@ -93,6 +95,10 @@ func (s *Service) handlePostJobs(w http.ResponseWriter, r *http.Request) {
 	}
 	runRequest, err := jobRequest.Compile()
 	if err != nil {
+		writeOperatorError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := runRequest.ValidateSelection(s.verifyConfig); err != nil {
 		writeOperatorError(w, http.StatusBadRequest, err)
 		return
 	}

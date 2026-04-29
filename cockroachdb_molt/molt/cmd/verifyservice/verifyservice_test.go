@@ -70,7 +70,7 @@ func writeRuntimeConfig(t *testing.T) string {
 	serverKeyPath := locateRepoPath(t, "crates", "runner", "tests", "fixtures", "certs", "server.key")
 	clientCAPath := locateRepoPath(t, "investigations", "cockroach-webhook-cdc", "certs", "ca.crt")
 
-	config := fmt.Sprintf(`listener:
+config := fmt.Sprintf(`listener:
   bind_addr: 127.0.0.1:0
   tls:
     cert_path: %s
@@ -78,15 +78,25 @@ func writeRuntimeConfig(t *testing.T) string {
     client_ca_path: %s
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 5432
+    user: verify_source
+    sslmode: verify-full
     tls:
       ca_cert_path: %s
       client_cert_path: %s
       client_key_path: %s
   destination:
-    url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=verify-ca
+    host: crdb.internal
+    port: 26257
+    user: verify_target
+    sslmode: verify-ca
     tls:
       ca_cert_path: %s
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 `,
 		serverCertPath,
 		serverKeyPath,
@@ -105,13 +115,23 @@ func writeHTTPRuntimeConfig(t *testing.T, bindAddr string) string {
 
 	tempDir := t.TempDir()
 	configPath := filepath.Join(tempDir, "verify-service.yml")
-	config := fmt.Sprintf(`listener:
+config := fmt.Sprintf(`listener:
   bind_addr: %s
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=disable
+    host: source.internal
+    port: 5432
+    user: verify_source
+    sslmode: disable
   destination:
-    url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=disable
+    host: crdb.internal
+    port: 26257
+    user: verify_target
+    sslmode: disable
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb
 `, bindAddr)
 	require.NoError(t, os.WriteFile(configPath, []byte(config), 0o600))
 	return configPath
@@ -159,6 +179,7 @@ func TestValidateConfig(t *testing.T) {
 	require.Equal(t, ""+
 		"verify-service config is valid\n"+
 		"listener mode: https+mtls\n"+
+		"database count: 1\n"+
 		"source sslmode: verify-full\n"+
 		"destination sslmode: verify-ca\n",
 		stdout.String(),
@@ -184,6 +205,7 @@ func TestValidateConfigSupportsPasswordlessClientCertificates(t *testing.T) {
 	require.Equal(t, ""+
 		"verify-service config is valid\n"+
 		"listener mode: https+mtls\n"+
+		"database count: 1\n"+
 		"source sslmode: verify-full\n"+
 		"destination sslmode: verify-ca\n",
 		stdout.String(),
@@ -217,6 +239,7 @@ func TestValidateConfigSupportsJSONOperatorLogs(t *testing.T) {
 	require.Equal(t, "verify", payload["service"])
 	require.Equal(t, "config.validated", payload["event"])
 	require.Equal(t, "https+mtls", payload["listener_mode"])
+	require.Equal(t, float64(1), payload["database_count"])
 	require.Equal(t, "verify-full", payload["source_sslmode"])
 	require.Equal(t, "verify-ca", payload["destination_sslmode"])
 }

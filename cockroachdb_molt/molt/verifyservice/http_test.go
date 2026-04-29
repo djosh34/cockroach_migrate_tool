@@ -61,6 +61,61 @@ func TestPostJobsStartsSingleVerifyJob(t *testing.T) {
 	}
 }
 
+func TestPostJobsRejectsAmbiguousDatabaseSelectionWhenMultipleDatabasesConfigured(t *testing.T) {
+	t.Parallel()
+
+	runner := &blockingRunner{started: make(chan verifyservice.RunRequest, 1)}
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			Source: &verifyservice.DatabaseConfig{
+				Host:    "source.internal",
+				Port:    26257,
+				User:    "verify_source",
+				SSLMode: "disable",
+			},
+			Destination: &verifyservice.DatabaseConfig{
+				Host:    "destination.internal",
+				Port:    5432,
+				User:    "verify_target",
+				SSLMode: "disable",
+			},
+			Databases: []verifyservice.DatabaseMappingConfig{
+				{Name: "app", SourceDatabase: "app", DestinationDatabase: "app"},
+				{Name: "billing", SourceDatabase: "billing", DestinationDatabase: "billing"},
+			},
+		},
+	}, verifyservice.Dependencies{
+		Runner: runner,
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(server.URL+"/jobs", "application/json", bytes.NewBufferString(`{}`))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	payload := decodeOperatorErrorResponse(t, response)
+	require.Equal(t, operatorErrorResponse{
+		Error: operatorErrorPayload{
+			Category: "request_validation",
+			Code:     "invalid_database_selection",
+			Message:  "request validation failed",
+			Details: []operatorErrorDetail{
+				{
+					Field:  "database",
+					Reason: "database selection is required when multiple databases are configured",
+				},
+			},
+		},
+	}, payload)
+}
+
 func TestGetJobReturnsRunningJobStatus(t *testing.T) {
 	t.Parallel()
 
@@ -485,16 +540,7 @@ func TestMetricsExposeOnlyCoarseLifecycleState(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	})
-	service := verifyservice.NewService(verifyservice.Config{
-		Verify: verifyservice.VerifyConfig{
-			Source: verifyservice.DatabaseConfig{
-				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
-			},
-			Destination: verifyservice.DatabaseConfig{
-				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
-			},
-		},
-	}, verifyservice.Dependencies{
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
 	})
@@ -690,16 +736,7 @@ func TestMetricsKeepLabelSetsNarrowAndExcludeFreeText(t *testing.T) {
 		})
 		return errors.New("verify exploded with free text")
 	})
-	service := verifyservice.NewService(verifyservice.Config{
-		Verify: verifyservice.VerifyConfig{
-			Source: verifyservice.DatabaseConfig{
-				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify",
-			},
-			Destination: verifyservice.DatabaseConfig{
-				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify",
-			},
-		},
-	}, verifyservice.Dependencies{
+	service := verifyservice.NewService(verifyservice.Config{}, verifyservice.Dependencies{
 		Runner:      runner,
 		IDGenerator: sequentialIDGenerator("job-000001"),
 	})
@@ -799,7 +836,7 @@ func TestPostTablesRawFailsClosedWhenDisabled(t *testing.T) {
 	response, err := http.Post(
 		server.URL+"/tables/raw",
 		"application/json",
-		bytes.NewBufferString(`{"database":"source","schema":"public","table":"accounts"}`),
+		bytes.NewBufferString(`{"database":"app","side":"source","schema":"public","table":"accounts"}`),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -820,7 +857,8 @@ func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
 
 	reader := &fakeRawTableReader{
 		response: verifyservice.RawTableResponse{
-			Database: "source",
+			Database: "app",
+			Side:     "source",
 			Schema:   "public",
 			Table:    "accounts",
 			Columns:  []string{"id", "email"},
@@ -848,7 +886,7 @@ func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
 	response, err := http.Post(
 		server.URL+"/tables/raw",
 		"application/json",
-		bytes.NewBufferString(`{"database":"source","schema":"public","table":"accounts"}`),
+		bytes.NewBufferString(`{"database":"app","side":"source","schema":"public","table":"accounts"}`),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -860,7 +898,8 @@ func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
 	var payload map[string]any
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
 	require.Equal(t, map[string]any{
-		"database": "source",
+		"database": "app",
+		"side":     "source",
 		"schema":   "public",
 		"table":    "accounts",
 		"columns":  []any{"id", "email"},
@@ -872,7 +911,8 @@ func TestPostTablesRawReturnsSourceRowsWhenEnabled(t *testing.T) {
 		},
 	}, payload)
 	require.Equal(t, verifyservice.RawTableRequest{
-		Database: "source",
+		Database: "app",
+		Side:     "source",
 		Schema:   "public",
 		Table:    "accounts",
 	}, reader.lastRequest)
@@ -883,7 +923,8 @@ func TestPostTablesRawReturnsDestinationRowsWhenEnabled(t *testing.T) {
 
 	reader := &fakeRawTableReader{
 		response: verifyservice.RawTableResponse{
-			Database: "destination",
+			Database: "billing",
+			Side:     "destination",
 			Schema:   "public",
 			Table:    "accounts",
 			Columns:  []string{"id", "email"},
@@ -911,7 +952,7 @@ func TestPostTablesRawReturnsDestinationRowsWhenEnabled(t *testing.T) {
 	response, err := http.Post(
 		server.URL+"/tables/raw",
 		"application/json",
-		bytes.NewBufferString(`{"database":"destination","schema":"public","table":"accounts"}`),
+		bytes.NewBufferString(`{"database":"billing","side":"destination","schema":"public","table":"accounts"}`),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -922,9 +963,11 @@ func TestPostTablesRawReturnsDestinationRowsWhenEnabled(t *testing.T) {
 
 	var payload map[string]any
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
-	require.Equal(t, "destination", payload["database"])
+	require.Equal(t, "billing", payload["database"])
+	require.Equal(t, "destination", payload["side"])
 	require.Equal(t, verifyservice.RawTableRequest{
-		Database: "destination",
+		Database: "billing",
+		Side:     "destination",
 		Schema:   "public",
 		Table:    "accounts",
 	}, reader.lastRequest)
@@ -949,7 +992,7 @@ func TestPostTablesRawRejectsInvalidIdentifiers(t *testing.T) {
 	response, err := http.Post(
 		server.URL+"/tables/raw",
 		"application/json",
-		bytes.NewBufferString(`{"database":"source","schema":"public;drop schema public","table":"accounts"}`),
+		bytes.NewBufferString(`{"database":"app","side":"source","schema":"public;drop schema public","table":"accounts"}`),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -963,6 +1006,76 @@ func TestPostTablesRawRejectsInvalidIdentifiers(t *testing.T) {
 	}
 	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
 	require.Equal(t, "schema must be a simple SQL identifier", payload.Error)
+}
+
+func TestPostTablesRawRequiresConfiguredDatabaseSelector(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			RawTableOutput: true,
+		},
+	}, verifyservice.Dependencies{
+		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		RawTableReader: &fakeRawTableReader{},
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"side":"source","schema":"public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, "database must be set", payload.Error)
+}
+
+func TestPostTablesRawRejectsInvalidSide(t *testing.T) {
+	t.Parallel()
+
+	service := verifyservice.NewService(verifyservice.Config{
+		Verify: verifyservice.VerifyConfig{
+			RawTableOutput: true,
+		},
+	}, verifyservice.Dependencies{
+		Runner:         reportingRunner(func(_ context.Context, _ inconsistency.Reporter) error { return nil }),
+		RawTableReader: &fakeRawTableReader{},
+	})
+	t.Cleanup(service.Close)
+
+	server := httptest.NewServer(service.Handler())
+	t.Cleanup(server.Close)
+
+	response, err := http.Post(
+		server.URL+"/tables/raw",
+		"application/json",
+		bytes.NewBufferString(`{"database":"app","side":"archive","schema":"public","table":"accounts"}`),
+	)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = response.Body.Close()
+	})
+
+	require.Equal(t, http.StatusBadRequest, response.StatusCode)
+
+	var payload struct {
+		Error string `json:"error"`
+	}
+	require.NoError(t, json.NewDecoder(response.Body).Decode(&payload))
+	require.Equal(t, "side must be one of: source, destination", payload.Error)
 }
 
 func TestPostJobStopStopsTheActiveJob(t *testing.T) {

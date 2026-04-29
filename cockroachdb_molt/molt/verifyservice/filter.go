@@ -7,6 +7,7 @@ import (
 )
 
 type JobRequest struct {
+	Database      string `json:"database,omitempty"`
 	IncludeSchema string `json:"include_schema,omitempty"`
 	IncludeTable  string `json:"include_table,omitempty"`
 	ExcludeSchema string `json:"exclude_schema,omitempty"`
@@ -14,6 +15,7 @@ type JobRequest struct {
 }
 
 type RunRequest struct {
+	Database     string
 	filterConfig utils.FilterConfig
 }
 
@@ -27,7 +29,7 @@ func (r JobRequest) Compile() (RunRequest, error) {
 	if err := validateFilters(filterConfig); err != nil {
 		return RunRequest{}, err
 	}
-	return RunRequest{filterConfig: filterConfig}, nil
+	return RunRequest{Database: r.Database, filterConfig: filterConfig}, nil
 }
 
 func (r JobRequest) Validate() error {
@@ -37,6 +39,24 @@ func (r JobRequest) Validate() error {
 
 func (r RunRequest) FilterConfig() utils.FilterConfig {
 	return r.filterConfig
+}
+
+func (r RunRequest) ValidateSelection(config VerifyConfig) error {
+	if len(config.Databases) == 0 {
+		return nil
+	}
+	if _, err := config.ResolveDatabase(r.Database); err != nil {
+		return newOperatorError(
+			"request_validation",
+			"invalid_database_selection",
+			"request validation failed",
+			operatorErrorDetail{
+				Field:  "database",
+				Reason: err.Error(),
+			},
+		)
+	}
+	return nil
 }
 
 func validateFilters(filterConfig utils.FilterConfig) error {

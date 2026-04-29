@@ -1,4 +1,4 @@
-## Task: Verify multi-db config <status>not_started</status> <passes>false</passes>
+## Task: Verify multi-db config <status>done</status> <passes>true</passes>
 
 <description>
 Must use tdd skill to complete
@@ -211,20 +211,22 @@ Out of scope:
 
 
 <acceptance_criteria>
-- [ ] Red/green TDD covers parsing, validation, and resolved connection construction for the default-credentials config example above
-- [ ] Red/green TDD covers parsing, validation, inheritance, and resolved connection construction for the default-credentials-with-per-database-override config example above
-- [ ] Red/green TDD covers parsing, validation, and resolved connection construction for the no-default-credentials config example above
-- [ ] Red/green TDD proves scalar database entries are rejected with a clear field-specific error
-- [ ] Red/green TDD proves missing required inherited fields are rejected with a clear field-specific error, for example a database entry without defaults and without full source/destination settings
-- [ ] Red/green TDD proves duplicate database names are rejected with a clear error naming the duplicate
-- [ ] Red/green TDD proves invalid TLS combinations are rejected after defaults and overrides are merged, including missing CA for `verify-ca` / `verify-full` and client cert without client key
-- [ ] Red/green TDD proves unsupported fields such as `params` or `application_name` are rejected by config loading
-- [ ] Red/green TDD proves `validate-config --log-format json` logs clear operator errors for wrong config values, including category, code, message, and details that identify the bad field and reason
-- [ ] Red/green TDD proves verify execution resolves the requested configured database to the expected source/destination connection strings before invoking the MOLT verify runner
-- [ ] Red/green TDD covers raw table requests when multiple databases are configured so the API either requires an explicit database selector or rejects ambiguity with a clear error
-- [ ] Operator docs and config reference include the three full examples from this task and remove old single-URL examples
-- [ ] `make check` - passes cleanly
-- [ ] `make test` - passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
-- [ ] `make lint` - passes cleanly
-- [ ] If this task impacts ultra-long tests or their selection: `make test-long` - passes cleanly (ultra-long-only)
+- [x] Red/green TDD covers parsing, validation, and resolved connection construction for the default-credentials config example above
+- [x] Red/green TDD covers parsing, validation, inheritance, and resolved connection construction for the default-credentials-with-per-database-override config example above
+- [x] Red/green TDD covers parsing, validation, and resolved connection construction for the no-default-credentials config example above
+- [x] Red/green TDD proves scalar database entries are rejected with a clear field-specific error
+- [x] Red/green TDD proves missing required inherited fields are rejected with a clear field-specific error, for example a database entry without defaults and without full source/destination settings
+- [x] Red/green TDD proves duplicate database names are rejected with a clear error naming the duplicate
+- [x] Red/green TDD proves invalid TLS combinations are rejected after defaults and overrides are merged, including missing CA for `verify-ca` / `verify-full` and client cert without client key
+- [x] Red/green TDD proves unsupported fields such as `params` or `application_name` are rejected by config loading
+- [x] Red/green TDD proves `validate-config --log-format json` logs clear operator errors for wrong config values, including category, code, message, and details that identify the bad field and reason
+- [x] Red/green TDD proves verify execution resolves the requested configured database to the expected source/destination connection strings before invoking the MOLT verify runner
+- [x] Red/green TDD covers raw table requests when multiple databases are configured so the API either requires an explicit database selector or rejects ambiguity with a clear error
+- [x] Operator docs and config reference include the three full examples from this task and remove old single-URL examples
+- [x] `make check` - passes cleanly
+- [x] `make test` - passes cleanly (default suite; excludes only ultra-long tests moved to `make test-long`)
+- [x] `make lint` - passes cleanly
+- [x] If this task impacts ultra-long tests or their selection: `make test-long` - passes cleanly (ultra-long-only)
 </acceptance_criteria>
+
+<plan>.ralph/tasks/story-35-verify-multi-database-config/01-task-verify-multi-db-config_plans/2026-04-29-verify-multi-db-config-plan.md</plan>

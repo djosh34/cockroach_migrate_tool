@@ -182,3 +182,5 @@ NONE
 .ralph/tasks/story-33-fully-new-docs/01-task-create-fully-new-docs-with-model-authored-writing-and-independent-setup-verification.md
 NONE
 .ralph/tasks/story-34-human-friendly-docs-rewrite/01-task-rewrite-docs-for-humans-through-deepseek-opencode-only.md
+NONE
+.ralph/tasks/story-35-verify-multi-database-config/01-task-verify-multi-db-config.md

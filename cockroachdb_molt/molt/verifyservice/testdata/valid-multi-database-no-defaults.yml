@@ -1,0 +1,53 @@
+listener:
+  bind_addr: 0.0.0.0:8080
+  tls:
+    cert_path: /config/certs/server.crt
+    key_path: /config/certs/server.key
+    client_ca_path: /config/certs/client-ca.crt
+
+verify:
+  raw_table_output: false
+  databases:
+    - name: app
+      source:
+        host: source.internal
+        port: 26257
+        database: app
+        user: verify_app_source
+        password_file: /config/secrets/app-source-password
+        sslmode: verify-full
+        tls:
+          ca_cert_path: /config/certs/source-ca.crt
+          client_cert_path: /config/certs/source-client.crt
+          client_key_path: /config/certs/source-client.key
+      destination:
+        host: destination.internal
+        port: 5432
+        database: app
+        user: verify_app_target
+        password_file: /config/secrets/app-destination-password
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/destination-ca.crt
+
+    - name: billing
+      source:
+        host: source.internal
+        port: 26257
+        database: billing
+        user: verify_billing_source
+        password_file: /config/secrets/billing-source-password
+        sslmode: verify-full
+        tls:
+          ca_cert_path: /config/certs/source-ca.crt
+          client_cert_path: /config/certs/source-client.crt
+          client_key_path: /config/certs/source-client.key
+      destination:
+        host: destination.internal
+        port: 5432
+        database: billing_prod
+        user: verify_billing_target
+        password_file: /config/secrets/billing-destination-password
+        sslmode: verify-ca
+        tls:
+          ca_cert_path: /config/certs/destination-ca.crt

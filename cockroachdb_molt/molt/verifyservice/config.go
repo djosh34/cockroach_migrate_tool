@@ -2,7 +2,7 @@ package verifyservice
 
 import (
 	"bytes"
-	"net/url"
+	"fmt"
 	"os"
 
 	"github.com/cockroachdb/errors"
@@ -26,20 +26,41 @@ type ListenerTLSConfig struct {
 }
 
 type VerifyConfig struct {
-	Source         DatabaseConfig `yaml:"source"`
-	Destination    DatabaseConfig `yaml:"destination"`
-	RawTableOutput bool           `yaml:"raw_table_output"`
+	Source         *DatabaseConfig        `yaml:"source,omitempty"`
+	Destination    *DatabaseConfig        `yaml:"destination,omitempty"`
+	Databases      []DatabaseMappingConfig `yaml:"databases"`
+	RawTableOutput bool                   `yaml:"raw_table_output"`
 }
 
 type DatabaseConfig struct {
-	URL string             `yaml:"url"`
-	TLS *DatabaseTLSConfig `yaml:"tls,omitempty"`
+	Host         string             `yaml:"host,omitempty"`
+	Port         int                `yaml:"port,omitempty"`
+	Database     string             `yaml:"database,omitempty"`
+	User         string             `yaml:"user,omitempty"`
+	PasswordFile string             `yaml:"password_file,omitempty"`
+	SSLMode      string             `yaml:"sslmode,omitempty"`
+	TLS          *DatabaseTLSConfig `yaml:"tls,omitempty"`
+}
+
+type DatabaseMappingConfig struct {
+	Name                string          `yaml:"name"`
+	SourceDatabase      string          `yaml:"source_database,omitempty"`
+	DestinationDatabase string          `yaml:"destination_database,omitempty"`
+	Source              *DatabaseConfig `yaml:"source,omitempty"`
+	Destination         *DatabaseConfig `yaml:"destination,omitempty"`
 }
 
 type DatabaseTLSConfig struct {
 	CACertPath     string `yaml:"ca_cert_path,omitempty"`
 	ClientCertPath string `yaml:"client_cert_path,omitempty"`
 	ClientKeyPath  string `yaml:"client_key_path,omitempty"`
+}
+
+type verifyConfigDecode struct {
+	Source         *DatabaseConfig `yaml:"source,omitempty"`
+	Destination    *DatabaseConfig `yaml:"destination,omitempty"`
+	Databases      []yaml.Node     `yaml:"databases"`
+	RawTableOutput bool            `yaml:"raw_table_output"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -79,10 +100,7 @@ func (cfg Config) Validate() error {
 	if err := cfg.Listener.validate(); err != nil {
 		return err
 	}
-	if err := cfg.Verify.Source.validate("verify.source"); err != nil {
-		return err
-	}
-	if err := cfg.Verify.Destination.validate("verify.destination"); err != nil {
+	if err := cfg.Verify.validate(); err != nil {
 		return err
 	}
 	return nil
@@ -111,73 +129,64 @@ func (cfg ListenerConfig) Mode() string {
 	return "https"
 }
 
-func (cfg DatabaseConfig) validate(path string) error {
-	if err := validatePostgresScheme(cfg.URL); err != nil {
-		return errors.Newf("%s.url %s", path, err.Error())
-	}
-	tlsPath := path + ".tls"
-	if sslModeRequiresServerVerification(cfg.SSLMode()) && cfg.tlsConfig().CACertPath == "" {
-		return errors.Newf("%s.ca_cert_path must be set when %s.url sslmode verifies the server certificate", tlsPath, path)
+func (cfg VerifyConfig) validate() error {
+	if len(cfg.Databases) == 0 {
+		return errors.New("verify.databases must contain at least one database mapping")
 	}
 
-	hasClientCert := cfg.tlsConfig().ClientCertPath != ""
-	hasClientKey := cfg.tlsConfig().ClientKeyPath != ""
-	if hasClientCert != hasClientKey {
-		return errors.Newf("%s.client_cert_path and %s.client_key_path must both be set", tlsPath, tlsPath)
+	seenNames := make(map[string]struct{}, len(cfg.Databases))
+	for index, database := range cfg.Databases {
+		path := fmt.Sprintf("verify.databases[%d]", index)
+		if database.Name == "" {
+			return errors.Newf("%s.name must be set", path)
+		}
+		if _, exists := seenNames[database.Name]; exists {
+			return errors.Newf("%s.name duplicates configured database %q", path, database.Name)
+		}
+		seenNames[database.Name] = struct{}{}
+
+		if _, err := cfg.resolveDatabaseAt(path, database); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func (cfg DatabaseConfig) SSLMode() string {
-	parsed, err := url.Parse(cfg.URL)
+func (cfg *VerifyConfig) UnmarshalYAML(node *yaml.Node) error {
+	var decoded verifyConfigDecode
+	if err := decodeKnownFieldsNode(node, &decoded); err != nil {
+		return err
+	}
+
+	databases := make([]DatabaseMappingConfig, 0, len(decoded.Databases))
+	for index, databaseNode := range decoded.Databases {
+		if databaseNode.Kind != yaml.MappingNode {
+			return errors.Newf("verify.databases[%d] must be a mapping object", index)
+		}
+
+		var database DatabaseMappingConfig
+		if err := decodeKnownFieldsNode(&databaseNode, &database); err != nil {
+			return err
+		}
+		databases = append(databases, database)
+	}
+
+	*cfg = VerifyConfig{
+		Source:         decoded.Source,
+		Destination:    decoded.Destination,
+		Databases:      databases,
+		RawTableOutput: decoded.RawTableOutput,
+	}
+	return nil
+}
+
+func decodeKnownFieldsNode(node *yaml.Node, target any) error {
+	content, err := yaml.Marshal(node)
 	if err != nil {
-		return ""
+		return err
 	}
-	return parsed.Query().Get("sslmode")
-}
 
-func sslModeRequiresServerVerification(mode string) bool {
-	switch mode {
-	case "verify-ca", "verify-full":
-		return true
-	default:
-		return false
-	}
-}
-
-func validatePostgresScheme(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return errors.Wrap(err, "must be a valid URL")
-	}
-	switch parsed.Scheme {
-	case "postgres", "postgresql":
-		return nil
-	default:
-		return errors.New("must use postgres or postgresql scheme")
-	}
-}
-
-func (cfg DatabaseConfig) ConnectionString() (string, error) {
-	parsed, err := url.Parse(cfg.URL)
-	if err != nil {
-		return "", errors.Wrap(err, "parse database url")
-	}
-	query := parsed.Query()
-	if cfg.tlsConfig().CACertPath != "" {
-		query.Set("sslrootcert", cfg.tlsConfig().CACertPath)
-	}
-	if cfg.tlsConfig().ClientCertPath != "" {
-		query.Set("sslcert", cfg.tlsConfig().ClientCertPath)
-		query.Set("sslkey", cfg.tlsConfig().ClientKeyPath)
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String(), nil
-}
-
-func (cfg DatabaseConfig) tlsConfig() DatabaseTLSConfig {
-	if cfg.TLS == nil {
-		return DatabaseTLSConfig{}
-	}
-	return *cfg.TLS
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	return decoder.Decode(target)
 }

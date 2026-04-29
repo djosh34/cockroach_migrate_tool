@@ -3,6 +3,8 @@ package verifyservice
 import (
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"time"
 
 	serviceconfig "github.com/cockroachdb/molt/verifyservice"
@@ -45,23 +47,35 @@ func validateConfigCommand() *cobra.Command {
 			if err != nil {
 				return writeJSONCommandError(logger, logFormat, err)
 			}
+			resolvedDatabases, err := cfg.Verify.ResolveAllDatabases()
+			if err != nil {
+				return writeJSONCommandError(logger, logFormat, err)
+			}
+			sourceSummary := summarizeSSLModeInventory(resolvedDatabases, func(pair serviceconfig.ResolvedDatabasePair) string {
+				return pair.Source.SSLMode
+			})
+			destinationSummary := summarizeSSLModeInventory(resolvedDatabases, func(pair serviceconfig.ResolvedDatabasePair) string {
+				return pair.Destination.SSLMode
+			})
 
 			if logFormat == logFormatJSON {
 				logger.Info().
 					Str("event", "config.validated").
 					Str("listener_mode", cfg.Listener.Mode()).
-					Str("source_sslmode", summarizeSSLMode(cfg.Verify.Source.SSLMode())).
-					Str("destination_sslmode", summarizeSSLMode(cfg.Verify.Destination.SSLMode())).
+					Int("database_count", len(resolvedDatabases)).
+					Str("source_sslmode", sourceSummary).
+					Str("destination_sslmode", destinationSummary).
 					Msg("verify-service config validated")
 				return nil
 			}
 
 			_, err = fmt.Fprintf(
 				cmd.OutOrStdout(),
-				"verify-service config is valid\nlistener mode: %s\nsource sslmode: %s\ndestination sslmode: %s\n",
+				"verify-service config is valid\nlistener mode: %s\ndatabase count: %d\nsource sslmode: %s\ndestination sslmode: %s\n",
 				cfg.Listener.Mode(),
-				summarizeSSLMode(cfg.Verify.Source.SSLMode()),
-				summarizeSSLMode(cfg.Verify.Destination.SSLMode()),
+				len(resolvedDatabases),
+				sourceSummary,
+				destinationSummary,
 			)
 			return err
 		},
@@ -122,6 +136,30 @@ func summarizeSSLMode(mode string) string {
 		return "default"
 	}
 	return mode
+}
+
+func summarizeSSLModeInventory(
+	databases []serviceconfig.ResolvedDatabasePair,
+	selectMode func(serviceconfig.ResolvedDatabasePair) string,
+) string {
+	if len(databases) == 0 {
+		return summarizeSSLMode("")
+	}
+
+	modes := make(map[string]struct{}, len(databases))
+	for _, database := range databases {
+		modes[summarizeSSLMode(selectMode(database))] = struct{}{}
+	}
+
+	orderedModes := make([]string, 0, len(modes))
+	for mode := range modes {
+		orderedModes = append(orderedModes, mode)
+	}
+	sort.Strings(orderedModes)
+	if len(orderedModes) == 1 {
+		return orderedModes[0]
+	}
+	return "mixed(" + strings.Join(orderedModes, ",") + ")"
 }
 
 func newCommandLogger(w io.Writer, logFormat string) (zerolog.Logger, error) {

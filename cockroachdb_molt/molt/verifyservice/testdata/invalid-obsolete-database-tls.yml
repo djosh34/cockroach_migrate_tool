@@ -2,8 +2,18 @@ listener:
   bind_addr: 0.0.0.0:8080
 verify:
   source:
-    url: postgresql://verify_source@source.internal:5432/appdb?sslmode=verify-full
+    host: source.internal
+    port: 5432
+    user: verify_source
+    sslmode: verify-full
     ca_cert_path: /config/certs/source-ca.crt
   destination:
-    url: postgresql://verify_target@crdb.internal:26257/appdb?sslmode=verify-ca
+    host: crdb.internal
+    port: 26257
+    user: verify_target
+    sslmode: verify-ca
     client_cert_path: /config/certs/destination-client.crt
+  databases:
+    - name: app
+      source_database: appdb
+      destination_database: appdb

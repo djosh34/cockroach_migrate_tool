@@ -17,27 +17,35 @@ import (
 func TestVerifyRunnerUsesConfigConnectionStringsAndTreatsRequestFiltersAsData(t *testing.T) {
 	t.Parallel()
 
-	cfg := Config{
-		Verify: VerifyConfig{
-			Source: DatabaseConfig{
-				URL: "postgres://source-user:source-pass@source-db:26257/source_db?application_name=verify&sslmode=verify-full",
-				TLS: &DatabaseTLSConfig{
-					CACertPath:     "/etc/source-ca.pem",
-					ClientCertPath: "/etc/source-client.pem",
-					ClientKeyPath:  "/etc/source-client.key",
-				},
-			},
-			Destination: DatabaseConfig{
-				URL: "postgres://target-user:target-pass@target-db:26257/target_db?application_name=verify&sslmode=verify-ca",
-				TLS: &DatabaseTLSConfig{
-					CACertPath: "/etc/target-ca.pem",
-				},
+	cfg := singleDatabaseVerifyConfig(
+		DatabaseConfig{
+			Host:     "source-db",
+			Port:     26257,
+			Database: "source_db",
+			User:     "source-user",
+			SSLMode:  "verify-full",
+			TLS: &DatabaseTLSConfig{
+				CACertPath:     "/etc/source-ca.pem",
+				ClientCertPath: "/etc/source-client.pem",
+				ClientKeyPath:  "/etc/source-client.key",
 			},
 		},
-	}
-	sourceConnStr, err := cfg.Verify.Source.ConnectionString()
+		DatabaseConfig{
+			Host:     "target-db",
+			Port:     26257,
+			Database: "target_db",
+			User:     "target-user",
+			SSLMode:  "verify-ca",
+			TLS: &DatabaseTLSConfig{
+				CACertPath: "/etc/target-ca.pem",
+			},
+		},
+	)
+	pair, err := cfg.Verify.ResolveDatabase("")
 	require.NoError(t, err)
-	destinationConnStr, err := cfg.Verify.Destination.ConnectionString()
+	sourceConnStr, err := pair.Source.ConnectionString()
+	require.NoError(t, err)
+	destinationConnStr, err := pair.Destination.ConnectionString()
 	require.NoError(t, err)
 
 	request, err := (JobRequest{
@@ -103,16 +111,22 @@ func TestVerifyRunnerClassifiesSourceConnectionFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	runner := VerifyRunner{
-		config: Config{
-			Verify: VerifyConfig{
-				Source: DatabaseConfig{
-					URL: "postgres://verify_source:wrong-secret@source-db:26257/source_db?application_name=verify",
-				},
-				Destination: DatabaseConfig{
-					URL: "postgres://verify_target:correct-secret@target-db:26257/target_db?application_name=verify",
-				},
+		config: singleDatabaseVerifyConfig(
+			DatabaseConfig{
+				Host:     "source-db",
+				Port:     26257,
+				Database: "source_db",
+				User:     "verify_source",
+				SSLMode:  "disable",
 			},
-		},
+			DatabaseConfig{
+				Host:     "target-db",
+				Port:     26257,
+				Database: "target_db",
+				User:     "verify_target",
+				SSLMode:  "disable",
+			},
+		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			if preferredID == "source" {
@@ -154,16 +168,22 @@ func TestVerifyRunnerClassifiesDestinationConnectionFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	runner := VerifyRunner{
-		config: Config{
-			Verify: VerifyConfig{
-				Source: DatabaseConfig{
-					URL: "postgres://verify_source:correct-secret@source-db:26257/source_db?application_name=verify",
-				},
-				Destination: DatabaseConfig{
-					URL: "postgres://verify_target:wrong-secret@target-db:26257/target_db?application_name=verify",
-				},
+		config: singleDatabaseVerifyConfig(
+			DatabaseConfig{
+				Host:     "source-db",
+				Port:     26257,
+				Database: "source_db",
+				User:     "verify_source",
+				SSLMode:  "disable",
 			},
-		},
+			DatabaseConfig{
+				Host:     "target-db",
+				Port:     26257,
+				Database: "target_db",
+				User:     "verify_target",
+				SSLMode:  "disable",
+			},
+		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			if preferredID == "target" {
@@ -205,16 +225,22 @@ func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 	require.NoError(t, err)
 
 	runner := VerifyRunner{
-		config: Config{
-			Verify: VerifyConfig{
-				Source: DatabaseConfig{
-					URL: "postgres://verify_source:correct-secret@source-db:26257/source_db?application_name=verify",
-				},
-				Destination: DatabaseConfig{
-					URL: "postgres://verify_target:correct-secret@target-db:26257/target_db?application_name=verify",
-				},
+		config: singleDatabaseVerifyConfig(
+			DatabaseConfig{
+				Host:     "source-db",
+				Port:     26257,
+				Database: "source_db",
+				User:     "verify_source",
+				SSLMode:  "disable",
 			},
-		},
+			DatabaseConfig{
+				Host:     "target-db",
+				Port:     26257,
+				Database: "target_db",
+				User:     "verify_target",
+				SSLMode:  "disable",
+			},
+		),
 		logger: zerolog.Nop(),
 		connect: func(_ context.Context, preferredID dbconn.ID, _ string) (dbconn.Conn, error) {
 			return fakeConn{id: preferredID}, nil
@@ -239,6 +265,125 @@ func TestVerifyRunnerClassifiesVerifyExecutionFailures(t *testing.T) {
 			message:  "verify execution failed: verify reported checksum mismatch for public.accounts",
 			details: []operatorErrorDetail{
 				{Reason: "verify reported checksum mismatch for public.accounts"},
+			},
+		},
+		err,
+	)
+}
+
+func TestVerifyRunnerUsesRequestedConfiguredDatabase(t *testing.T) {
+	t.Parallel()
+
+	cfg := Config{
+		Verify: VerifyConfig{
+			Source: &DatabaseConfig{
+				Host:    "source-db",
+				Port:    26257,
+				User:    "verify_source",
+				SSLMode: "disable",
+			},
+			Destination: &DatabaseConfig{
+				Host:    "target-db",
+				Port:    5432,
+				User:    "verify_target",
+				SSLMode: "disable",
+			},
+			Databases: []DatabaseMappingConfig{
+				{
+					Name:                "app",
+					SourceDatabase:      "app",
+					DestinationDatabase: "app",
+				},
+				{
+					Name:                "billing",
+					SourceDatabase:      "billing",
+					DestinationDatabase: "billing_archive",
+				},
+			},
+		},
+	}
+
+	request, err := (JobRequest{Database: "billing"}).Compile()
+	require.NoError(t, err)
+
+	var gotConnectCalls []struct {
+		id      dbconn.ID
+		connStr string
+	}
+	runner := VerifyRunner{
+		config: cfg,
+		logger: zerolog.Nop(),
+		connect: func(_ context.Context, preferredID dbconn.ID, connStr string) (dbconn.Conn, error) {
+			gotConnectCalls = append(gotConnectCalls, struct {
+				id      dbconn.ID
+				connStr string
+			}{id: preferredID, connStr: connStr})
+			return fakeConn{id: preferredID, connStr: connStr}, nil
+		},
+		runVerify: func(
+			_ context.Context,
+			_ dbconn.OrderedConns,
+			_ zerolog.Logger,
+			_ inconsistency.Reporter,
+			_ utils.FilterConfig,
+		) error {
+			return nil
+		},
+	}
+
+	err = runner.Run(context.Background(), request, noopReporter{})
+	require.NoError(t, err)
+	require.Equal(t, []struct {
+		id      dbconn.ID
+		connStr string
+	}{
+		{id: "source", connStr: "postgresql://verify_source@source-db:26257/billing?sslmode=disable"},
+		{id: "target", connStr: "postgresql://verify_target@target-db:5432/billing_archive?sslmode=disable"},
+	}, gotConnectCalls)
+}
+
+func TestVerifyRunnerRejectsAmbiguousDatabaseSelection(t *testing.T) {
+	t.Parallel()
+
+	request, err := (JobRequest{}).Compile()
+	require.NoError(t, err)
+
+	runner := VerifyRunner{
+		config: Config{
+			Verify: VerifyConfig{
+				Source: &DatabaseConfig{
+					Host:    "source-db",
+					Port:    26257,
+					User:    "verify_source",
+					SSLMode: "disable",
+				},
+				Destination: &DatabaseConfig{
+					Host:    "target-db",
+					Port:    5432,
+					User:    "verify_target",
+					SSLMode: "disable",
+				},
+				Databases: []DatabaseMappingConfig{
+					{Name: "app", SourceDatabase: "app", DestinationDatabase: "app"},
+					{Name: "billing", SourceDatabase: "billing", DestinationDatabase: "billing"},
+				},
+			},
+		},
+		logger: zerolog.Nop(),
+	}
+
+	err = runner.Run(context.Background(), request, noopReporter{})
+	require.Equal(
+		t,
+		&operatorError{
+			category: "request_validation",
+			code:     "invalid_database_selection",
+			message:  "request validation failed",
+			details: []operatorErrorDetail{
+				{
+					Field:  "database",
+					Reason: "database selection is required when multiple databases are configured",
+				},
 			},
 		},
 		err,
@@ -287,3 +432,19 @@ type noopReporter struct{}
 func (noopReporter) Report(inconsistency.ReportableObject) {}
 
 func (noopReporter) Close() {}
+
+func singleDatabaseVerifyConfig(source DatabaseConfig, destination DatabaseConfig) Config {
+	return Config{
+		Verify: VerifyConfig{
+			Source:      &source,
+			Destination: &destination,
+			Databases: []DatabaseMappingConfig{
+				{
+					Name:                "default",
+					SourceDatabase:      source.Database,
+					DestinationDatabase: destination.Database,
+				},
+			},
+		},
+	}
+}

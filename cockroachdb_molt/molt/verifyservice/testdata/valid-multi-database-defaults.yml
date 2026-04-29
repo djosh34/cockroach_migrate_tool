@@ -1,29 +1,40 @@
 listener:
-  bind_addr: 0.0.0.0:8443
+  bind_addr: 0.0.0.0:8080
   tls:
     cert_path: /config/certs/server.crt
     key_path: /config/certs/server.key
     client_ca_path: /config/certs/client-ca.crt
+
 verify:
+  raw_table_output: false
+
   source:
     host: source.internal
-    port: 5432
+    port: 26257
     user: verify_source
     sslmode: verify-full
     tls:
       ca_cert_path: /config/certs/source-ca.crt
       client_cert_path: /config/certs/source-client.crt
       client_key_path: /config/certs/source-client.key
+
   destination:
-    host: crdb.internal
-    port: 26257
+    host: destination.internal
+    port: 5432
     user: verify_target
     sslmode: verify-ca
     tls:
       ca_cert_path: /config/certs/destination-ca.crt
-      client_cert_path: /config/certs/destination-client.crt
-      client_key_path: /config/certs/destination-client.key
+
   databases:
     - name: app
-      source_database: appdb
-      destination_database: appdb
+      source_database: app
+      destination_database: app
+
+    - name: billing
+      source_database: billing
+      destination_database: billing
+
+    - name: support
+      source_database: support
+      destination_database: support_archive

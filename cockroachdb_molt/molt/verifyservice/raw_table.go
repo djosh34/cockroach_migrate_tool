@@ -11,23 +11,25 @@ import (
 	"github.com/cockroachdb/molt/dbconn"
 )
 
-type RawTableDatabase string
+type RawTableSide string
 
 const (
-	RawTableDatabaseSource      RawTableDatabase = "source"
-	RawTableDatabaseDestination RawTableDatabase = "destination"
+	RawTableSideSource      RawTableSide = "source"
+	RawTableSideDestination RawTableSide = "destination"
 )
 
 var rawTableIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 type RawTableRequest struct {
-	Database RawTableDatabase `json:"database"`
-	Schema   string           `json:"schema"`
-	Table    string           `json:"table"`
+	Database string       `json:"database"`
+	Side     RawTableSide `json:"side"`
+	Schema   string       `json:"schema"`
+	Table    string       `json:"table"`
 }
 
 type RawTableResponse struct {
-	Database RawTableDatabase `json:"database"`
+	Database string           `json:"database"`
+	Side     RawTableSide     `json:"side"`
 	Schema   string           `json:"schema"`
 	Table    string           `json:"table"`
 	Columns  []string         `json:"columns"`
@@ -72,7 +74,10 @@ func newConfigBackedRawTableReader(cfg Config) RawTableReader {
 }
 
 func (r RawTableRequest) Validate() error {
-	if err := r.Database.Validate(); err != nil {
+	if r.Database == "" {
+		return rawTableRequestError{message: "database must be set"}
+	}
+	if err := r.Side.Validate(); err != nil {
 		return rawTableRequestError{message: err.Error()}
 	}
 	if err := validateRawTableIdentifier("schema", r.Schema); err != nil {
@@ -84,12 +89,12 @@ func (r RawTableRequest) Validate() error {
 	return nil
 }
 
-func (d RawTableDatabase) Validate() error {
+func (d RawTableSide) Validate() error {
 	switch d {
-	case RawTableDatabaseSource, RawTableDatabaseDestination:
+	case RawTableSideSource, RawTableSideDestination:
 		return nil
 	default:
-		return errors.New("database must be one of: source, destination")
+		return errors.New("side must be one of: source, destination")
 	}
 }
 
@@ -98,14 +103,14 @@ func (r configBackedRawTableReader) ReadRawTable(ctx context.Context, request Ra
 		return RawTableResponse{}, err
 	}
 
-	connStr, preferredID, err := r.connectionFor(request.Database)
+	connStr, preferredID, err := r.connectionFor(request)
 	if err != nil {
 		return RawTableResponse{}, err
 	}
 	conn, err := r.connect(ctx, preferredID, connStr)
 	if err != nil {
 		return RawTableResponse{}, rawTableReadError{
-			message: fmt.Sprintf("connect %s database for raw table output", request.Database),
+			message: fmt.Sprintf("connect %s side for raw table output on database %s", request.Side, request.Database),
 			cause:   err,
 		}
 	}
@@ -128,7 +133,7 @@ func (r configBackedRawTableReader) ReadRawTable(ctx context.Context, request Ra
 	rows, err := pgConn.Query(ctx, query)
 	if err != nil {
 		return RawTableResponse{}, rawTableReadError{
-			message: fmt.Sprintf("query raw table %s.%s from %s", request.Schema, request.Table, request.Database),
+			message: fmt.Sprintf("query raw table %s.%s from %s side on database %s", request.Schema, request.Table, request.Side, request.Database),
 			cause:   err,
 		}
 	}
@@ -144,7 +149,7 @@ func (r configBackedRawTableReader) ReadRawTable(ctx context.Context, request Ra
 		values, err := rows.Values()
 		if err != nil {
 			return RawTableResponse{}, rawTableReadError{
-				message: fmt.Sprintf("read raw table row values for %s.%s from %s", request.Schema, request.Table, request.Database),
+				message: fmt.Sprintf("read raw table row values for %s.%s from %s side on database %s", request.Schema, request.Table, request.Side, request.Database),
 				cause:   err,
 			}
 		}
@@ -156,13 +161,14 @@ func (r configBackedRawTableReader) ReadRawTable(ctx context.Context, request Ra
 	}
 	if err := rows.Err(); err != nil {
 		return RawTableResponse{}, rawTableReadError{
-			message: fmt.Sprintf("iterate raw table rows for %s.%s from %s", request.Schema, request.Table, request.Database),
+			message: fmt.Sprintf("iterate raw table rows for %s.%s from %s side on database %s", request.Schema, request.Table, request.Side, request.Database),
 			cause:   err,
 		}
 	}
 
 	return RawTableResponse{
 		Database: request.Database,
+		Side:     request.Side,
 		Schema:   request.Schema,
 		Table:    request.Table,
 		Columns:  columns,
@@ -170,16 +176,21 @@ func (r configBackedRawTableReader) ReadRawTable(ctx context.Context, request Ra
 	}, nil
 }
 
-func (r configBackedRawTableReader) connectionFor(database RawTableDatabase) (string, dbconn.ID, error) {
-	switch database {
-	case RawTableDatabaseSource:
-		connStr, err := r.config.Verify.Source.ConnectionString()
+func (r configBackedRawTableReader) connectionFor(request RawTableRequest) (string, dbconn.ID, error) {
+	pair, err := r.config.Verify.ResolveDatabase(request.Database)
+	if err != nil {
+		return "", "", rawTableRequestError{message: err.Error()}
+	}
+
+	switch request.Side {
+	case RawTableSideSource:
+		connStr, err := pair.Source.ConnectionString()
 		return connStr, "source", err
-	case RawTableDatabaseDestination:
-		connStr, err := r.config.Verify.Destination.ConnectionString()
+	case RawTableSideDestination:
+		connStr, err := pair.Destination.ConnectionString()
 		return connStr, "target", err
 	default:
-		return "", "", rawTableRequestError{message: "database must be one of: source, destination"}
+		return "", "", rawTableRequestError{message: "side must be one of: source, destination"}
 	}
 }
 
