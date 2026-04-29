@@ -92,8 +92,8 @@ func TestVerifyRunnerUsesResolvedConnectionStringsAndGlobFilters(t *testing.T) {
 		{id: "target", connStr: destinationConnStr},
 	}, gotConnectCalls)
 	require.Equal(t, utils.FilterConfig{
-		SchemaFilter: "^(?:public)$",
-		TableFilter:  "^(?:accounts.*|orders)$",
+		SchemaFilter: "^(public)$",
+		TableFilter:  "^(accounts.*|orders)$",
 	}, gotFilter)
 }
 

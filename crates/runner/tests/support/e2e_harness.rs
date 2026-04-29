@@ -766,8 +766,7 @@ impl CdcE2eHarness {
         &self,
         verify_service: &VerifyServiceHarness,
     ) -> VerifyCorrectnessAudit {
-        let (include_schema_pattern, include_table_pattern) =
-            verify_filter_patterns(&self.config.selected_tables);
+        let (schema_match, table_match) = verify_filter_patterns(&self.config.selected_tables);
         verify_service.run_correctness_audit(&VerifyServiceRun {
             source_url: self
                 .databases
@@ -781,8 +780,8 @@ impl CdcE2eHarness {
                 &self.config.destination_password,
             ),
             destination_ca_cert_path: self.databases.postgres_ca_cert_path(),
-            include_schema_pattern,
-            include_table_pattern,
+            schema_match,
+            table_match,
             expected_tables: self.config.selected_tables.clone(),
         })
     }
@@ -1851,7 +1850,7 @@ fn split_table_reference(table: &str) -> (&str, &str) {
         .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
 }
 
-fn verify_filter_patterns(selected_tables: &[String]) -> (String, String) {
+fn verify_filter_patterns(selected_tables: &[String]) -> (Vec<String>, Vec<String>) {
     let mut schemas = selected_tables
         .iter()
         .map(|table| split_table_reference(table).0.to_owned())
@@ -1866,14 +1865,7 @@ fn verify_filter_patterns(selected_tables: &[String]) -> (String, String) {
     tables.sort();
     tables.dedup();
 
-    (
-        anchored_posix_union(&schemas),
-        anchored_posix_union(&tables),
-    )
-}
-
-fn anchored_posix_union(values: &[String]) -> String {
-    format!("^({})$", values.join("|"))
+    (schemas, tables)
 }
 
 fn parse_json_snapshot<T>(raw: &str, description: &str) -> T

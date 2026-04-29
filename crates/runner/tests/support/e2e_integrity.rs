@@ -1,6 +1,6 @@
 use std::{collections::BTreeSet, fs, path::Path};
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 const EXPECTED_COCKROACH_VERSION_PREFIX: &str = "v23.1.";
 
@@ -395,22 +395,40 @@ pub struct VerifyCorrectnessAudit {
     expected_tables: Vec<String>,
     job_id: String,
     status: String,
+    database_status: String,
     failure_category: Option<String>,
-    table_summaries: Vec<VerifyTableSummary>,
+    failure_code: Option<String>,
+    failure_message: Option<String>,
+    observed_schemas: BTreeSet<String>,
+    observed_tables: BTreeSet<String>,
+    rows_checked: Option<usize>,
     mismatched_tables: BTreeSet<String>,
 }
 
 impl VerifyCorrectnessAudit {
     pub fn new(expected_tables: Vec<String>, response: VerifyJobResponse) -> Self {
-        let result = response.result.unwrap_or_default();
-        let mismatched_tables = result.mismatched_tables();
+        let VerifyJobResponse {
+            job_id,
+            status,
+            databases,
+        } = response;
+        let database = VerifyJobResponse::single_database(job_id.as_str(), databases);
         Self {
             expected_tables,
-            job_id: response.job_id,
-            status: response.status,
-            failure_category: response.failure.map(|failure| failure.category),
-            table_summaries: result.table_summaries,
-            mismatched_tables,
+            job_id,
+            status,
+            database_status: database.status,
+            failure_category: database.error.as_ref().map(|error| error.category.clone()),
+            failure_code: database.error.as_ref().map(|error| error.code.clone()),
+            failure_message: database.error.map(|error| error.message),
+            observed_schemas: database.schemas.into_iter().collect(),
+            observed_tables: database.tables.into_iter().collect(),
+            rows_checked: database.rows_checked,
+            mismatched_tables: database
+                .findings
+                .into_iter()
+                .map(|finding| finding.table_name())
+                .collect(),
         }
     }
 
@@ -442,57 +460,48 @@ impl VerifyCorrectnessAudit {
     }
 
     pub fn finished_successfully(&self) -> bool {
-        self.status == "succeeded"
+        self.status == "succeeded" && self.database_status == "succeeded"
     }
 
     pub fn selected_tables_match(&self) -> bool {
         self.finished_successfully()
-            && self.covers_expected_tables()
-            && self.expected_tables.iter().all(|expected_table| {
-                let table_summaries = self
-                    .table_summaries
-                    .iter()
-                    .filter(|summary| summary.table_name() == *expected_table)
-                    .collect::<Vec<_>>();
-                !table_summaries.is_empty()
-                    && table_summaries
-                        .iter()
-                        .all(|summary| summary.num_mismatch == 0)
-                    && table_summaries
-                        .iter()
-                        .any(|summary| summary.num_verified > 0)
-                    && !self.mismatched_tables.contains(expected_table)
-            })
+            && self.rows_checked.unwrap_or_default() > 0
+            && self.observed_schemas == self.expected_schemas()
+            && self.observed_tables == self.expected_table_names()
+            && self
+                .expected_tables
+                .iter()
+                .all(|expected_table| !self.mismatched_tables.contains(expected_table))
     }
 
     pub fn selected_tables_mismatch(&self) -> bool {
         self.finished_with_mismatch()
-            && self.covers_expected_tables()
-            && (self.table_summaries.iter().any(|summary| {
-                self.expected_tables.contains(&summary.table_name()) && summary.num_mismatch > 0
-            }) || self
+            && self.observed_schemas == self.expected_schemas()
+            && self.observed_tables == self.expected_table_names()
+            && self
                 .expected_tables
                 .iter()
-                .any(|expected_table| self.mismatched_tables.contains(expected_table)))
+                .any(|expected_table| self.mismatched_tables.contains(expected_table))
     }
 
     fn finished_with_mismatch(&self) -> bool {
-        self.status == "failed" && self.failure_category.as_deref() == Some("mismatch")
+        self.status == "failed"
+            && self.database_status == "failed"
+            && self.failure_category.as_deref() == Some("mismatch")
     }
 
-    fn covers_expected_tables(&self) -> bool {
-        let expected_tables = self
-            .expected_tables
+    fn expected_schemas(&self) -> BTreeSet<String> {
+        self.expected_tables
             .iter()
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let summarized_tables = self
-            .table_summaries
-            .iter()
-            .map(VerifyTableSummary::table_name)
-            .collect::<BTreeSet<_>>();
+            .map(|table| expected_table_parts(table).0.to_owned())
+            .collect()
+    }
 
-        summarized_tables == expected_tables
+    fn expected_table_names(&self) -> BTreeSet<String> {
+        self.expected_tables
+            .iter()
+            .map(|table| expected_table_parts(table).1.to_owned())
+            .collect()
     }
 }
 
@@ -501,75 +510,57 @@ pub struct VerifyJobResponse {
     job_id: String,
     status: String,
     #[serde(default)]
-    failure: Option<VerifyJobFailure>,
-    #[serde(default)]
-    result: Option<VerifyJobResult>,
+    databases: Vec<VerifyDatabaseResult>,
 }
 
 impl VerifyJobResponse {
     pub(crate) fn is_running(&self) -> bool {
         self.status == "running"
     }
-}
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct VerifyTableSummary {
-    schema: String,
-    table: String,
-    num_verified: usize,
-    num_mismatch: usize,
-}
-
-impl VerifyTableSummary {
-    fn table_name(&self) -> String {
-        format!("{}.{}", self.schema, self.table)
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-struct VerifyJobResult {
-    #[serde(default)]
-    table_summaries: Vec<VerifyTableSummary>,
-    #[serde(default)]
-    findings: Vec<VerifyFinding>,
-    #[serde(default)]
-    mismatch_summary: VerifyMismatchSummary,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct VerifyJobFailure {
-    category: String,
-}
-
-impl VerifyJobResult {
-    fn mismatched_tables(&self) -> BTreeSet<String> {
-        self.mismatch_summary
-            .affected_tables
+    fn single_database(job_id: &str, databases: Vec<VerifyDatabaseResult>) -> VerifyDatabaseResult {
+        let database_names = databases
             .iter()
-            .map(VerifyTableRef::table_name)
-            .chain(self.findings.iter().map(VerifyFinding::table_name))
-            .collect()
+            .map(|database| database.name.clone())
+            .collect::<Vec<_>>();
+        let mut databases = databases.into_iter();
+        let database = databases.next().unwrap_or_else(|| {
+            panic!(
+                "verify job `{}` should report exactly one database, found none",
+                job_id,
+            )
+        });
+        assert!(
+            databases.next().is_none(),
+            "verify job `{}` should report exactly one database for this harness, found {:?}",
+            job_id,
+            database_names,
+        );
+        database
     }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
-struct VerifyTableRef {
-    schema: String,
-    table: String,
+struct VerifyDatabaseResult {
+    name: String,
+    status: String,
+    #[serde(default)]
+    schemas: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    tables: Vec<String>,
+    #[serde(default)]
+    rows_checked: Option<usize>,
+    #[serde(default)]
+    error: Option<VerifyDatabaseError>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    findings: Vec<VerifyFinding>,
 }
 
-impl VerifyTableRef {
-    fn table_name(&self) -> String {
-        format!("{}.{}", self.schema, self.table)
-    }
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
-struct VerifyMismatchSummary {
-    #[serde(default)]
-    has_mismatches: bool,
-    #[serde(default)]
-    affected_tables: Vec<VerifyTableRef>,
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+struct VerifyDatabaseError {
+    category: String,
+    code: String,
+    message: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -583,6 +574,22 @@ impl VerifyFinding {
     fn table_name(&self) -> String {
         format!("{}.{}", self.schema, self.table)
     }
+}
+
+fn expected_table_parts(expected_table: &str) -> (&str, &str) {
+    expected_table.split_once('.').unwrap_or_else(|| {
+        panic!(
+            "expected verify table `{expected_table}` should be schema-qualified as schema.table",
+        )
+    })
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 impl CustomerLiveUpdateAudit {

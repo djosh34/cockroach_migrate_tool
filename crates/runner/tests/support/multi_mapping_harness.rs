@@ -438,8 +438,7 @@ VALUES (5003, 1, 'expansion-pack', 2);
         verify_service: &VerifyServiceHarness,
         mapping: MappingSpec,
     ) -> VerifyCorrectnessAudit {
-        let (include_schema_pattern, include_table_pattern) =
-            verify_filter_patterns(mapping.selected_tables);
+        let (schema_match, table_match) = verify_filter_patterns(mapping.selected_tables);
         verify_service.run_correctness_audit(&VerifyServiceRun {
             source_url: self.databases.verify_source_url(mapping.source_database),
             source_ca_cert_path: self.databases.cockroach_ca_cert_path(),
@@ -451,8 +450,8 @@ VALUES (5003, 1, 'expansion-pack', 2);
                 mapping.destination_password,
             ),
             destination_ca_cert_path: self.databases.postgres_ca_cert_path(),
-            include_schema_pattern,
-            include_table_pattern,
+            schema_match,
+            table_match,
             expected_tables: mapping
                 .selected_tables
                 .iter()
@@ -737,7 +736,7 @@ impl Drop for MultiMappingHarness {
     }
 }
 
-fn verify_filter_patterns(selected_tables: &[&str]) -> (String, String) {
+fn verify_filter_patterns(selected_tables: &[&str]) -> (Vec<String>, Vec<String>) {
     let mut schemas = selected_tables
         .iter()
         .map(|table| split_table_reference(table).0.to_owned())
@@ -752,18 +751,11 @@ fn verify_filter_patterns(selected_tables: &[&str]) -> (String, String) {
     tables.sort();
     tables.dedup();
 
-    (
-        anchored_posix_union(&schemas),
-        anchored_posix_union(&tables),
-    )
+    (schemas, tables)
 }
 
 fn split_table_reference(table: &str) -> (&str, &str) {
     table
         .split_once('.')
         .unwrap_or_else(|| panic!("mapped table should be qualified as schema.table: {table}"))
-}
-
-fn anchored_posix_union(values: &[String]) -> String {
-    format!("^({})$", values.join("|"))
 }

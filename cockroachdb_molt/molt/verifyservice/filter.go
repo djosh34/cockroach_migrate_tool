@@ -327,7 +327,7 @@ func globsToRegex(globs []string) (string, error) {
 	if len(regexParts) == 1 && regexParts[0] == ".*" {
 		return utils.DefaultFilterString, nil
 	}
-	return "^(?:" + strings.Join(regexParts, "|") + ")$", nil
+	return "^(" + strings.Join(regexParts, "|") + ")$", nil
 }
 
 func globToRegex(glob string) (string, error) {
