@@ -87,7 +87,6 @@ jobs:
     name: publish multi-platform images
     runs-on: ubuntu-24.04
     needs:
-      - nix-flake-check
       - build-images
     permissions:
       contents: read
